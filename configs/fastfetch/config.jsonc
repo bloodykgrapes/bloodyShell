@@ -1,0 +1,140 @@
+{
+    "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+
+    "logo":
+    {
+        "padding":
+        {
+        	"top": 2,
+            "left": 2,
+            "right": 6
+      	}
+  	},
+	
+  	"display":
+  	{
+    	"separator": " ",
+
+    	"color":
+    	{
+        	"keys": "blue",
+        	"title": "red"
+    	},
+
+    	"bar":
+    	{
+        	"width": 10,
+        	"char":
+        	{
+            	"elapsed": "/",
+            	"total": "/"
+        	}
+    	},
+    	
+    	"percent":
+    	{
+        	"type": 3,
+        	"color":
+        	{
+            	"green": "green",
+            	"yellow": "light_yellow",
+            	"red": "light_red"
+        	}
+    	},
+    	
+    	"key":
+    	{
+	    	"width": 14
+    	}
+  	},
+
+  	"modules":
+  	[
+    	{
+      		"type": "title",
+      		"keyColor": "red"
+    	},
+		"separator",
+    
+    	"break",
+
+    	{
+      		"type": "os",
+      		"key": "  OS",
+      		"keyColor": "cyan",
+      		"format": "{name} ({13})"
+    	},
+		{
+      		"type": "wm",
+      		"key": "󰧨  WM",
+      		"keyColor": "cyan",
+      		"format": "{pretty-name}"
+    	},
+    	{
+      		"type": "packages",
+      		"key": "  Packages",
+      		"keyColor": "cyan",
+      		"format": "{all} (pacman {pacman})"
+    	},
+		{
+      		"type": "shell",
+      		"key": "  Shell",
+      		"keyColor": "cyan",
+      		"format": "{pretty-name} ({version})"
+    	},
+
+    	"break",
+
+    	{
+      		"type": "cpu",
+      		"key": "  CPU",
+      		"keyColor": "blue",
+      		"format": "{name} ({cores-physical}C/{cores-logical}T) @ {freq-max} - {temperature}",
+      		"temp": true
+    	},
+    	{
+      		"type": "gpu",
+      		"key": "  GPU",
+     		"keyColor": "blue",
+      		"format": "{name}"
+    	},
+    
+    	"break",
+
+    	{
+      		"type": "memory",
+      		"key": "  RAM",
+      		"keyColor": "yellow",
+      		"percent":
+      		{
+        		"type": 3,
+        		"green": 30,
+        		"yellow": 70
+      		}
+    	},
+    	{
+      		"type": "swap",
+      		"key": "  Swap",
+      		"keyColor": "yellow"
+    	},
+    
+    	"break",
+
+    	{
+      		"type": "disk",
+      		"key": "  ({mountpoint})",
+      		"keyColor": "green"
+    	},
+    
+    	"break",
+
+    	{
+      		"type": "display",
+      		"key": "󰍹  ({name})",
+      		"keyColor": "magenta",
+      		"format": "{width}x{height} ({inch}') [{refresh-rate} Hz]"
+    	},
+    	
+    	"break"
+  	]
+}

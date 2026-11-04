@@ -1,0 +1,32 @@
+spawn-at-startup "awww-daemon"
+
+spawn-sh-at-startup "qs -n -c bloodyShell"
+
+screenshot-path "~/Pictures/Screenshots/%Y-%m-%d %H-%M-%S.png"
+
+environment {
+
+}
+
+recent-windows {
+    open-delay-ms 150
+
+    debounce-ms 750
+
+    previews {
+        max-height 400
+        max-scale 0.8
+    }
+
+    highlight {
+        active-color "#7fc8ff"
+        urgent-color "#ff6b6b"
+        padding 10
+        corner-radius 10
+    }
+
+    binds {
+        Alt+Tab       { next-window scope="output"; }
+        Alt+Shift+Tab { previous-window scope="output"; }
+    }
+}

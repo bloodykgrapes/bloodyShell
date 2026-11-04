@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+
+import fcntl
+import json
+import os
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+from contextlib import contextmanager
+from pathlib import Path
+
+
+FSTAB = Path("/etc/fstab")
+LOCK = Path("/etc/.bloodyShell-storage.lock")
+
+
+def run(args):
+    result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"{args[0]} failed")
+    return result.stdout
+
+
+def flatten(items):
+    for item in items:
+        yield item
+        yield from flatten(item.get("children", []))
+
+
+def unescape(value):
+    return re.sub(r"\\(040|011|012|134)", lambda match: chr(int(match[1], 8)), value)
+
+
+def escape(value):
+    return value.replace("\\", "\\134").replace(" ", "\\040").replace("\t", "\\011")
+
+
+def entries(text):
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        fields = line.split()
+        if len(fields) < 4:
+            raise ValueError("An existing fstab entry is incomplete")
+        yield [unescape(field) for field in fields[:4]]
+
+
+def same_device(source, device):
+    if source.startswith("/dev/"):
+        return os.path.realpath(source) == os.path.realpath(device)
+    if source.startswith(("UUID=", "LABEL=", "PARTUUID=", "PARTLABEL=")):
+        result = subprocess.run(["findfs", source], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        return result.returncode == 0 and os.path.realpath(result.stdout.strip()) == os.path.realpath(device)
+    return False
+
+
+def check_existing(text, device, uuid, target):
+    for source, mountpoint, _, _ in entries(text):
+        if source == "UUID=" + uuid or same_device(source, device):
+            raise ValueError("This filesystem already has a startup mount entry. Existing entries are not replaced.")
+        if mountpoint == target:
+            raise ValueError("This mount point is already used by a startup mount entry.")
+
+
+def validate_target(target):
+    path = Path(target)
+    if not path.is_absolute() or len(path.parts) != 3 or path.parts[1] not in ("mnt", "media"):
+        raise ValueError("Choose a directory directly inside /mnt or /media")
+    if path.name in (".", "..") or re.search(r"[\x00-\x1f\x7f\\]", target) or str(path) != target:
+        raise ValueError("Invalid mount point")
+    for directory in (Path("/"), path.parent):
+        info = directory.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError("The mount point parent must be a root-owned directory without group or public write access")
+    if path.exists() or path.is_symlink():
+        info = path.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError("The mount point must be a root-owned directory without group or public write access")
+        if any(path.iterdir()):
+            raise ValueError("The mount point is not empty")
+    return path
+
+
+def verify_device(device, uuid, filesystem):
+    if not re.fullmatch(r"/dev/[A-Za-z0-9_./+ -]+", device) or ".." in Path(device).parts:
+        raise ValueError("Invalid device path")
+    if not stat.S_ISBLK(os.stat(device).st_mode):
+        raise ValueError("The selected device is not a block device")
+    if not re.fullmatch(r"[A-Za-z0-9-]+", uuid) or not re.fullmatch(r"[A-Za-z0-9_.+-]+", filesystem):
+        raise ValueError("Invalid filesystem identity")
+    if filesystem.lower() in ("swap", "crypto_luks", "bitlocker", "lvm2_member", "linux_raid_member", "zfs_member", "squashfs"):
+        raise ValueError("This filesystem cannot be mounted here")
+    data = json.loads(run(["lsblk", "--json", "--paths", "--output", "NAME,UUID,FSTYPE,MOUNTPOINTS,RO"]))
+    matching = {item["name"]: item for item in flatten(data.get("blockdevices", [])) if item.get("uuid") == uuid}
+    if len(matching) != 1 or device not in matching:
+        raise ValueError("The device identity changed or its UUID is not unique. Refresh the disk list.")
+    item = matching[device]
+    if item.get("fstype") != filesystem:
+        raise ValueError("The filesystem type changed. Refresh the disk list.")
+    if any(point for point in item.get("mountpoints", []) if point):
+        raise ValueError("The filesystem is already mounted")
+    return item.get("ro") in (True, 1, "1")
+
+
+def write_candidate(path, content, original_info):
+    fd, temporary = tempfile.mkstemp(prefix=".fstab.bloodyShell-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as output:
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+            os.fchmod(output.fileno(), stat.S_IMODE(original_info.st_mode))
+            os.fchown(output.fileno(), original_info.st_uid, original_info.st_gid)
+        shutil.copystat(path, temporary)
+        return Path(temporary)
+    except BaseException:
+        os.unlink(temporary)
+        raise
+
+
+def reload_mounts():
+    if Path("/run/systemd/system").is_dir():
+        run(["systemctl", "daemon-reload"])
+
+
+def validate_fstab(path):
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+        raise ValueError("/etc/fstab must be a root-owned regular file without group or public write access")
+    return info
+
+
+@contextmanager
+def storage_lock():
+    lock_fd = os.open(LOCK, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(lock_fd, "w") as lock:
+        info = os.fstat(lock.fileno())
+        if info.st_uid != 0 or info.st_nlink != 1 or not stat.S_ISREG(info.st_mode):
+            raise ValueError("Invalid storage lock file")
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def mount_persistent(device, uuid, filesystem, target):
+    if os.geteuid() != 0:
+        raise PermissionError("Administrator authorization is required")
+    fstab = FSTAB
+    with storage_lock():
+        info = validate_fstab(fstab)
+        read_only = verify_device(device, uuid, filesystem)
+        path = validate_target(target)
+        original = fstab.read_text()
+        check_existing(original, device, uuid, target)
+        options = "defaults,nofail,x-systemd.device-timeout=10s" + (",ro" if read_only else "")
+        entry = f"UUID={uuid}\t{escape(target)}\t{filesystem}\t{options}\t0\t0\n"
+        updated = original + ("\n" if original and not original.endswith("\n") else "") + entry
+        candidate = write_candidate(fstab, updated, info)
+        created = False
+        installed = False
+        try:
+            if not path.exists():
+                path.mkdir(mode=0o755)
+                created = True
+            run(["findmnt", "--verify", "--tab-file", str(candidate)])
+            if fstab.read_text() != original:
+                raise RuntimeError("/etc/fstab changed while preparing this mount. Try again.")
+            backup = fstab.with_name(f"fstab.bloodyShell-{time.time_ns()}.bak")
+            shutil.copy2(fstab, backup)
+            os.chown(backup, info.st_uid, info.st_gid)
+            os.replace(candidate, fstab)
+            installed = True
+            reload_mounts()
+            run(["mount", "--", target])
+            mounted_uuid = run(["findmnt", "--mountpoint", target, "--noheadings", "--output", "UUID"]).strip()
+            if mounted_uuid != uuid:
+                raise RuntimeError("The selected filesystem was not mounted at the requested location")
+        except BaseException as error:
+            if installed:
+                if fstab.read_text() != updated:
+                    raise RuntimeError(f"{error}; fstab changed externally, so rollback was skipped. Review /etc/fstab.") from error
+                rollback = write_candidate(fstab, original, info)
+                os.replace(rollback, fstab)
+                try:
+                    reload_mounts()
+                except RuntimeError:
+                    pass
+            if created and path.exists() and not os.path.ismount(path):
+                path.rmdir()
+            raise
+        finally:
+            candidate.unlink(missing_ok=True)
+        print(f"Mounted {device} at {target}. Startup mount saved. Backup: {backup}")
+
+
+def main():
+    if len(sys.argv) != 6 or sys.argv[1] != "mount":
+        print("Usage: storage mount <device> <uuid> <filesystem> <mount-point>", file=sys.stderr)
+        return 2
+    try:
+        mount_persistent(*sys.argv[2:])
+    except (OSError, ValueError, RuntimeError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

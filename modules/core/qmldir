@@ -1,0 +1,12 @@
+module qs.modules.core
+
+singleton Config                     1.0 Config.qml
+singleton Enums                      1.0 Enums.qml
+singleton Icon                       1.0 Icon.qml
+singleton MenuState                  1.0 MenuState.qml
+singleton OverlayState               1.0 OverlayState.qml
+singleton Paths                      1.0 Paths.qml
+singleton Registry                   1.0 Registry.qml
+singleton SurfaceState               1.0 SurfaceState.qml
+singleton Theme                      1.0 Theme.qml
+singleton Tr                         1.0 Translation.qml

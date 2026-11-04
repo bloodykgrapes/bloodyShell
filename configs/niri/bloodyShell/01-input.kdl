@@ -1,0 +1,28 @@
+input {
+    keyboard {
+        xkb {
+            layout "us,ru"
+            options "grp:alt_shift_toggle"
+        }
+        numlock
+    }
+
+    mouse {
+        accel-speed 0.0
+        accel-profile "flat"
+    }
+
+    touchpad {
+        tap
+        natural-scroll
+        middle-emulation
+
+        accel-speed 0.2
+        accel-profile "flat"
+        scroll-factor horizontal=0.6 vertical=0.6
+        scroll-method "two-finger"
+
+        disabled-on-external-mouse
+    }
+
+}

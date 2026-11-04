@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import os
+from pathlib import Path
+import runpy
+import shutil
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def checks():
+    results = []
+    def record(name, ok, required=True, detail=""):
+        results.append(dict(name=name, ok=bool(ok), required=required, detail=detail))
+
+    for entry in runpy.run_path(str(ROOT / "scripts/dependencies"))["catalog"]():
+        record(entry["tool"], shutil.which(entry["tool"]), entry["kind"] == "required", entry["feature"])
+    record("Greeter source", (ROOT / "greeter/shell.qml").is_file())
+    for path in (ROOT / "assets/shaders").glob("*.frag"):
+        record(path.name + " bundle", path.with_suffix(path.suffix + ".qsb").is_file())
+    if shutil.which("niri"):
+        result = subprocess.run(["niri", "validate", "-c", str(ROOT / "configs/niri/config.kdl")], capture_output=True, text=True, timeout=10)
+        record("Bundled niri configuration", result.returncode == 0, detail=(result.stderr.strip() if result.returncode else "Validated"))
+    if shutil.which("pkg-config"):
+        result = subprocess.run(["pkg-config", "--exists", "Qt6Quick"], capture_output=True, timeout=5)
+        record("Native Alt+Tab build support", result.returncode == 0 and shutil.which("c++"), False, "Qt 6 Quick development files, moc, pkg-config and a C++ compiler")
+    else:
+        record("Native Alt+Tab build support", False, False, "Install pkg-config and Qt 6 development tools")
+    record("Wayland session", bool(os.environ.get("WAYLAND_DISPLAY")), False, "Run inside niri to use the shell")
+    return results
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Read-only bloodyShell installation diagnostics")
+    parser.add_argument("--json", action="store_true")
+    arguments = parser.parse_args()
+    results = checks()
+    if arguments.json:
+        print(json.dumps(results, indent=2))
+    else:
+        for result in results:
+            status = "OK" if result["ok"] else "MISSING" if result["required"] else "OPTIONAL"
+            print(f'{status:8} {result["name"]}: {result["detail"]}')
+    return int(any(not result["ok"] and result["required"] for result in results))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

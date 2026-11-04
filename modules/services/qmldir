@@ -1,0 +1,27 @@
+module qs.modules.services
+
+singleton ServiceAltTab              1.0 ServiceAltTab.qml
+singleton ServiceAppearance          1.0 ServiceAppearance.qml
+singleton ServiceApplications        1.0 ServiceApplications.qml
+singleton ServiceAudio               1.0 ServiceAudio.qml
+singleton ServiceBluetooth           1.0 ServiceBluetooth.qml
+singleton ServiceCompositor          1.0 ServiceCompositor.qml
+singleton ServiceDependencies        1.0 ServiceDependencies.qml
+singleton ServiceDevices             1.0 ServiceDevices.qml
+singleton ServiceDisplay             1.0 ServiceDisplay.qml
+singleton ServiceDock                1.0 ServiceDock.qml
+singleton ServiceGreeter             1.0 ServiceGreeter.qml
+singleton ServiceIdle                1.0 ServiceIdle.qml
+singleton ServiceKeyboard            1.0 ServiceKeyboard.qml
+singleton ServiceLock                1.0 ServiceLock.qml
+singleton ServiceMedia               1.0 ServiceMedia.qml
+singleton ServiceNetwork             1.0 ServiceNetwork.qml
+singleton ServiceNotifications       1.0 ServiceNotifications.qml
+singleton ServiceOSD                 1.0 ServiceOSD.qml
+singleton ServicePower               1.0 ServicePower.qml
+singleton ServiceRegion              1.0 ServiceRegion.qml
+singleton ServiceStorage             1.0 ServiceStorage.qml
+singleton ServiceSystem              1.0 ServiceSystem.qml
+singleton ServiceUpdate              1.0 ServiceUpdate.qml
+singleton ServiceUser                1.0 ServiceUser.qml
+singleton ServiceWindowActions       1.0 ServiceWindowActions.qml

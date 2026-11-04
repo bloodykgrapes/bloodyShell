@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+cd "$(dirname "$0")/../assets/icons"
+python3 - <<'PY'
+from pathlib import Path
+import xml.etree.ElementTree as E
+
+E.register_namespace('', 'http://www.w3.org/2000/svg')
+target = Path('dark')
+target.mkdir(exist_ok=True)
+for source in sorted(Path('light').glob('*.svg')):
+    icon = E.parse(source).getroot()
+    for element in icon.iter():
+        for attribute in ('fill', 'stroke'):
+            if attribute in element.attrib and element.get(attribute) not in ('none', 'transparent'):
+                element.set(attribute, '#212121')
+    (target / source.name).write_text(E.tostring(icon, encoding='unicode') + '\n')
+print(f'{len(list(target.glob("*.svg")))} icons → assets/icons/dark')
+PY

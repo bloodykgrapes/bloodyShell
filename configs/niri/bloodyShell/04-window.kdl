@@ -1,0 +1,46 @@
+window-rule {
+    open-maximized false
+    open-maximized-to-edges false
+
+    geometry-corner-radius 16
+    clip-to-geometry true
+    draw-border-with-background false
+}
+
+window-rule {
+    match app-id=r#"(firefox|zen)$"#
+    match title="^Picture-in-Picture$"
+
+    open-floating true
+    opacity 1.0
+
+    default-floating-position x=32 y=32 relative-to="bottom-right"
+}
+
+window-rule {
+    match app-id=r#"^xdg-desktop-portal-gtk$"#
+    match title="^(Open|Select|Save)\b"
+
+    open-floating true
+    open-focused true
+
+    default-window-height { proportion 0.55; }
+    default-column-width { proportion 0.45; }
+    default-floating-position x=32 y=32 relative-to="top"
+}
+
+window-rule {
+    match app-id=r#"^org\.keepassxc\.KeePassXC$"#
+    match app-id=r#"^org\.gnome\.World\.Secrets$"#
+
+    block-out-from "screen-capture"
+}
+
+window-rule {
+    match app-id=r#"^org\.gnome\.Nautilus$"#
+
+    background-effect {
+        xray true
+        blur true
+    }
+}

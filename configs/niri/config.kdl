@@ -1,0 +1,10 @@
+include "bloodyShell/01-input.kdl"
+include "bloodyShell/02-output.kdl"
+include "bloodyShell/03-layout.kdl"
+include "bloodyShell/04-window.kdl"
+include "bloodyShell/05-layer.kdl"
+include "bloodyShell/06-binds.kdl"
+include "bloodyShell/07-environment.kdl"
+include "bloodyShell/08-appearance.kdl"
+
+include "bloodyShell/09-alt-tab.kdl"

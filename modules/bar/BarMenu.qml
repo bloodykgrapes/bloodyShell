@@ -1,0 +1,124 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+
+import "../components/bar"
+import "../core"
+
+Item
+{
+    id: barMenu
+
+    property bool   active: false
+    property string menu: ""
+
+    readonly property bool horizontal: Config.barSide === Enums.EdgeTop || Config.barSide === Enums.EdgeBottom
+    property real origin: 0
+    property real center: (horizontal ? width : height) / 2
+
+    function alongPos(size) { return Math.round(center - size / 2) - origin }
+
+    readonly property real contentHeight: front.item ? front.item.implicitHeight : 0
+    readonly property real contentWidth: front.item ? front.item.implicitWidth : 0
+
+    property bool   pending: false
+    property bool   useB: false
+    property string url: ""
+    readonly property var front: useB ? slotB : slotA
+    readonly property var idle:  useB ? slotA : slotB
+
+    MenuSlot
+    {
+        id: slotA
+        x: barMenu.horizontal ? barMenu.alongPos(width) : (Config.barSide === Enums.EdgeRight ? barMenu.width - width : 0)
+        y: barMenu.horizontal ? (Config.barSide === Enums.EdgeBottom ? barMenu.height - height : 0) : barMenu.alongPos(height)
+        enabled: barMenu.front === slotA && barMenu.active
+        z: barMenu.front === slotA ? 1 : 0
+    }
+
+    MenuSlot
+    {
+        id: slotB
+        x: barMenu.horizontal ? barMenu.alongPos(width) : (Config.barSide === Enums.EdgeRight ? barMenu.width - width : 0)
+        y: barMenu.horizontal ? (Config.barSide === Enums.EdgeBottom ? barMenu.height - height : 0) : barMenu.alongPos(height)
+        enabled: barMenu.front === slotB && barMenu.active
+        z: barMenu.front === slotB ? 1 : 0
+    }
+
+    function sync()
+    {
+        if (Config.debug) console.log("[menu] sync shown=" + active + " url=" + menu + " shownUrl=" + url);
+
+        const target = active ? menu : "";
+        if (target === "")
+        {
+            slotA.shown = false;
+            slotB.shown = false;
+            if (url !== "") clearTimer.restart();
+            return;
+        }
+
+        clearTimer.stop();
+
+        if (target === url) { front.shown = true; return }
+
+        if (url === "")
+        {
+            useB = false;
+            url = target;
+            slotA.source = target;
+            slotA.shown = true;
+        }
+        else morph(target);
+    }
+
+    function morph(target)
+    {
+        const outgoing = front;
+
+        idle.source = target;
+        useB = !useB;
+
+        front.shown = true;
+        outgoing.shown = false;
+        url = target;
+
+        settle.restart();
+    }
+
+    function schedule()
+    {
+        if (pending) return;
+        pending = true;
+
+        Qt.callLater(function()
+        {
+            pending = false;
+            sync();
+        });
+    }
+
+    onActiveChanged:       schedule()
+    onMenuChanged:         schedule()
+    Component.onCompleted: schedule()
+
+    Timer
+    {
+        id: settle
+        interval: 300
+        onTriggered: barMenu.idle.source = ""
+    }
+    Timer
+    {
+        id: clearTimer
+        interval: 340
+        onTriggered:
+        {
+            if (barMenu.active) return;
+            slotA.source = "";
+            slotB.source = "";
+            barMenu.url = "";
+            barMenu.useB = false;
+        }
+    }
+}

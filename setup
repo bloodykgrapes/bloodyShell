@@ -1,0 +1,984 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly REPO="bloodykgrapes/bloodyShell"
+readonly NAME="bloodyShell"
+readonly CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+readonly TARGET="$CONFIG_HOME/quickshell/$NAME"
+readonly BACKUP_ROOT="$HOME/$NAME.bak"
+readonly STATE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/$NAME"
+readonly STATUS_FILE="${BLOODYSHELL_STATUS:-$STATE_DIR/update.status}"
+readonly STAMP="$(date +%Y-%m-%d_%H-%M-%S)"
+readonly PACKAGE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+readonly INSTALL_EXCLUDE=("./.*" "./*.md" "./docs" "__pycache__" "*.pyc" "*.pyo")
+
+BACKED_UP=false
+
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+    B=$'\e[1m' D=$'\e[2m' R=$'\e[0m'
+    RED=$'\e[31m' GRN=$'\e[32m' YLW=$'\e[33m' BLU=$'\e[34m' MAG=$'\e[35m' CYN=$'\e[36m'
+else
+    B="" D="" R="" RED="" GRN="" YLW="" BLU="" MAG="" CYN=""
+fi
+interactive() { [[ -t 0 && -t 1 ]]; }
+use_gum() { interactive && command -v gum > /dev/null; }
+
+gum_choose()
+{
+    gum choose \
+        --cursor "› " \
+        --cursor.foreground 0 --cursor.background 6 --cursor.bold \
+        --selected.foreground 0 --selected.background 6 --selected.bold \
+        --header.foreground 6 --header.bold \
+        --cursor-prefix "[ ] " --selected-prefix "[✓] " --unselected-prefix "[ ] " \
+        --padding "1 2" "$@"
+}
+
+pretty() { printf '%s' "${1/#$HOME/\~}"; }
+hl()     { printf '%s%s%s' "$CYN" "$(pretty "$1")" "$R"; }
+
+message() { printf '  %s%s%-5s%s  %s\n' "$1" "$B" "$2" "$R" "$3"; }
+info() { message "$CYN" "INFO" "$*"; }
+ok()   { message "$GRN" "DONE" "$*"; }
+warn() { message "$YLW" "NOTE" "$*" >&2; }
+die()  { message "$RED" "ERROR" "$*" >&2; status "failed $*"; exit 1; }
+
+rule()
+{
+    local width="${COLUMNS:-80}"
+    [[ "$width" =~ ^[0-9]+$ ]] || width=80
+    width=$((width > 76 ? 72 : width > 8 ? width - 4 : 4))
+    printf '  %s' "$D"
+    printf '─%.0s' $(seq "$width")
+    printf '%s\n' "$R"
+}
+
+section() { printf '\n  %s%s%s%s\n' "$CYN" "$B" "$1" "$R"; rule; }
+detail() { printf '    %s%-10s%s %s\n' "$D" "$1" "$R" "$2"; }
+
+pad_choices()
+{
+    local -n rows="$1"
+    local width=0 row i
+    for row in "${rows[@]}"; do (( ${#row} > width )) && width=${#row}; done
+    for i in "${!rows[@]}"; do printf -v 'rows[i]' ' %-*s ' "$width" "${rows[$i]}"; done
+    return 0
+}
+
+STEP=0 STEPS=0
+steps() { STEP=0; STEPS="$1"; }
+step()
+{
+    local i
+    STEP=$((STEP + 1))
+    printf '\n  %s%s%02d / %02d%s  %s%s%s\n' "$CYN" "$B" "$STEP" "$STEPS" "$R" "$B" "$*" "$R"
+    printf '  '
+    for ((i=1; i<=STEPS; i++)); do
+        if (( i <= STEP )); then printf '%s━━━━' "$CYN"; else printf '%s────' "$D"; fi
+        (( i < STEPS )) && printf ' '
+    done
+    printf '%s\n\n' "$R"
+    status "step $STEP/$STEPS $*"
+}
+
+package_version() { [[ -f "$PACKAGE/version" ]] && tr -d '[:space:]' < "$PACKAGE/version" || echo "?"; }
+installed_version() { [[ -f "$TARGET/version" ]] && tr -d '[:space:]' < "$TARGET/version" || echo "0.0.0"; }
+
+banner()
+{
+    local installed="Not installed"
+    [[ -f "$TARGET/version" ]] && installed="$(installed_version)"
+    printf '\n  %s%s◆  %s%s  %sSetup%s\n' "$CYN" "$B" "$NAME" "$R" "$D" "$R"
+    rule
+    detail "Package" "$(package_version)"
+    detail "Installed" "$installed"
+    printf '\n'
+}
+
+finish()
+{
+    section "$1"
+    detail "Version" "$(installed_version)"
+    detail "Shell" "$(hl "$TARGET")"
+    if $BACKED_UP; then detail "Backup" "$(hl "$BACKUP_ROOT/$STAMP")"; fi
+    detail "Run" "$(hl "qs -c $NAME")"
+    printf '\n'
+}
+
+ask()
+{
+    interactive || return 1
+
+    local default="${2:-y}" hint answer
+    if use_gum; then
+        local initial="No"
+        [[ "$default" == "y" ]] && initial="Yes"
+        if answer="$(gum_choose --header "$1" --selected "$initial" -- Yes No)"; then
+            [[ "$answer" == "Yes" ]]
+            return
+        else
+            local result=$?
+            [[ $result -eq 130 ]] && exit 130
+            return 1
+        fi
+    fi
+    [[ "$default" == "y" ]] && hint="Y/n" || hint="y/N"
+    while true; do
+        printf '  %s%s?%s %s%s%s %s[%s]%s\n' "$BLU" "$B" "$R" "$B" "$1" "$R" "$D" "$hint" "$R"
+        read -r -p $'\n'"  ${BLU}${B}›${R} " answer || return 1
+        answer="${answer,,}"
+        [[ -z "$answer" ]] && answer="$default"
+        case "$answer" in
+            y|yes) return 0 ;;
+            n|no)  return 1 ;;
+            *)     warn "Answer y or n" ;;
+        esac
+    done
+}
+
+CHOICE=0
+choose()
+{
+    local title="$1"; shift
+    local items=("$@") n="$#"
+
+    CHOICE=0
+    if use_gum; then
+        local display=() item label about chosen width=0
+        for item in "${items[@]}"; do
+            label="${item%%|*}"
+            (( ${#label} > width )) && width=${#label}
+        done
+        for item in "${items[@]}"; do
+            label="${item%%|*}"
+            about=""
+            [[ "$item" == *"|"* ]] && about="${item#*|}"
+            display+=("$(printf '%-*s  %s' "$width" "$label" "$about")")
+        done
+        display+=("Quit")
+        pad_choices display
+        if chosen="$(gum_choose --header "$title" -- "${display[@]}")"; then
+            for i in "${!display[@]}"; do
+                [[ "$chosen" == "${display[$i]}" ]] && { (( i < n )) && CHOICE=$((i + 1)); break; }
+            done
+        fi
+        return 0
+    fi
+
+    section "$title"
+    for i in $(seq "$n"); do
+        local item="${items[$((i - 1))]}"
+        local label="${item%%|*}" about=""
+        [[ "$item" == *"|"* ]] && about="${item#*|}"
+        printf '    %s%d)%s %-14s %s%s%s\n' "$CYN$B" "$i" "$R" "$label" "$D" "$about" "$R"
+    done
+    printf '    %s0)%s %sQuit%s\n' "$D" "$R" "$D" "$R"
+
+    local answer
+    while true; do
+        read -r -p $'\n'"  ${BLU}${B}›${R} " answer || { CHOICE=0; return; }
+        if [[ "$answer" =~ ^[0-9]+$ ]] && (( answer >= 0 && answer <= n )); then
+            CHOICE="$answer"
+            return
+        fi
+        warn "Enter a number from 0 to $n"
+    done
+}
+
+SELECTED=()
+choose_many()
+{
+    local title="$1"; shift
+    local defaults=1
+    if [[ "${1:-}" == --none ]]; then defaults=0; shift; fi
+    local items=("$@") n="$#" marks=() width=12
+    for item in "${items[@]}"; do marks+=("$defaults"); local l="${item%%|*}"; (( ${#l} > width )) && width=${#l}; done
+
+    if use_gum; then
+        local display=() item label about chosen line
+        SELECTED=()
+        for item in "${items[@]}"; do
+            label="${item%%|*}"
+            about=""
+            [[ "$item" == *"|"* ]] && about="${item#*|}"
+            display+=("$(printf '%-*s  %s' "$width" "$label" "$about")")
+        done
+        pad_choices display
+        local initial=""
+        [[ "$defaults" == 0 ]] || initial='*'
+        if chosen="$(gum_choose --no-limit --ordered --selected "$initial" --header "$title · X toggle · Enter continue" -- "${display[@]}")"; then
+            while IFS= read -r line; do
+                for i in "${!display[@]}"; do
+                    [[ "$line" == "${display[$i]}" ]] && { SELECTED+=("${items[$i]%%|*}"); break; }
+                done
+            done <<< "$chosen"
+        else
+            local result=$?
+            [[ $result -eq 130 ]] && exit 130
+        fi
+        return 0
+    fi
+
+    if interactive; then
+        local answer
+        while true; do
+            section "$title"
+            printf '  %snumbers toggle · a all · n none · Enter continue%s\n\n' "$D" "$R"
+            for i in $(seq "$n"); do
+                local item="${items[$((i - 1))]}"
+                local label="${item%%|*}" about="" box
+                [[ "$item" == *"|"* ]] && about="${item#*|}"
+                if [[ "${marks[$((i - 1))]}" == 1 ]]; then box="${GRN}${B}[✓]${R}"; else box="${D}[ ]${R}"; fi
+                printf '    %s %s%2d)%s %-*s  %s%s%s\n' "$box" "$CYN$B" "$i" "$R" "$width" "$label" "$D" "$about" "$R"
+            done
+
+            read -r -p $'\n'"  ${BLU}${B}›${R} " answer || break
+            [[ -z "$answer" ]] && break
+            case "${answer,,}" in
+                a) for i in "${!marks[@]}"; do marks[i]=1; done; continue ;;
+                n) for i in "${!marks[@]}"; do marks[i]=0; done; continue ;;
+            esac
+            for word in ${answer//,/ }; do
+                if [[ "$word" =~ ^[0-9]+$ ]] && (( word >= 1 && word <= n )); then
+                    marks[word - 1]=$(( 1 - marks[word - 1] ))
+                else
+                    warn "No item $word"
+                fi
+            done
+        done
+    fi
+
+    SELECTED=()
+    for i in $(seq "$n"); do
+        [[ "${marks[$((i - 1))]}" == 1 ]] && SELECTED+=("${items[$((i - 1))]%%|*}")
+    done
+    return 0
+}
+
+STATUS_ENABLED=false
+status() { if $STATUS_ENABLED; then mkdir -p "$(dirname "$STATUS_FILE")"; printf '%s\n' "$*" > "$STATUS_FILE"; fi; }
+
+backup()
+{
+    mkdir -p "$BACKUP_ROOT/$STAMP"
+    mv "$1" "$BACKUP_ROOT/$STAMP/$2"
+    BACKED_UP=true
+}
+
+version_newer()
+{
+    local a="${1#v}" b="${2#v}"
+    [[ "$a" == "$b" ]] && return 1
+
+    local a_core="${a%%-*}" b_core="${b%%-*}" a_pre="" b_pre=""
+    [[ "$a" == *-* ]] && a_pre="${a#*-}"
+    [[ "$b" == *-* ]] && b_pre="${b#*-}"
+
+    if [[ "$a_core" != "$b_core" ]]; then
+        [[ "$(printf '%s\n%s\n' "$a_core" "$b_core" | sort -V | tail -n1)" == "$a_core" ]]
+        return
+    fi
+    [[ -z "$a_pre" ]] && return 0
+    [[ -z "$b_pre" ]] && return 1
+    [[ "$(printf '%s\n%s\n' "$a_pre" "$b_pre" | sort -V | tail -n1)" == "$a_pre" ]]
+}
+
+shell_running() { pgrep -f -- "qs .*-c $NAME( |$)" > /dev/null 2>&1 || pgrep -f -- "quickshell .*-c $NAME( |$)" > /dev/null 2>&1; }
+
+restart_shell()
+{
+    [[ -n "${WAYLAND_DISPLAY:-}" ]] || { warn "No Wayland session: the shell will start at next login"; return 0; }
+
+    if shell_running; then
+        qs kill -c "$NAME" > /dev/null 2>&1 || true
+        for _ in $(seq 20); do shell_running || break; sleep 0.1; done
+        setsid -f qs -n -d -c "$NAME" > /dev/null 2>&1 < /dev/null && ok "Shell restarted" || warn "Could not start: $(hl "qs -c $NAME")"
+    else
+        setsid -f qs -n -d -c "$NAME" > /dev/null 2>&1 < /dev/null && ok "Shell started" || warn "Could not start: $(hl "qs -c $NAME")"
+    fi
+}
+
+apply_shell()
+{
+    local package="${1:-$PACKAGE}"
+    [[ -f "$package/shell.qml" && -f "$package/version" ]] || die "No shell in $(pretty "$package") (shell.qml, version)"
+    [[ "$package" != "$TARGET" ]] || die "This is the installed copy: run setup from an unpacked package, or use: setup update"
+
+    local stage="$CONFIG_HOME/quickshell/.$NAME.new"
+    mkdir -p "$CONFIG_HOME/quickshell"
+    rm -rf "$stage"
+    mkdir -p "$stage"
+    local excludes=()
+    for pattern in "${INSTALL_EXCLUDE[@]}"; do excludes+=("--exclude=$pattern"); done
+    tar -C "$package" --no-wildcards-match-slash "${excludes[@]}" -cf - . | tar -C "$stage" -xf -
+
+    if [[ -e "$TARGET" ]]; then
+        backup "$TARGET" shell
+        info "Previous version → $(hl "$BACKUP_ROOT/$STAMP/shell")"
+    fi
+    mv "$stage" "$TARGET"
+    chmod +x "$TARGET/setup"
+    if [[ -f "$TARGET/scripts/build-keyboard-monitor" ]] && command -v python3 > /dev/null; then
+        python3 "$TARGET/scripts/build-keyboard-monitor" > /dev/null || warn "Alt+Tab modifier support needs Qt 6 development tools; see the installation guide in the source repository"
+    fi
+    ok "$NAME $(tr -d '[:space:]' < "$package/version") → $(hl "$TARGET")"
+}
+
+apply_configs()
+{
+    local source="$PACKAGE/configs"
+    [[ -d "$source" ]] || { warn "No configs/ in the package: app configs skipped"; return 0; }
+
+    local programs=("$@")
+    if [[ ${#programs[@]} -eq 0 ]]; then
+        local items=()
+        for dir in "$source"/*/; do
+            [[ -d "$dir" ]] || continue
+            local program; program="$(basename "$dir")"
+            if [[ -e "$CONFIG_HOME/$program" ]]; then items+=("$program|replaces $(pretty "$CONFIG_HOME/$program") (backed up)")
+            else items+=("$program|new $(pretty "$CONFIG_HOME/$program")"); fi
+        done
+        [[ ${#items[@]} -gt 0 ]] || return 0
+
+        choose_many "App configs" "${items[@]}"
+        programs=("${SELECTED[@]+"${SELECTED[@]}"}")
+        [[ ${#programs[@]} -gt 0 ]] || { info "App configs skipped"; return 0; }
+    fi
+
+    ask "Replace configs for ${programs[*]}?" y || { info "App configs skipped"; return 0; }
+
+    for program in "${programs[@]}"; do
+        [[ -d "$source/$program" ]] || { warn "No config for $program in the package"; continue; }
+
+        local dest="$CONFIG_HOME/$program"
+        [[ -e "$dest" ]] && backup "$dest" "$program"
+        mkdir -p "$CONFIG_HOME"
+        cp -a "$source/$program" "$dest"
+        ok "$program → $(hl "$dest")"
+    done
+}
+
+readonly DEPENDENCIES=(
+    "required|qs|Runs the shell|quickshell|copr:errornointernet/quickshell quickshell|-"
+    "required|niri|Compositor|niri|niri|niri"
+    "required|awww|Wallpapers|awww|-|-"
+    "required|curl|Updates|curl|curl|curl"
+    "required|tar|Updates|tar|tar|tar"
+    "required|nmcli|Network|networkmanager|NetworkManager|network-manager"
+    "required|wpctl|Sound|pipewire wireplumber|pipewire wireplumber|pipewire wireplumber"
+    "required|upower|Battery|upower|upower|upower"
+    "required|findmnt|Storage discovery|util-linux|util-linux|util-linux"
+    "optional|udisksctl|Mount disks once|udisks2|udisks2|udisks2"
+    "optional|pkexec|Administrator authorization|polkit|polkit|pkexec"
+    "required|python3|Shell helpers and greeter|python|python3|python3"
+    "required|gsettings|App theme|glib2|glib2|libglib2.0-bin"
+    "optional|brightnessctl|Screen brightness|brightnessctl|brightnessctl|brightnessctl"
+    "optional|bluetoothctl|Bluetooth|bluez bluez-utils|bluez|bluez"
+    "optional|wlsunset|Night light|wlsunset|wlsunset|wlsunset"
+    "optional|ffmpeg|Accent color from the wallpaper|ffmpeg|ffmpeg-free|ffmpeg"
+    "optional|lpstat|Printers|cups system-config-printer|cups system-config-printer|cups system-config-printer"
+    "optional|qt6ct|Qt apps follow the theme|qt6ct|qt6ct|qt6ct"
+    "optional|notify-send|Update notifications|libnotify|libnotify|libnotify-bin"
+    "optional|cava|Audio visualizer in the media menu|cava|cava|cava"
+    "optional|playerctl|Media keyboard shortcuts|playerctl|playerctl|playerctl"
+    "optional|btop|System monitor keyboard shortcut|btop|btop|btop"
+    "optional|nautilus|File manager keyboard shortcut|nautilus|nautilus|nautilus"
+    "optional|kitty|Terminal (its config is in App configs)|kitty|kitty|kitty"
+    "optional|fastfetch|System info (its config is in App configs)|fastfetch|fastfetch|fastfetch"
+    "optional|gum|Arrow-key installer menus|gum|gum|gum"
+)
+
+
+readonly APPLICATIONS=(
+    "Web browser|firefox|Firefox|General-purpose web browser|firefox|firefox|firefox-esr"
+    "Web browser|chromium|Chromium|Chromium-based web browser|chromium|chromium|chromium"
+    "Media player|mpv|mpv|Lightweight audio and video player|mpv|mpv|mpv"
+    "Media player|vlc|VLC|Audio and video player with a full interface|vlc|vlc|vlc"
+    "Media player|celluloid|Celluloid|Simple graphical player based on mpv|celluloid|celluloid|celluloid"
+    "Image viewer|imv|imv|Lightweight image viewer|imv|imv|imv"
+    "Image viewer|gwenview|Gwenview|Graphical image viewer|gwenview|gwenview|gwenview"
+    "Text editor|kate|Kate|Full-featured graphical editor|kate|kate|kate"
+    "Text editor|mousepad|Mousepad|Simple graphical text editor|mousepad|mousepad|mousepad"
+    "Text editor|gnome-text-editor|GNOME Text Editor|Minimal graphical editor|gnome-text-editor|gnome-text-editor|gnome-text-editor"
+)
+
+application_installed() { command -v "$1" > /dev/null; }
+
+application_packages()
+{
+    local family="$1" line="$2" category tool label description arch fedora debian
+    IFS='|' read -r category tool label description arch fedora debian <<< "$line"
+    if [[ "$family" == debian && "$(os_field ID)" == ubuntu ]]; then
+        [[ "$tool" != firefox ]] || debian=firefox
+        [[ "$tool" != chromium ]] || debian=chromium-browser
+    fi
+    dependency_packages "$family" "optional|$tool|$description|$arch|$fedora|$debian"
+}
+
+install_applications()
+{
+    interactive || { info "Optional program choices require an interactive terminal"; return 0; }
+    local family; family="$(distro_family)"
+    [[ -n "$family" ]] || { warn "Choose optional programs with your distribution's package manager"; return 0; }
+
+    local category line group tool label description packages installed
+    local chosen=() choices=() package_lines=() candidates=() all_packages=()
+    for category in "Web browser" "Media player" "Image viewer" "Text editor"; do
+        installed=""
+        local alternatives=""
+        case "$category" in
+            "Web browser") alternatives="brave brave-browser google-chrome google-chrome-stable vivaldi librewolf zen-browser" ;;
+            "Media player") alternatives="haruna parole totem dragon" ;;
+            "Image viewer") alternatives="eog loupe ristretto feh qimgv" ;;
+            "Text editor") alternatives="code codium gedit xed leafpad" ;;
+        esac
+        for tool in $alternatives; do
+            if application_installed "$tool"; then installed="$tool"; break; fi
+        done
+        if [[ -n "$installed" ]]; then info "$category: $installed is installed"; continue; fi
+        candidates=()
+        all_packages=()
+        for line in "${APPLICATIONS[@]}"; do
+            IFS='|' read -r group tool label description _ <<< "$line"
+            [[ "$group" == "$category" ]] || continue
+            if application_installed "$tool"; then installed="$label"; break; fi
+            candidates+=("$line")
+            packages="$(application_packages "$family" "$line")"
+            [[ -z "$packages" ]] || all_packages+=($packages)
+        done
+        if [[ -n "$installed" ]]; then info "$category: $installed is installed"; continue; fi
+        [[ ${#all_packages[@]} -gt 0 ]] || continue
+        query_available "$family" "${all_packages[@]}"
+        choices=("None|Skip this category")
+        package_lines=("")
+        for line in "${candidates[@]}"; do
+            IFS='|' read -r group tool label description _ <<< "$line"
+            packages="$(application_packages "$family" "$line")"
+            [[ -n "$packages" ]] && line_available "$packages" || continue
+            choices+=("$label|$description")
+            package_lines+=("$packages")
+        done
+        [[ ${#choices[@]} -gt 1 ]] || { info "$category: no matching repository packages found"; continue; }
+        choose "$category · optional" "${choices[@]}"
+        [[ "$CHOICE" -ne 0 ]] || { info "Optional program selection cancelled"; return 0; }
+        if (( CHOICE > 1 )); then chosen+=(${package_lines[$((CHOICE - 1))]}); fi
+    done
+    [[ ${#chosen[@]} -gt 0 ]] || { info "No extra programs selected"; return 0; }
+    if ask "Install selected programs: ${chosen[*]}? (needs sudo)" y; then
+        install_packages "$family" "${chosen[@]}" || { warn "Some selected programs could not be installed"; return 0; }
+        ok "Selected programs installed"
+    else
+        info "Optional program installation skipped"
+    fi
+}
+
+readonly MANUAL_HINTS=(
+    "qs|https://quickshell.org/docs/guide/install-setup"
+    "niri|https://github.com/YaLTeR/niri/wiki/Getting-Started"
+    "awww|https://codeberg.org/LGFae/awww"
+)
+
+os_field() { [[ -f /etc/os-release ]] && sed -n "s/^$1=//p" /etc/os-release | head -n1 | tr -d '"' || true; }
+
+distro_family()
+{
+    case " $(os_field ID) $(os_field ID_LIKE) " in
+        *" arch "*)                 echo arch ;;
+        *" fedora "*|*" rhel "*)    echo fedora ;;
+        *" debian "*|*" ubuntu "*)  echo debian ;;
+        *)                          echo "" ;;
+    esac
+}
+
+dependency_packages()
+{
+    local family="$1" line="$2" field
+    IFS='|' read -r _ _ _ arch fedora debian <<< "$line"
+    case "$family" in
+        arch)   field="$arch" ;;
+        fedora) field="$fedora" ;;
+        debian) field="$debian" ;;
+        *)      field="-" ;;
+    esac
+    [[ "$field" == "-" ]] && echo "" || echo "$field"
+}
+
+AVAILABLE=" "
+query_available()
+{
+    local family="$1"; shift
+    case "$family" in
+        arch)   AVAILABLE=" $* " ;;
+        fedora) AVAILABLE=" $(dnf repoquery -q --qf '%{name}\n' "$@" 2> /dev/null | sort -u | tr '\n' ' ') " ;;
+        debian) AVAILABLE=" "; for p in "$@"; do apt-cache show "$p" > /dev/null 2>&1 && AVAILABLE+="$p "; done ;;
+    esac
+}
+line_available()
+{
+    local copr=false
+    for p in $1; do
+        [[ "$p" == copr:* ]] && { copr=true; continue; }
+        $copr || [[ "$AVAILABLE" == *" $p "* ]] || return 1
+    done
+}
+
+manual_hint() { local h; for h in "${MANUAL_HINTS[@]}"; do [[ "${h%%|*}" == "$1" ]] && { echo "${h#*|}"; return; }; done; }
+
+aur_helper() { command -v paru > /dev/null && { echo paru; return; }; command -v yay > /dev/null && echo yay; }
+
+ensure_aur_helper()
+{
+    [[ -n "$(aur_helper)" ]] && return 0
+    choose "Some packages are in the AUR only: install an AUR helper?" "paru|recommended" "yay|"
+    case "$CHOICE" in
+        1) local helper=paru ;;
+        2) local helper=yay ;;
+        *) return 1 ;;
+    esac
+    sudo pacman -S --needed base-devel git || return 1
+    local tmp; tmp="$(mktemp -d)"
+    git clone --depth 1 "https://aur.archlinux.org/$helper-bin.git" "$tmp/$helper" && (cd "$tmp/$helper" && makepkg -si --noconfirm)
+    local result=$?
+    rm -rf "$tmp"
+    [[ $result -eq 0 ]] && ok "$helper installed" || { warn "Could not install $helper"; return 1; }
+}
+
+install_packages()
+{
+    local family="$1"; shift
+    [[ $# -gt 0 ]] || return 0
+    case "$family" in
+        arch)
+            local repo=() aur=()
+            for p in "$@"; do if pacman -Si "$p" > /dev/null 2>&1; then repo+=("$p"); else aur+=("$p"); fi; done
+            [[ ${#repo[@]} -eq 0 ]] || sudo pacman -S --needed "${repo[@]}" || return 1
+            if [[ ${#aur[@]} -gt 0 ]]; then
+                ensure_aur_helper || { warn "Not installed (AUR): ${aur[*]}"; return 1; }
+                "$(aur_helper)" -S --needed "${aur[@]}" || return 1
+            fi ;;
+        fedora)
+            local plain=() coprs=()
+            for p in "$@"; do if [[ "$p" == copr:* ]]; then coprs+=("${p#copr:}"); else plain+=("$p"); fi; done
+            for c in "${coprs[@]+"${coprs[@]}"}"; do sudo dnf copr enable -y "$c" || return 1; done
+            [[ ${#plain[@]} -eq 0 ]] || sudo dnf install -y "${plain[@]}" || return 1 ;;
+        debian)
+            sudo apt-get update && sudo apt-get install -y "$@" || return 1 ;;
+        *) return 1 ;;
+    esac
+}
+
+install_dependencies()
+{
+    local family; family="$(distro_family)"
+    local manager=""
+    case "$family" in arch) manager=pacman ;; fedora) manager=dnf ;; debian) manager=apt ;; esac
+    [[ -n "$family" ]] && info "Distribution: $(os_field PRETTY_NAME) · $manager" \
+                       || warn "Unknown distribution: nothing is installed, only checked"
+
+    local missing=() wanted=()
+    for line in "${DEPENDENCIES[@]}"; do
+        IFS='|' read -r _ tool _ <<< "$line"
+        command -v "$tool" > /dev/null && continue
+        missing+=("$line")
+        for p in $(dependency_packages "$family" "$line"); do [[ "$p" == copr:* ]] || wanted+=("$p"); done
+    done
+    [[ ${#wanted[@]} -eq 0 ]] || query_available "$family" "${wanted[@]}"
+
+    local install=() manual=() have=() optional=() optionalLines=()
+    for line in "${DEPENDENCIES[@]}"; do
+        IFS='|' read -r kind tool feature arch _ <<< "$line"
+        if command -v "$tool" > /dev/null; then have+=("$tool"); continue; fi
+        local packages; packages="$(dependency_packages "$family" "$line")"
+        [[ -n "$packages" ]] && ! line_available "$packages" && packages=""
+        if [[ "$kind" == required ]]; then
+            if [[ -n "$packages" ]]; then install+=($packages); else manual+=("$tool|${arch%% *}"); fi
+        elif [[ -n "$packages" ]]; then
+            optional+=("${packages// /, }|$feature")
+            optionalLines+=("$packages")
+        fi
+    done
+
+    [[ ${#have[@]} -eq 0 ]] || ok "Installed: ${have[*]}"
+
+    if [[ ${#install[@]} -gt 0 ]]; then
+        section "Required packages"
+        for p in "${install[@]}"; do
+            [[ "$p" == copr:* ]] && { printf '    %s+%s Repository  %s\n' "$D" "$R" "${p#copr:}"; continue; }
+            printf '    %s•%s %s\n' "$CYN$B" "$R" "$p"
+        done
+    fi
+
+    local chosen=()
+    if [[ ${#optional[@]} -gt 0 ]] && interactive; then
+        choose_many "Optional packages" --none "${optional[@]}"
+        for i in "${!optional[@]}"; do
+            local label="${optional[$i]%%|*}"
+            for s in "${SELECTED[@]+"${SELECTED[@]}"}"; do [[ "$s" == "$label" ]] && chosen+=(${optionalLines[$i]}); done
+        done
+    fi
+
+    local all=("${install[@]+"${install[@]}"}" "${chosen[@]+"${chosen[@]}"}")
+    local count=0; for p in "${all[@]+"${all[@]}"}"; do [[ "$p" == copr:* ]] || count=$((count + 1)); done
+    if [[ ${#all[@]} -gt 0 ]]; then
+        if ! interactive; then
+            warn "Not installed (run ./setup install in a terminal): ${all[*]}"
+        elif [[ -z "$family" ]]; then
+            warn "Install by hand: ${all[*]}"
+        elif ask "Install $count packages with $manager? (needs sudo)" y; then
+            install_packages "$family" "${all[@]}" && ok "Packages installed" || warn "Some packages were not installed"
+        else
+            info "Packages skipped"
+        fi
+    fi
+
+    for entry in "${manual[@]+"${manual[@]}"}"; do
+        local hint; hint="$(manual_hint "${entry%%|*}")"
+        warn "${entry#*|} is not in the repositories here: install it by hand${hint:+ — $(hl "$hint")}"
+    done
+
+    command -v tar > /dev/null || die "tar is needed to install the shell"
+    command -v qs > /dev/null || warn "Quickshell is missing: the shell is installed, but won't start until it is"
+    install_native_support "$family"
+}
+
+
+install_native_support()
+{
+    if command -v c++ > /dev/null && command -v pkg-config > /dev/null && pkg-config --exists Qt6Quick; then return 0; fi
+    local family="$1" packages=()
+    case "$family" in
+        arch) packages=(gcc pkgconf qt6-base qt6-declarative) ;;
+        fedora) packages=(gcc-c++ pkgconf-pkg-config qt6-qtbase-devel qt6-qtdeclarative-devel) ;;
+        debian) packages=(g++ pkg-config qt6-base-dev qt6-base-dev-tools qt6-declarative-dev) ;;
+        *) warn "Install a C++ compiler and Qt 6 Quick development tools for fast Alt+Tab release detection"; return 0 ;;
+    esac
+    if interactive && ask "Install matching Qt development tools for reliable Alt+Tab? (needs sudo)" y; then
+        install_packages "$family" "${packages[@]}" || warn "Native Alt+Tab support could not be prepared"
+    else
+        warn "Native Alt+Tab build support skipped: ${packages[*]}"
+    fi
+}
+
+readonly GREETER_SHELL="/usr/share/$NAME"
+readonly GREETER_STATE="/var/lib/$NAME"
+readonly GREETD_CONF="/etc/greetd/config.toml"
+readonly GREETD_PAM="/etc/pam.d/greetd"
+
+display_scale()
+{
+    local scale=""
+    command -v niri > /dev/null && scale="$(niri msg -j outputs 2>/dev/null | grep -o '"scale": *[0-9.]*' | head -n1 | grep -o '[0-9.]*$')"
+    [[ "$scale" =~ ^[0-9]+([.][0-9]+)?$ ]] && echo "$scale" || echo 1
+}
+
+apply_keyring()
+{
+    [[ -f "$GREETD_PAM" ]] || { warn "No $GREETD_PAM: install greetd first"; return 1; }
+    local module=""
+    local candidate
+    for candidate in /usr/lib/security/pam_gnome_keyring.so /usr/lib64/security/pam_gnome_keyring.so /lib/security/pam_gnome_keyring.so /usr/lib/*/security/pam_gnome_keyring.so; do
+        [[ -f "$candidate" ]] && { module="$candidate"; break; }
+    done
+    [[ -n "$module" ]] || { warn "Install gnome-keyring and its PAM module, then run ./setup greetd"; return 0; }
+    local stage; stage="$(mktemp)"
+    if ! awk -f "$PACKAGE/scripts/greetd-keyring.awk" "$GREETD_PAM" > "$stage"; then
+        rm -f "$stage"
+        return 1
+    fi
+    if cmp -s "$stage" "$GREETD_PAM"; then
+        rm -f "$stage"
+        ok "Keyring PAM integration is already configured"
+        return 0
+    fi
+    if ! sudo -v; then rm -f "$stage"; return 1; fi
+    sudo cp -a "$GREETD_PAM" "$GREETD_PAM.bak-$STAMP"
+    sudo tee "$GREETD_PAM" < "$stage" > /dev/null
+    rm -f "$stage"
+    ok "Keyring unlock configured for the next login (backup: $GREETD_PAM.bak-$STAMP)"
+}
+
+apply_greeter()
+{
+    if ! interactive && ! sudo -n true 2> /dev/null; then warn "Needs sudo in a terminal: login screen skipped"; return 0; fi
+
+    [[ -s "$PACKAGE/greeter/shell.qml" && -s "$PACKAGE/greeter/Widgets.qml" && -s "$PACKAGE/greeter/Theme.qml" ]] || die "Greeter files are missing from this package"
+    local family; family="$(distro_family)"
+    local missing=()
+    command -v python3 > /dev/null || missing+=($(dependency_packages "$family" "required|python3|Greeter|python|python3|python3"))
+    command -v greetd > /dev/null || missing+=(greetd)
+    command -v cage > /dev/null || missing+=(cage)
+    command -v qs > /dev/null || missing+=($(dependency_packages "$family" "${DEPENDENCIES[0]}"))
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        if [[ -n "$family" ]] && ask "Install ${missing[*]}? (needs sudo)" y; then
+            install_packages "$family" "${missing[@]}" || { warn "Could not install ${missing[*]}: login screen skipped"; return 0; }
+        else
+            warn "Needs ${missing[*]}: login screen skipped"
+            return 0
+        fi
+    fi
+    getent passwd greeter > /dev/null || { warn "No 'greeter' user (it comes with the greetd package): login screen skipped"; return 0; }
+
+    sudo -v || { warn "No sudo: login screen skipped"; return 0; }
+
+    local stage; stage="$(mktemp -d)"
+    cp -a "$PACKAGE/greeter/." "$stage/"
+    if [[ -e "$GREETER_SHELL" ]]; then
+        local greeter_backup="$GREETER_SHELL.bak-$STAMP"
+        [[ ! -e "$greeter_backup" ]] || greeter_backup="$greeter_backup-$RANDOM"
+        sudo mv "$GREETER_SHELL" "$greeter_backup"
+    fi
+    sudo mkdir -p "$GREETER_SHELL"
+    sudo cp -a "$stage/." "$GREETER_SHELL/"
+    sudo chown -R root:root "$GREETER_SHELL"
+    sudo chmod -R a+rX,go-w "$GREETER_SHELL"
+    rm -rf "$stage"
+    ok "Shell for the login screen → $(hl "$GREETER_SHELL")"
+
+    sudo install -d -m 2775 -o "$USER" -g greeter "$GREETER_STATE"
+    python3 "$PACKAGE/greeter/export-settings" "$CONFIG_HOME/$NAME/settings.json" "$GREETER_STATE"
+    ok "Greeter appearance exported → $(hl "$GREETER_STATE")"
+
+    local scale; scale="$(display_scale)"
+    if [[ -f "$GREETD_CONF" ]] && ! grep -q "$NAME" "$GREETD_CONF"; then
+        sudo cp -a "$GREETD_CONF" "$GREETD_CONF.bak-$STAMP"
+        info "Old greetd config → $(hl "$GREETD_CONF.bak-$STAMP")"
+    fi
+    sudo mkdir -p "$(dirname "$GREETD_CONF")"
+    {
+        printf '[terminal]\nvt = 1\n\n'
+        printf '[default_session]\n'
+        printf 'command = "sh -c '"'"'setterm --term linux --clear all --cursor off 2> /dev/null; exec systemd-cat -t %s-greeter cage -s -d -- env BLOODYSHELL_CONFIG=%s QT_SCALE_FACTOR=%s XDG_CACHE_HOME=%s/cache qs -p %s/shell.qml'"'"'"\n' \
+            "$NAME" "$GREETER_STATE" "$scale" "$GREETER_STATE" "$GREETER_SHELL"
+        printf 'user = "greeter"\n'
+    } | sudo tee "$GREETD_CONF" > /dev/null
+    ok "greetd config, scale ${scale}× → $(hl "$GREETD_CONF")"
+
+    apply_keyring
+
+    if systemctl is-enabled --quiet greetd 2> /dev/null; then
+        ok "greetd is already the login screen"
+    else
+        local previous
+        previous="$(systemctl show --property=Id --value display-manager.service 2>/dev/null || true)"
+        [[ "$previous" =~ ^[A-Za-z0-9@_.-]+[.]service$ && "$previous" != greetd.service && "$previous" != display-manager.service ]] || previous=""
+        if ask "Use greetd from the next boot${previous:+ (replaces $previous)}?" y; then
+            if [[ -n "$previous" ]]; then sudo systemctl disable "$previous" || return 1; fi
+            if ! sudo systemctl enable greetd; then
+                [[ -z "$previous" ]] || sudo systemctl enable "$previous"
+                warn "Could not enable greetd; the previous display manager was restored"
+                return 1
+            fi
+            ok "Login screen: greetd (after a reboot)"
+            [[ -z "$previous" ]] || info "To go back: $(hl "sudo systemctl disable greetd && sudo systemctl enable $previous")"
+        else
+            info "Login manager unchanged. Run ./setup greetd to switch later"
+        fi
+    fi
+}
+
+latest_tag()
+{
+    local beta="$1" json
+    json="$(curl -fsSL --max-time 15 -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$REPO/releases?per_page=30")" \
+        || return 1
+
+    if command -v jq > /dev/null; then
+        jq -r --argjson beta "$beta" '[.[] | select(.draft | not) | select($beta or (.prerelease | not))][0].tag_name // empty' <<< "$json"
+        return
+    fi
+
+    tr -d '\n' <<< "$json" \
+        | grep -o '"tag_name": *"[^"]*"[^{}]*"draft": *[a-z]*, *"prerelease": *[a-z]*' \
+        | while IFS= read -r entry; do
+            local tag draft pre
+            tag="$(sed -E 's/.*"tag_name": *"([^"]*)".*/\1/' <<< "$entry")"
+            draft="$(sed -E 's/.*"draft": *([a-z]*).*/\1/' <<< "$entry")"
+            pre="$(sed -E 's/.*"prerelease": *([a-z]*).*/\1/' <<< "$entry")"
+            [[ "$draft" == "false" ]] || continue
+            [[ "$beta" == "true" || "$pre" == "false" ]] || continue
+            echo "$tag"
+            break
+        done
+}
+
+cmd_install()
+{
+    steps 6
+
+    step "Dependencies"
+    install_dependencies
+
+    step "Optional programs"
+    install_applications
+
+    step "Installing the shell"
+    apply_shell
+
+    step "App configs"
+    apply_configs
+
+    step "Login screen"
+    if ask "Set up the login screen in the shell's style (greetd, needs sudo)?" n; then apply_greeter; else info "Login screen skipped: run ./setup greetd any time"; fi
+
+    step "Starting the shell"
+    restart_shell
+
+    finish "Installation complete"
+}
+
+cmd_update()
+{
+    local beta=false tag="" force=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --beta)  beta=true ;;
+            --tag)   [[ $# -ge 2 && -n "$2" && "$2" != --* ]] || die "--tag needs a release tag"; tag="$2"; shift ;;
+            --force) force=true ;;
+            *) die "Unknown option: $1" ;;
+        esac
+        shift
+    done
+
+    banner
+    STATUS_ENABLED=true
+    status "running"
+    command -v curl > /dev/null && command -v tar > /dev/null || die "Updating needs curl and tar"
+    steps 3
+
+    step "Looking for a release"
+    if [[ -z "$tag" ]]; then
+        tag="$(latest_tag "$beta")" || die "GitHub is unreachable"
+        [[ -n "$tag" ]] || die "No releases yet"
+    fi
+    local current; current="$(installed_version)"
+    if ! $force && ! version_newer "$tag" "$current"; then
+        ok "Up to date: installed $current, latest ${tag#v}"
+        status "done $current"
+        return 0
+    fi
+    ok "${tag#v} is available (installed $current)"
+
+    local tmp; tmp="$(mktemp -d)"
+    trap "rm -rf '$tmp'" EXIT
+
+    step "Downloading ${tag#v}"
+    curl -fsSL --retry 2 --max-time 120 -o "$tmp/package.tar.gz" "https://github.com/$REPO/archive/refs/tags/$tag.tar.gz" \
+        || die "Could not download $tag"
+    mkdir "$tmp/package"
+    tar -xzf "$tmp/package.tar.gz" --strip-components=1 -C "$tmp/package" || die "Package $tag is damaged"
+
+    [[ -f "$tmp/package/setup" && -f "$tmp/package/shell.qml" && -f "$tmp/package/version" ]] || die "Package $tag has no shell in it"
+    local packaged; packaged="$(tr -d '[:space:]' < "$tmp/package/version")"
+    [[ "$packaged" == "${tag#v}" ]] || die "Package version ($packaged) doesn't match tag $tag"
+    ok "Package checked"
+
+    step "Installing ${tag#v}"
+    apply_shell "$tmp/package"
+    status "done $(installed_version)"
+    restart_shell
+    finish "Update complete"
+}
+
+cmd_greetd()
+{
+    apply_greeter
+    return 0
+}
+
+cmd_configs()
+{
+    apply_configs "$@"
+    $BACKED_UP && info "Backups → $(hl "$BACKUP_ROOT/$STAMP")"
+    return 0
+}
+
+cmd_doctor()
+{
+    command -v python3 > /dev/null || die "Doctor requires Python 3"
+    if [[ "${1:-}" != --json ]]; then banner; section "Diagnostics"; fi
+    python3 "$PACKAGE/scripts/doctor" "$@"
+}
+
+usage()
+{
+    banner
+    section "Commands"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup"                  "$R" "menu"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup install"          "$R" "install dependencies, the shell and app configs, start it"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup update [--beta]"  "$R" "download and install the latest release"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup doctor [--json]"  "$R" "check dependencies and configuration"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup configs [names]"  "$R" "re-apply app configs (kitty, fastfetch, niri…)"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup greetd"           "$R" "login screen in the shell's style (greetd, sudo)"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup help"             "$R" "show commands and options"
+    section "Update options"
+    printf '    %-22s %s\n' "--beta"        "update channel: include pre-releases"
+    printf '    %-22s %s\n' "--tag vX.Y.Z"  "install exactly this release"
+    printf '    %-22s %s\n\n' "--force"     "reinstall even if up to date"
+}
+
+menu()
+{
+    banner
+
+    local items=() actions=()
+    items+=("Install|Set up the shell, dependencies and app configs"); actions+=(install)
+    items+=("Update|Download and install a release");               actions+=(update)
+    items+=("Doctor|Check dependencies and configuration");         actions+=(doctor)
+    items+=("Configs|Apply app configuration files"); actions+=(configs)
+    items+=("Greetd|Configure the login screen · administrator access");   actions+=(greetd)
+    items+=("Help|View commands and options");                         actions+=(help)
+
+    choose "Choose an action" "${items[@]}"
+    [[ "$CHOICE" -eq 0 ]] && return 0
+
+    case "${actions[$((CHOICE - 1))]}" in
+        install) cmd_install ;;
+        update)
+            choose "Update channel" "Stable|releases only" "Beta|also pre-releases: newer, less tested"
+            case "$CHOICE" in
+                1) cmd_update ;;
+                2) cmd_update --beta ;;
+                *) return 0 ;;
+            esac ;;
+        doctor)  cmd_doctor ;;
+        configs) cmd_configs ;;
+        greetd) cmd_greetd ;;
+        help)    usage ;;
+    esac
+}
+
+main()
+{
+    if interactive; then printf '\033[2J\033[H'; fi
+
+    local command="${1:-}"
+    [[ $# -gt 0 ]] && shift
+
+    local args=("$@")
+    for arg in "${args[@]}"; do
+        case "$arg" in
+            -y|--yes) die "Unknown option: $arg" ;;
+        esac
+    done
+
+    case "$command" in
+        install|greetd|help)
+            [[ ${#args[@]} -eq 0 ]] || die "Unexpected argument for $command: ${args[0]}"
+            ;;
+    esac
+
+    case "$command" in
+        install) banner; cmd_install ;;
+        update)  cmd_update  "${args[@]+"${args[@]}"}" ;;
+        doctor)  cmd_doctor "${args[@]+"${args[@]}"}" ;;
+        configs) banner; cmd_configs "${args[@]+"${args[@]}"}" ;;
+        greetd) banner; cmd_greetd ;;
+        "")      if interactive; then menu; else usage; fi ;;
+        help) usage ;;
+        *) usage; exit 1 ;;
+    esac
+}
+
+main "$@"
