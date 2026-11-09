@@ -14,7 +14,11 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def run(base, qml, env):
     (base / "shell.qml").write_text(qml)
-    result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=8)
+    try:
+        result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=16)
+    except subprocess.TimeoutExpired as error:
+        print((error.stdout or b"").decode() + (error.stderr or b"").decode())
+        raise
     text = result.stdout + result.stderr
     print(text)
     assert result.returncode == 0 and "GREETER_PASSED" in text, text
@@ -36,7 +40,8 @@ def checks():
         export(source, base / "state")
         data = json.loads((base / "state/settings.json").read_text())
         assert "privateValue" not in data and Path(data["wallpaperCurrent"]).read_bytes() == b"test"
-        assert data["animationLevel"] == 2 and data["accentShell"] and not data["widgetClock24"]
+        assert data["animationLevel"] == 2 and not data["widgetClock24"] and data["shellLanguage"] == "ru"
+        assert "accentShell" not in data and "accentColor" not in data and "themeStyle" not in data
         source.write_text('{"themeStyle": 1}')
         export(source, base / "state")
         assert "wallpaperCurrent" not in json.loads((base / "state/settings.json").read_text())
@@ -115,9 +120,41 @@ def checks():
         preview = preview.replace("    FloatingWindow\n    {", "    Window\n    {\n        id: previewWindow\n        visible: true", 1)
         preview = preview.replace("        fullscreen: !root.preview\n", "").replace("implicitWidth: 1280", "width: 1280").replace("implicitHeight: 800", "height: 800")
         preview = preview.rstrip()[:-1] + '''
-    Timer {interval:1500;running:true;onTriggered:previewWindow.contentItem.grabToImage(result=>{
-        result.saveToFile("/tmp/bloodyshell-greeter-preview.png");console.log("GREETER_PASSED preview");Qt.quit();
-    })}
+    function find(item, name) {
+        if (item.objectName === name) return item;
+        for (const child of item.children || []) { const found = find(child, name); if (found) return found; }
+        return null;
+    }
+    Timer {
+        interval: 1100; running: true; repeat: true
+        property int step: 0
+        property var sizes: [Qt.size(1024, 768), Qt.size(800, 600), Qt.size(683, 512), Qt.size(533, 400), Qt.size(768, 1024)]
+        onTriggered: {
+            try {
+                if (step > 0) {
+                    const content = root.find(previewWindow.contentItem, "greeterContent");
+                    const footer = root.find(previewWindow.contentItem, "greeterFooter");
+                    const a = content.mapToItem(previewWindow.contentItem, 0, 0);
+                    const b = content.mapToItem(previewWindow.contentItem, content.width, content.height);
+                    if (a.x < 15 || a.y < 15 || b.x > previewWindow.width - 15 || b.y > footer.y - 15) throw new Error("Content clips at " + previewWindow.width + "x" + previewWindow.height);
+                    if (String(Theme.surface) !== "#161618" || String(Theme.colorAccent) !== String(Theme.text1)) throw new Error("Greeter inherited shell colors");
+                }
+                if (step === sizes.length) {
+                    previewWindow.contentItem.grabToImage(result => {
+                        result.saveToFile("/tmp/bloodyshell-greeter-preview.png"); console.log("GREETER_PASSED responsive preview"); Qt.quit();
+                    });
+                    stop(); return;
+                }
+                previewWindow.width = sizes[step].width;
+                previewWindow.height = sizes[step].height;
+                root.users = [{name:"tester", fullName:"A long account name for a compact display", home:"/nonexistent"}];
+                root.sessions = [{id:"niri", name:"Niri Wayland session", command:["niri-session"]}];
+                root.manualMode = true;
+                root.statusMessage = "An additional authentication response is required. Enter your verification code to continue.";
+                step++;
+            } catch (error) { console.error("GREETER_FAILED", error); Qt.quit(); }
+        }
+    }
 }
 '''
         run(base, preview, env)

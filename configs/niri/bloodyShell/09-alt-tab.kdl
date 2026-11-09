@@ -1,8 +1,0 @@
-recent-windows {
-    off
-}
-
-binds {
-    Alt+Tab repeat=false { spawn "qs" "-c" "bloodyShell" "ipc" "call" "altTab" "begin" "false"; }
-    Alt+Shift+Tab repeat=false { spawn "qs" "-c" "bloodyShell" "ipc" "call" "altTab" "begin" "true"; }
-}

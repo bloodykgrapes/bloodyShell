@@ -19,15 +19,15 @@
 
 <p align="center">
   <sub>
-    <a href="https://github.com/bloodykgrapes/bloodyShell/README.md">English</a>
+    <a href="README.md">English</a>
     &bull;
-    <a href="https://github.com/bloodykgrapes/bloodyShell/docs/readme/README.ru.md">Русский</a>
+    <a href="docs/readme/README.ru.md">Русский</a>
     &bull;
-    <a href="https://github.com/bloodykgrapes/bloodyShell/docs/readme/README.fr.md">Français</a>
+    <a href="docs/readme/README.fr.md">Français</a>
     &bull;
-    <a href="https://github.com/bloodykgrapes/bloodyShell/docs/readme/README.de.md">Deutsch</a>
+    <a href="docs/readme/README.de.md">Deutsch</a>
     &bull;
-    <a href="https://github.com/bloodykgrapes/bloodyShell/docs/readme/README.ja.md">日本語</a>
+    <a href="docs/readme/README.ja.md">日本語</a>
   </sub>
 </p>
 
@@ -67,49 +67,67 @@
 > [!WARNING]
 > I cannot guarantee the proper operation of untested distributions or compositors. Use them at your own risk. However, if you are able to fully test the functionality of the software on your system and provide feedback, that would be greatly appreciated.
 
+At present, I am physically unable to implement support for additional composers. At this time, bloodyShell is currently tied directly to niri. However, dynamic support for additional popular Wayland composers is scheduled to be implemented in the near future.
+
 ## Screenshots
 
-## Features
-
-- A large number of different styles
-- Access to system settings
-- Automatic color theme
-
-<details> <summary><b>Full list</b></summary>
-
-- Bar
-- Dock
-- Launcher
-- OSD
-- Lock Screen
-- Customization
-
-</details>
+<p align="center">
+  <img src="docs/images/image-1.png" alt="bloodyShell wallpaper"  width="49%">
+  <img src="docs/images/image-2.png" alt="bloodyShell launcher" width="49%">
+  <img src="docs/images/image-3.png" alt="bloodyShell settings" width="98.5%">
+</p>
 
 ## Installation
 
 ```bash
 git clone https://github.com/bloodykgrapes/bloodyShell.git
 cd bloodyShell
-./setup
+./setup install
 ```
 
-Start a niri session after applying the optional niri config, or run
-`qs -c bloodyShell` in an existing session. The setup helper opens once and
-can be reopened from Settings → General.
+Setup installs the `bloodyShell` command and configures your terminal's `PATH` environment variable.
+
+```bash
+bloodyShell             # launch the shell
+bloodyShell update      # check and install update
+bloodyShell doctor      # diagnostic
+bloodyShell restart     # reload shell
+```
+
+See the [installation guide](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL) for details.
 
 ## Keybinds
 
+| Key | Action |
+|---|---|
+| <kbd>Super</kbd> + <kbd>Number</kbd> | Change workspace |
+| <kbd>Super</kbd> + <kbd>Arrow</kbd>  | Change focus     |
+| <kbd>Super</kbd> + <kbd>Tab</kbd>    | Overview         |
+| <kbd>Super</kbd> + <kbd>D</kbd>      | Launcher         |
+| <kbd>Super</kbd> + <kbd>Y</kbd>      | Wallpapers       |
+| <kbd>Super</kbd> + <kbd>I</kbd>      | Settings         |
+| <kbd>Super</kbd> + <kbd>P</kbd>      | Power            |
+
 ## Documentation
 
+| Page | About what |
+|---|---|
+|[ARCHITECTURE](https://github.com/bloodykgrapes/bloodyShell/wiki/ARCHITECTURE)|Code structure and architecture|
+|[INSTALL](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL)|Installation manual|
+|[KEYBINDS](https://github.com/bloodykgrapes/bloodyShell/wiki/KEYBINDS)|All the keybindings|
+|[PACKAGES](https://github.com/bloodykgrapes/bloodyShell/wiki/PACKAGES)|Project dependencies|
+
 ## Credits
+
+- [**Quickshell**](https://quickshell.outfoxxed.me/): the framework
+- [**Niri**](https://github.com/niri-wm/niri): the compositor
 
 ---
 
 <p align="center">
   <a href="https://github.com/bloodykgrapes/bloodyShell/graphs/contributors">Contributors</a>
   &bull;
-  <a href="https://github.com/bloodykgrapes/bloodyShell/docs/CHANGELOG.md">Changelog</a>
+  <a href="CHANGELOG.md">Changelog</a>
   &bull;
   <a href="LICENSE">License</a>
 </p>

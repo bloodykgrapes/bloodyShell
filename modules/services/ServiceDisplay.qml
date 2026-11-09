@@ -4,7 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-import "../components"
+import "../common"
 import "../core"
 
 Singleton
@@ -166,7 +166,7 @@ Singleton
         id: writer
         onCompleted: code =>
         {
-            if (code !== 0) serviceDisplay.error = writer.errorMessage(Tr.tr("service.display.couldNotSaveTheDisplaySettings"));
+            if (code !== 0) serviceDisplay.error = writer.errorMessage(Tr.tr("service.display.saveFailed"));
             refreshSoon.restart();
         }
     }
@@ -199,7 +199,7 @@ Singleton
                     serviceDisplay.outputs = Object.keys(all).sort().map(k => all[k]);
                     serviceDisplay.loaded = true;
                 }
-                catch (e) { serviceDisplay.error = Tr.tr("service.display.couldNotReadTheMonitorsFrom") }
+                catch (e) { serviceDisplay.error = Tr.tr("service.display.readFailed") }
             }
         }
     }
@@ -260,7 +260,7 @@ Singleton
             }
             else
             {
-                serviceDisplay.brightnessStatus = brightnessSetter.errorMessage(Tr.tr("service.display.unableToChangeBrightness").arg(exitCode));
+                serviceDisplay.brightnessStatus = brightnessSetter.errorMessage(Tr.tr("service.display.brightnessFailed").arg(exitCode));
                 serviceDisplay.brightnessPending = serviceDisplay.brightnessApplied;
             }
         }
@@ -366,7 +366,7 @@ Singleton
         {
             if (serviceDisplay.sunsetStopping) { serviceDisplay.sunsetStopping = false; serviceDisplay.sunsetStart(); return; }
             const message = sunsetComplaint.text.trim().split("\n").pop();
-            serviceDisplay.nightLightError = message !== "" ? message : Tr.tr("service.display.wlsunsetStoppedExitCode").arg(code);
+            serviceDisplay.nightLightError = message !== "" ? message : Tr.tr("service.display.nightLightFailed").arg(code);
         }
     }
 

@@ -2,12 +2,6 @@ import QtQuick
 import QtQuick.Shapes
 import QtQuick.Effects
 
-// Детали экрана входа — встроенные компоненты, снаружи: Widgets.Button, Widgets.PasswordField и т. д.
-//   Label         — текст шрифтом экрана;
-//   Button        — кнопка-значок: круг, при наведении подрастает и становится скруглённым квадратом;
-//   PasswordField — поле пароля: точки, каретка, «+N», глаз, кнопка входа (крутится, пока проверяется);
-//   Shadow        — мягкая тень под элементом; TextShadow — тень под текстом (layer.effect);
-//   Tint, Spring, Morph — анимации цвета, масштаба (с перелётом) и скругления: `Tint on color {}`.
 QtObject
 {
     component Tint: Behavior
@@ -30,7 +24,6 @@ QtObject
         NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
     }
 
-    // внутри элемента — `Shadow {}`; рядом (цель обрезает детей) — `Shadow { target: avatar }` перед целью
     component Shadow: RectangularShadow
     {
         property Item target: parent
@@ -68,21 +61,29 @@ QtObject
         id: button
 
         property string icon: ""
+        property string label: ""
         property int size: 40
         property int iconSize: Math.round(size * 0.42)
         signal clicked()
 
         width: size
         height: size
+        activeFocusOnTab: true
+        Keys.onReturnPressed: clicked()
+        Keys.onSpacePressed: clicked()
+        border.width: 1
+        border.color: activeFocus ? Theme.text1 : Theme.colorLine
+        Accessible.role: Accessible.Button
+        Accessible.name: label
+        Accessible.onPressAction: clicked()
         radius: area.containsMouse ? Math.round(size * 0.3) : size / 2
         Morph on radius {}
         color: area.pressed ? Theme.colorPressed : area.containsMouse ? Theme.colorHover : Theme.surface
         Tint on color {}
-        scale: area.pressed ? 0.9 : area.containsMouse ? 1.08 : 1
+        scale: area.pressed ? 0.9 : area.containsMouse ? 1.04 : 1
         Spring on scale {}
         Shadow {}
 
-        // недоступная — гаснет только значок, фон остаётся сплошным
         Image
         {
             anchors.centerIn: parent
@@ -104,7 +105,6 @@ QtObject
         }
     }
 
-    // Без надписей: неверный пароль — рамка красная (встряска — у хозяина поля)
     component PasswordField: Item
     {
         id: f
@@ -113,7 +113,6 @@ QtObject
         property bool plain: false
         readonly property alias text: input.text
 
-        // от хозяина поля: идёт проверка, вход не удался, ввод закрыт (уходим)
         property bool busy: false
         property bool failed: false
         property bool closed: false
@@ -126,7 +125,6 @@ QtObject
 
         height: 44
 
-        // точки: сколько помещается до кнопок; остальное — счётчиком «+N»
         readonly property int padding: 18
         readonly property real dot: 12
         readonly property real dotStep: dot + 7
@@ -136,14 +134,24 @@ QtObject
         readonly property int length: input.text.length
         readonly property int dotsShown: Math.min(length, dotsMax)
 
-        // фигура каждого скрытого символа — случайная, все со скруглениями: 0 круг, 1 мягкий квадрат,
-        // 2 ромб, 3 капсула, 4 треугольник
         property var shapes: []
         function updateShapes()
         {
-            const s = shapes.slice(0, Math.min(length, dotsMax));
-            while (s.length < Math.min(length, dotsMax)) s.push(Math.floor(Math.random() * 5));
-            shapes = s;
+            const count = Math.min(length, dotsMax);
+            const next = shapes.slice(0, count);
+            const usage = [0, 0, 0];
+            for (const shape of next) usage[shape]++;
+            while (next.length < count)
+            {
+                const previous = next.length > 0 ? next[next.length - 1] : -1;
+                const available = [0, 1, 2].filter(shape => shape !== previous);
+                const least = Math.min(...available.map(shape => usage[shape]));
+                const choices = available.filter(shape => usage[shape] === least);
+                const shape = choices[Math.floor(Math.random() * choices.length)];
+                next.push(shape);
+                usage[shape]++;
+            }
+            shapes = next;
         }
         onLengthChanged: updateShapes()
         onDotsMaxChanged: updateShapes()
@@ -169,7 +177,7 @@ QtObject
             verticalAlignment: TextInput.AlignVCenter
             clip: true
             focus: true
-            opacity: f.reveal || f.plain ? 1 : 0                     // скрытый ввод рисуют точки
+            opacity: f.reveal || f.plain ? 1 : 0
             echoMode: f.reveal || f.plain ? TextInput.Normal : TextInput.Password
             font.family: Theme.fontText
             font.pixelSize: 15
@@ -182,7 +190,6 @@ QtObject
             onAccepted: f.submitted(text)
             onTextEdited: f.edited()
 
-            // Esc и Ctrl+Backspace — стереть всё
             Keys.onPressed: event =>
             {
                 if (event.key === Qt.Key_Escape || ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_Backspace))
@@ -194,7 +201,6 @@ QtObject
             }
         }
 
-        // точки, каретка, счётчик
         Item
         {
             x: f.padding
@@ -205,20 +211,17 @@ QtObject
             Repeater
             {
                 model: f.dotsMax
-                // появляется с небольшим поворотом и «прыжком», уходит — поворотом назад
                 Item
                 {
                     id: dotItem
                     required property int index
                     readonly property bool on: index < f.dotsShown
                     readonly property int shape: f.shapes[index] !== undefined ? f.shapes[index] : 0
-                    readonly property real size: f.dot + 2
-                    x: index * f.dotStep - 1
+                    readonly property real size: f.dot + 4
+                    x: index * f.dotStep - 2
                     y: (parent.height - height) / 2
                     width: size
                     height: size
-                    // появление и уход — явными анимациями по смене on (Behavior с кривой, зависящей от on, иногда
-                    // стартовал со старой кривой: после «стереть всё» новая фигура уходила в минус и не была видна)
                     scale: 0
                     rotation: -120
                     opacity: 0
@@ -246,33 +249,35 @@ QtObject
                         NumberAnimation { target: dotItem; property: "opacity"; to: 0; duration: 150 }
                     }
 
-                    // круг, мягкий квадрат, ромб, капсула
                     Rectangle
                     {
-                        visible: dotItem.shape < 4
+                        visible: dotItem.shape < 2
                         anchors.centerIn: parent
-                        width: dotItem.shape === 2 ? f.dot * 0.78 : dotItem.shape === 3 ? f.dot * 0.6 : f.dot * (dotItem.shape === 1 ? 0.9 : 1)
-                        height: dotItem.shape === 2 ? width : f.dot * (dotItem.shape === 1 ? 0.9 : 1)
-                        radius: dotItem.shape === 0 || dotItem.shape === 3 ? Math.min(width, height) / 2 : width * 0.3
-                        rotation: dotItem.shape === 2 ? 45 : 0
+                        width: dotItem.shape === 0 ? f.dot : f.dot * 0.94
+                        height: width
+                        radius: dotItem.shape === 0 ? width / 2 : width * 0.28
                         color: Theme.text1
+                        antialiasing: true
                     }
-                    // треугольник со скруглёнными углами: обводка тем же цветом с круглыми стыками
+
                     Shape
                     {
-                        visible: dotItem.shape === 4
+                        visible: dotItem.shape === 2
                         anchors.fill: parent
                         preferredRendererType: Shape.CurveRenderer
                         ShapePath
                         {
                             fillColor: Theme.text1
-                            strokeColor: Theme.text1
-                            strokeWidth: 3
-                            joinStyle: ShapePath.RoundJoin
-                            PathPolyline
-                            {
-                                path: [Qt.point(dotItem.size / 2, 2.5), Qt.point(dotItem.size - 2.5, dotItem.size - 3), Qt.point(2.5, dotItem.size - 3), Qt.point(dotItem.size / 2, 2.5)]
-                            }
+                            strokeColor: "transparent"
+                            strokeWidth: 0
+                            startX: dotItem.size * 0.4136
+                            startY: dotItem.size * 0.2112
+                            PathQuad { controlX: dotItem.size * 0.5; controlY: dotItem.size * 0.06; x: dotItem.size * 0.5864; y: dotItem.size * 0.2112 }
+                            PathLine { x: dotItem.size * 0.8936; y: dotItem.size * 0.7488 }
+                            PathQuad { controlX: dotItem.size * 0.98; controlY: dotItem.size * 0.9; x: dotItem.size * 0.8072; y: dotItem.size * 0.9 }
+                            PathLine { x: dotItem.size * 0.1928; y: dotItem.size * 0.9 }
+                            PathQuad { controlX: dotItem.size * 0.02; controlY: dotItem.size * 0.9; x: dotItem.size * 0.1064; y: dotItem.size * 0.7488 }
+                            PathLine { x: dotItem.size * 0.4136; y: dotItem.size * 0.2112 }
                         }
                     }
                 }
@@ -296,7 +301,6 @@ QtObject
                     NumberAnimation { to: 1;    duration: 500; easing.type: Easing.InOutQuad }
                 }
             }
-            // сверх помещающихся — счётчиком сразу за точками
             Label
             {
                 x: f.dotsShown * f.dotStep + 2
@@ -307,7 +311,6 @@ QtObject
             }
         }
 
-        // справа: показать пароль и войти
         Row
         {
             id: buttons
@@ -340,7 +343,6 @@ QtObject
                 }
             }
 
-            // вход: подсвечен, когда есть что отправить; во время проверки крутится
             Rectangle
             {
                 id: submit
@@ -353,7 +355,6 @@ QtObject
                 Tint on color { duration: 160 }
                 Spring on scale {}
 
-                // на светлой заливке (акцент) — тёмная стрелка
                 Image
                 {
                     anchors.centerIn: parent

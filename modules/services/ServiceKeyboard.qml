@@ -4,9 +4,9 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-import "../components"
-import "../core"
 import "../src/Kdl.js" as Kdl
+import "../common"
+import "../core"
 
 Singleton
 {
@@ -114,7 +114,7 @@ Singleton
         id: writer
         onCompleted: code =>
         {
-            if (code !== 0) serviceKeyboard.error = writer.errorMessage(Tr.tr("service.keyboard.couldNotSaveTheKeyboardSettings"));
+            if (code !== 0) serviceKeyboard.error = writer.errorMessage(Tr.tr("service.keyboard.saveFailed"));
             store.reload();
         }
     }

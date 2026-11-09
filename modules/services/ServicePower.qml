@@ -5,7 +5,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.UPower
 
-import "../components"
+import "../common"
 import "../core"
 
 Singleton
@@ -17,7 +17,7 @@ Singleton
         if (!seconds || seconds <= 0) return "";
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
-        return h > 0 ? Tr.tr("service.power.hM").arg(h).arg(m) : Tr.tr("service.power.m").arg(m);
+        return h > 0 ? Tr.tr("service.power.hoursMinutes").arg(h).arg(m) : Tr.tr("service.power.minutes").arg(m);
     }
     function statusOf(s)
     {
@@ -43,17 +43,18 @@ Singleton
     readonly property int chargeState: present ? device.state : UPowerDeviceState.Unknown
 
     readonly property bool charging: chargeState === UPowerDeviceState.Charging
+    readonly property bool discharging: chargeState === UPowerDeviceState.Discharging
     readonly property bool full: chargeState === UPowerDeviceState.FullyCharged
     readonly property bool low: present && !charging && percent <= 15
 
     readonly property string status: statusOf(chargeState)
-    readonly property string timeText: present ? formatTime(charging ? device.timeToFull : device.timeToEmpty) : ""
+    readonly property string timeText: present && (charging || discharging) ? formatTime(charging ? device.timeToFull : device.timeToEmpty) : ""
 
     readonly property int profileID: PowerProfiles.profile === PowerProfile.PowerSaver ? 0
                                    : PowerProfiles.profile === PowerProfile.Performance ? 2 : 1
     readonly property bool profileHasPerformance: PowerProfiles.hasPerformanceProfile
 
-    readonly property string infoPower: present ? (charging ? "+ " : "- ") + Math.abs(device.changeRate).toFixed(1) + " W" : ""
+    readonly property string infoPower: present ? (charging ? "+ " : discharging ? "- " : "") + Math.abs(device.changeRate).toFixed(1) + " W" : ""
     readonly property string infoCapacity: present ? device.energy.toFixed(1) + " / " + device.energyCapacity.toFixed(1) + " W·h" : ""
 
     function setProfile(index)

@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-loader = importlib.machinery.SourceFileLoader("storage_helper", str(ROOT / "scripts/storage"))
+loader = importlib.machinery.SourceFileLoader("storage_helper", str(ROOT / "scripts/runtime/storage"))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 storage = importlib.util.module_from_spec(spec)
 loader.exec_module(storage)

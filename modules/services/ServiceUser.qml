@@ -4,7 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-import "../components"
+import "../common"
 import "../core"
 
 Singleton
@@ -155,8 +155,8 @@ Singleton
 
     function validationError(values)
     {
-        if (!loaded) return Tr.tr("service.user.accountNotReady");
-        if (JSON.stringify(snapshot()) !== JSON.stringify(baseline)) return Tr.tr("service.user.accountChangedExternally");
+        if (!loaded) return Tr.tr("service.user.loading");
+        if (JSON.stringify(snapshot()) !== JSON.stringify(baseline)) return Tr.tr("service.user.externalChanges");
         if (/[\x00-\x1f\x7f:,]/.test(values.fullName)) return Tr.tr("service.user.invalidDisplayName");
         if (values.username !== baseline.username)
         {
@@ -172,9 +172,9 @@ Singleton
         if (values.homeDirectory !== baseline.homeDirectory && !validPath(values.homeDirectory)) return Tr.tr("service.user.invalidHome");
         if (values.loginShell !== baseline.loginShell && !shells.includes(values.loginShell)) return Tr.tr("service.user.invalidShell");
         if (values.groups !== baseline.groups && values.groups.split(",").filter(Boolean).some(name => !groupCatalog.some(g => g.name === name))) return Tr.tr("service.user.invalidGroups");
-        if (!["keep", "replace", "reset"].includes(values.avatarAction)) return Tr.tr("service.user.chooseLocalImage");
-        if (values.avatarAction === "replace" && (!validPath(values.avatarPath) || !/\.(png|jpe?g|webp|bmp|gif)$/i.test(values.avatarPath))) return Tr.tr("service.user.chooseImageFormat");
-        if (accountArguments(values).length > 0 && (!usermodCommand || !pkexecCommand)) return Tr.tr("service.user.accountToolsMissing");
+        if (!["keep", "replace", "reset"].includes(values.avatarAction)) return Tr.tr("service.user.localImageRequired");
+        if (values.avatarAction === "replace" && (!validPath(values.avatarPath) || !/\.(png|jpe?g|webp|bmp|gif)$/i.test(values.avatarPath))) return Tr.tr("service.user.invalidImageFormat");
+        if (accountArguments(values).length > 0 && (!usermodCommand || !pkexecCommand)) return Tr.tr("service.user.toolsMissing");
         return "";
     }
 
@@ -238,8 +238,8 @@ Singleton
     {
         resetAfterRefresh = success;
         if (success) message = approved && accountArguments(approved).length > 0
-            ? Tr.tr("service.user.accountChangesApplied") : Tr.tr("service.user.changesApplied");
-        else error = detail || Tr.tr("service.user.accountChangeFailed");
+            ? Tr.tr("service.user.signInAgain") : Tr.tr("service.user.changesApplied");
+        else error = detail || Tr.tr("service.user.applyFailed");
         approved = null;
 
         loading = true;
@@ -256,16 +256,16 @@ Singleton
         if (path.startsWith("file://"))
         {
             try { path = decodeURIComponent(path.substring(7)) }
-            catch (e) { error = Tr.tr("service.user.chooseLocalImage"); return; }
+            catch (e) { error = Tr.tr("service.user.localImageRequired"); return; }
         }
-        if (!validPath(path)) { error = Tr.tr("service.user.chooseLocalImage"); return; }
+        if (!validPath(path)) { error = Tr.tr("service.user.localImageRequired"); return; }
         if (path === homeDirectory + "/.face")
         {
             edit("avatarAction", "keep");
             edit("avatarPath", "");
             return;
         }
-        if (!/\.(png|jpe?g|webp|bmp|gif)$/i.test(path)) { error = Tr.tr("service.user.chooseImageFormat"); return; }
+        if (!/\.(png|jpe?g|webp|bmp|gif)$/i.test(path)) { error = Tr.tr("service.user.invalidImageFormat"); return; }
         edit("avatarAction", "replace");
         edit("avatarPath", path);
     }
@@ -284,7 +284,7 @@ Singleton
 
     function openSettings()
     {
-        if (!settingsAvailable) { error = Tr.tr("service.user.settingsNotInstalled"); return; }
+        if (!settingsAvailable) { error = Tr.tr("service.user.settingsMissing"); return; }
         Quickshell.execDetached([settingsCommand, "user-accounts"]);
     }
 
@@ -296,7 +296,7 @@ Singleton
         watchChanges: true
         onFileChanged: serviceUser.refresh()
         onLoaded: serviceUser.readAccount(text())
-        onLoadFailed: { serviceUser.loading = false; serviceUser.applying = false; serviceUser.error = Tr.tr("service.user.accountReadFailed") }
+        onLoadFailed: { serviceUser.loading = false; serviceUser.applying = false; serviceUser.error = Tr.tr("service.user.readFailed") }
     }
 
     FileView
@@ -314,7 +314,7 @@ Singleton
             serviceUser.catalogLoaded = true;
             serviceUser.finishRefresh();
         }
-        onLoadFailed: { serviceUser.loading = false; serviceUser.error = Tr.tr("service.user.accountReadFailed") }
+        onLoadFailed: { serviceUser.loading = false; serviceUser.error = Tr.tr("service.user.readFailed") }
     }
 
     FileView
@@ -328,7 +328,7 @@ Singleton
             serviceUser.shellsLoaded = true;
             serviceUser.finishRefresh();
         }
-        onLoadFailed: { serviceUser.loading = false; serviceUser.error = Tr.tr("service.user.accountReadFailed") }
+        onLoadFailed: { serviceUser.loading = false; serviceUser.error = Tr.tr("service.user.readFailed") }
     }
 
     CommandProcess
@@ -339,7 +339,7 @@ Singleton
         {
             serviceUser.groups = code === 0 ? groupOutput.text.trim().split(/\s+/).filter(Boolean) : [];
             serviceUser.groupsLoaded = code === 0;
-            if (code !== 0) { serviceUser.loading = false; serviceUser.applying = false; serviceUser.error = errorMessage(Tr.tr("service.user.accountReadFailed")); }
+            if (code !== 0) { serviceUser.loading = false; serviceUser.applying = false; serviceUser.error = errorMessage(Tr.tr("service.user.readFailed")); }
             serviceUser.finishRefresh();
         }
     }
@@ -384,8 +384,8 @@ Singleton
             if (code !== 0)
             {
                 const detail = code === 126 ? Tr.tr("service.user.authorizationCancelled")
-                    : /currently used|logged in|process/i.test(errorText) ? Tr.tr("service.user.accountInUse")
-                    : errorMessage(Tr.tr("service.user.accountChangeFailed"));
+                    : /currently used|logged in|process/i.test(errorText) ? Tr.tr("service.user.sessionActive")
+                    : errorMessage(Tr.tr("service.user.applyFailed"));
                 serviceUser.finishApply(false, detail);
                 return;
             }

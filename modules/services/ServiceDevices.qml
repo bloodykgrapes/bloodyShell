@@ -4,16 +4,27 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-import "../components"
+import "../src/Clients.js" as Clients
+import "../common"
 import "../core"
 
 Singleton
 {
     id: serviceDevices
 
-    property int watchers: 0
+    property var watchClients: []
+    readonly property int watchers: watchClients.length
     readonly property bool watching: watchers > 0
-    onWatchingChanged: if (watching) refresh()
+    onWatchingChanged:
+    {
+        if (watching) refresh();
+        else refreshSoon.stop();
+    }
+
+    function setWatching(client, active)
+    {
+        watchClients = Clients.update(watchClients, client, active);
+    }
 
     function refresh()
     {
@@ -51,9 +62,9 @@ Singleton
     {
         running: serviceDevices.watching
         command: ["udevadm", "monitor", "--udev", "--subsystem-match=usb"]
-        stdout: SplitParser { onRead: line => { if (/\b(add|remove)\b/.test(line)) usbSoon.restart() } }
+        stdout: SplitParser { onRead: line => { if (/\b(add|remove)\b/.test(line)) refreshSoon.restart() } }
     }
-    Timer { id: usbSoon; interval: 400; onTriggered: usbReader.running = true }
+    Timer { id: refreshSoon; interval: 400; onTriggered: if (serviceDevices.watching) usbReader.running = true }
 
     property var    printers: []
     property string printerDefault: ""
@@ -79,7 +90,7 @@ Singleton
     {
         id: printersReader
         command: ["sh", "-c", "command -v lpstat >/dev/null || { echo state=missing; exit 0; }; "
-                  + "lpstat -r 2>/dev/null | grep -q 'is running' || { echo state=stopped; exit 0; }; "
+                  + "LC_ALL=C lpstat -r 2>/dev/null | grep -q 'is running' || { echo state=stopped; exit 0; }; "
                   + "echo state=ok; LC_ALL=C lpstat -p -d 2>/dev/null"]
         stdout: StdioCollector
         {

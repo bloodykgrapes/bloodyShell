@@ -4,7 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-import "../components"
+import "../common"
 import "../core"
 
 Singleton
@@ -53,13 +53,13 @@ Singleton
         {
             if (code === 0)
             {
-                if (after === "relogin") serviceRegion.notice = Tr.tr("service.region.appsUseTheNew");
+                if (after === "relogin") serviceRegion.notice = Tr.tr("service.region.signInAgain");
             }
             else
             {
                 const message = changer.errorText;
 
-                serviceRegion.error = /not authorized|authentication|interactive/i.test(message) ? Tr.tr("service.region.notChangedAdministratorPassword") : (message || Tr.tr("service.region.couldNotChangeTheSetting"));
+                serviceRegion.error = /not authorized|authentication|interactive/i.test(message) ? Tr.tr("service.region.authorizationRequired") : (message || Tr.tr("service.region.applyFailed"));
             }
             serviceRegion.refresh();
         }

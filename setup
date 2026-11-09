@@ -6,13 +6,14 @@ readonly REPO="bloodykgrapes/bloodyShell"
 readonly NAME="bloodyShell"
 readonly CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 readonly TARGET="$CONFIG_HOME/quickshell/$NAME"
+readonly BIN_HOME="${XDG_BIN_HOME:-$HOME/.local/bin}"
 readonly BACKUP_ROOT="$HOME/$NAME.bak"
 readonly STATE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/$NAME"
 readonly STATUS_FILE="${BLOODYSHELL_STATUS:-$STATE_DIR/update.status}"
-readonly STAMP="$(date +%Y-%m-%d_%H-%M-%S)"
+readonly STAMP="$(date +%Y-%m-%d_%H-%M-%S)-$$"
 readonly PACKAGE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-readonly INSTALL_EXCLUDE=("./.*" "./*.md" "./docs" "__pycache__" "*.pyc" "*.pyo")
+readonly INSTALL_EXCLUDE=("./.*" "./*.md" "./docs" "./scripts/tests" "./scripts/tools" "__pycache__" "*.pyc" "*.pyo")
 
 BACKED_UP=false
 
@@ -99,11 +100,25 @@ banner()
 
 finish()
 {
+    local shell="${SHELL:-}"
     section "$1"
     detail "Version" "$(installed_version)"
     detail "Shell" "$(hl "$TARGET")"
     if $BACKED_UP; then detail "Backup" "$(hl "$BACKUP_ROOT/$STAMP")"; fi
-    detail "Run" "$(hl "qs -c $NAME")"
+    detail "Command" "$(hl "$BIN_HOME/$NAME")"
+    detail "Start" "bloodyShell"
+    detail "Settings" "bloodyShell settings"
+    detail "Check" "bloodyShell doctor"
+    detail "Update" "bloodyShell update"
+    if [[ ":$PATH:" != *":$BIN_HOME:"* ]]; then
+        printf '\n'
+        info "Open a new terminal to use the command. For this terminal:"
+        if [[ "${shell##*/}" == fish ]]; then
+            printf '    fish_add_path %q\n' "$BIN_HOME"
+        else
+            printf '    export PATH=%q:"$PATH"\n' "$BIN_HOME"
+        fi
+    fi
     printf '\n'
 }
 
@@ -285,18 +300,28 @@ version_newer()
     [[ "$(printf '%s\n%s\n' "$a_pre" "$b_pre" | sort -V | tail -n1)" == "$a_pre" ]]
 }
 
-shell_running() { pgrep -f -- "qs .*-c $NAME( |$)" > /dev/null 2>&1 || pgrep -f -- "quickshell .*-c $NAME( |$)" > /dev/null 2>&1; }
-
 restart_shell()
 {
-    [[ -n "${WAYLAND_DISPLAY:-}" ]] || { warn "No Wayland session: the shell will start at next login"; return 0; }
-
-    if shell_running; then
-        qs kill -c "$NAME" > /dev/null 2>&1 || true
-        for _ in $(seq 20); do shell_running || break; sleep 0.1; done
-        setsid -f qs -n -d -c "$NAME" > /dev/null 2>&1 < /dev/null && ok "Shell restarted" || warn "Could not start: $(hl "qs -c $NAME")"
+    [[ -n "${WAYLAND_DISPLAY:-}" ]] || { warn "No Wayland session: run bloodyShell after logging into niri"; return 0; }
+    if python3 "$BIN_HOME/$NAME" restart; then
+        ok "Shell started"
     else
-        setsid -f qs -n -d -c "$NAME" > /dev/null 2>&1 < /dev/null && ok "Shell started" || warn "Could not start: $(hl "qs -c $NAME")"
+        warn "Shell could not start: use bloodyShell doctor and bloodyShell logs"
+    fi
+}
+
+install_command()
+{
+    local shell="${SHELL:-}"
+    python3 "$TARGET/scripts/setup/install-command" "$TARGET/scripts/bloodyShell" "$BIN_HOME" "$BACKUP_ROOT/$STAMP/launcher" > /dev/null \
+        || die "Could not set up the bloodyShell command"
+    [[ ! -d "$BACKUP_ROOT/$STAMP/launcher" ]] || BACKED_UP=true
+    ok "Command → $(hl "$BIN_HOME/$NAME")"
+    if [[ ":$PATH:" != *":$BIN_HOME:"* ]]; then
+        case "${shell##*/}" in
+            bash|zsh|fish|sh|dash|"") info "PATH prepared for new terminals" ;;
+            *) warn "Add $(hl "$BIN_HOME") to your shell's PATH to use bloodyShell" ;;
+        esac
     fi
 }
 
@@ -304,32 +329,44 @@ apply_shell()
 {
     local package="${1:-$PACKAGE}"
     [[ -f "$package/shell.qml" && -f "$package/version" ]] || die "No shell in $(pretty "$package") (shell.qml, version)"
-    [[ "$package" != "$TARGET" ]] || die "This is the installed copy: run setup from an unpacked package, or use: setup update"
+    command -v python3 > /dev/null || die "Python 3 is required to install the shell command"
 
-    local stage="$CONFIG_HOME/quickshell/.$NAME.new"
-    mkdir -p "$CONFIG_HOME/quickshell"
-    rm -rf "$stage"
-    mkdir -p "$stage"
-    local excludes=()
-    for pattern in "${INSTALL_EXCLUDE[@]}"; do excludes+=("--exclude=$pattern"); done
-    tar -C "$package" --no-wildcards-match-slash "${excludes[@]}" -cf - . | tar -C "$stage" -xf -
+    if [[ "$package" != "$TARGET" ]]; then
+        mkdir -p "$CONFIG_HOME/quickshell"
+        local stage; stage="$(mktemp -d "$CONFIG_HOME/quickshell/.$NAME.new.XXXXXX")"
+        local excludes=()
+        for pattern in "${INSTALL_EXCLUDE[@]}"; do excludes+=("--exclude=$pattern"); done
+        if ! tar -C "$package" --no-wildcards-match-slash "${excludes[@]}" -cf - . | tar -C "$stage" -xf -; then
+            rm -rf "$stage"
+            die "Could not stage the shell; the current installation was kept"
+        fi
+        local script
+        for script in bloodyShell setup/install-command; do
+            if [[ ! -f "$stage/scripts/$script" && -f "$PACKAGE/scripts/$script" ]]; then
+                mkdir -p "$(dirname "$stage/scripts/$script")"
+                cp "$PACKAGE/scripts/$script" "$stage/scripts/$script"
+            fi
+        done
+        [[ -f "$stage/scripts/bloodyShell" && -f "$stage/scripts/setup/install-command" ]] || { rm -rf "$stage"; die "Package has no command launcher"; }
 
-    if [[ -e "$TARGET" ]]; then
-        backup "$TARGET" shell
-        info "Previous version → $(hl "$BACKUP_ROOT/$STAMP/shell")"
+        if [[ -e "$TARGET" || -L "$TARGET" ]]; then
+            backup "$TARGET" shell
+            info "Previous version → $(hl "$BACKUP_ROOT/$STAMP/shell")"
+        fi
+        mv "$stage" "$TARGET"
     fi
-    mv "$stage" "$TARGET"
     chmod +x "$TARGET/setup"
-    if [[ -f "$TARGET/scripts/build-keyboard-monitor" ]] && command -v python3 > /dev/null; then
-        python3 "$TARGET/scripts/build-keyboard-monitor" > /dev/null || warn "Alt+Tab modifier support needs Qt 6 development tools; see the installation guide in the source repository"
+    install_command
+    if [[ -f "$TARGET/scripts/runtime/build-keyboard-monitor" ]] && command -v python3 > /dev/null; then
+        python3 "$TARGET/scripts/runtime/build-keyboard-monitor" > /dev/null || warn "Alt+Tab modifier support needs Qt 6 development tools; see the installation guide in the source repository"
     fi
     ok "$NAME $(tr -d '[:space:]' < "$package/version") → $(hl "$TARGET")"
 }
 
 apply_configs()
 {
-    local source="$PACKAGE/configs"
-    [[ -d "$source" ]] || { warn "No configs/ in the package: app configs skipped"; return 0; }
+    local source="$PACKAGE/dots"
+    [[ -d "$source" ]] || { warn "No dots/ in the package: app configs skipped"; return 0; }
 
     local programs=("$@")
     if [[ ${#programs[@]} -eq 0 ]]; then
@@ -364,9 +401,11 @@ readonly DEPENDENCIES=(
     "required|qs|Runs the shell|quickshell|copr:errornointernet/quickshell quickshell|-"
     "required|niri|Compositor|niri|niri|niri"
     "required|awww|Wallpapers|awww|-|-"
+    "required|grim|Screenshots|grim|grim|grim"
+    "required|wl-copy|Screenshot clipboard|wl-clipboard|wl-clipboard|wl-clipboard"
     "required|curl|Updates|curl|curl|curl"
     "required|tar|Updates|tar|tar|tar"
-    "required|nmcli|Network|networkmanager|NetworkManager|network-manager"
+    "required|nmcli|Network and enterprise Wi-Fi|networkmanager python-gobject libnm|NetworkManager python3-gobject NetworkManager-libnm|network-manager python3-gi gir1.2-nm-1.0"
     "required|wpctl|Sound|pipewire wireplumber|pipewire wireplumber|pipewire wireplumber"
     "required|upower|Battery|upower|upower|upower"
     "required|findmnt|Storage discovery|util-linux|util-linux|util-linux"
@@ -377,7 +416,7 @@ readonly DEPENDENCIES=(
     "optional|brightnessctl|Screen brightness|brightnessctl|brightnessctl|brightnessctl"
     "optional|bluetoothctl|Bluetooth|bluez bluez-utils|bluez|bluez"
     "optional|wlsunset|Night light|wlsunset|wlsunset|wlsunset"
-    "optional|ffmpeg|Accent color from the wallpaper|ffmpeg|ffmpeg-free|ffmpeg"
+    "required|ffmpeg|Screenshot cropping and wallpaper colors|ffmpeg|ffmpeg-free|ffmpeg"
     "optional|lpstat|Printers|cups system-config-printer|cups system-config-printer|cups system-config-printer"
     "optional|qt6ct|Qt apps follow the theme|qt6ct|qt6ct|qt6ct"
     "optional|notify-send|Update notifications|libnotify|libnotify|libnotify-bin"
@@ -569,6 +608,14 @@ install_packages()
     esac
 }
 
+tool_available()
+{
+    command -v "$1" > /dev/null || return 1
+    if [[ "$1" == nmcli && -f "$PACKAGE/scripts/runtime/network-auth" ]]; then
+        python3 "$PACKAGE/scripts/runtime/network-auth" --check > /dev/null 2>&1
+    fi
+}
+
 install_dependencies()
 {
     local family; family="$(distro_family)"
@@ -580,7 +627,7 @@ install_dependencies()
     local missing=() wanted=()
     for line in "${DEPENDENCIES[@]}"; do
         IFS='|' read -r _ tool _ <<< "$line"
-        command -v "$tool" > /dev/null && continue
+        tool_available "$tool" && continue
         missing+=("$line")
         for p in $(dependency_packages "$family" "$line"); do [[ "$p" == copr:* ]] || wanted+=("$p"); done
     done
@@ -589,7 +636,7 @@ install_dependencies()
     local install=() manual=() have=() optional=() optionalLines=()
     for line in "${DEPENDENCIES[@]}"; do
         IFS='|' read -r kind tool feature arch _ <<< "$line"
-        if command -v "$tool" > /dev/null; then have+=("$tool"); continue; fi
+        if tool_available "$tool"; then have+=("$tool"); continue; fi
         local packages; packages="$(dependency_packages "$family" "$line")"
         [[ -n "$packages" ]] && ! line_available "$packages" && packages=""
         if [[ "$kind" == required ]]; then
@@ -683,7 +730,7 @@ apply_keyring()
     done
     [[ -n "$module" ]] || { warn "Install gnome-keyring and its PAM module, then run ./setup greetd"; return 0; }
     local stage; stage="$(mktemp)"
-    if ! awk -f "$PACKAGE/scripts/greetd-keyring.awk" "$GREETD_PAM" > "$stage"; then
+    if ! awk -f "$PACKAGE/scripts/setup/greetd-keyring.awk" "$GREETD_PAM" > "$stage"; then
         rm -f "$stage"
         return 1
     fi
@@ -805,6 +852,14 @@ latest_tag()
 
 cmd_install()
 {
+    [[ $EUID -ne 0 ]] || die "Run setup as your normal user; it requests sudo only when needed"
+    section "Installation plan"
+    detail "Shell" "$(hl "$TARGET")"
+    detail "Command" "$(hl "$BIN_HOME/$NAME")"
+    detail "Backups" "$(hl "$BACKUP_ROOT/$STAMP")"
+    info "Choose optional programs, app configs and the login screen during setup"
+    info "Existing shell and replaced files are backed up; your shell settings are kept"
+    if interactive && ! ask "Continue with installation?" y; then info "Installation cancelled"; return 0; fi
     steps 6
 
     step "Dependencies"
@@ -822,7 +877,18 @@ cmd_install()
     step "Login screen"
     if ask "Set up the login screen in the shell's style (greetd, needs sudo)?" n; then apply_greeter; else info "Login screen skipped: run ./setup greetd any time"; fi
 
-    step "Starting the shell"
+    step "Checking installation"
+    local missing=() kind tool line
+    for line in "${DEPENDENCIES[@]}"; do
+        IFS='|' read -r kind tool _ <<< "$line"
+        if [[ "$kind" == required ]] && ! tool_available "$tool"; then missing+=("$tool"); fi
+    done
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        warn "Missing required tools: ${missing[*]}"
+        warn "Install these before starting; bloodyShell doctor shows the details"
+        finish "Files installed · dependencies need attention"
+        return 0
+    fi
     restart_shell
 
     finish "Installation complete"
@@ -855,13 +921,15 @@ cmd_update()
     local current; current="$(installed_version)"
     if ! $force && ! version_newer "$tag" "$current"; then
         ok "Up to date: installed $current, latest ${tag#v}"
+        if [[ -f "$TARGET/scripts/bloodyShell" && -f "$TARGET/scripts/setup/install-command" ]]; then install_command; fi
         status "done $current"
         return 0
     fi
     ok "${tag#v} is available (installed $current)"
 
-    local tmp; tmp="$(mktemp -d)"
-    trap "rm -rf '$tmp'" EXIT
+    UPDATE_TMP="$(mktemp -d)"
+    trap 'rm -rf -- "$UPDATE_TMP"' EXIT
+    local tmp="$UPDATE_TMP"
 
     step "Downloading ${tag#v}"
     curl -fsSL --retry 2 --max-time 120 -o "$tmp/package.tar.gz" "https://github.com/$REPO/archive/refs/tags/$tag.tar.gz" \
@@ -898,7 +966,7 @@ cmd_doctor()
 {
     command -v python3 > /dev/null || die "Doctor requires Python 3"
     if [[ "${1:-}" != --json ]]; then banner; section "Diagnostics"; fi
-    python3 "$PACKAGE/scripts/doctor" "$@"
+    python3 "$PACKAGE/scripts/setup/doctor" "$@"
 }
 
 usage()
@@ -916,6 +984,8 @@ usage()
     printf '    %-22s %s\n' "--beta"        "update channel: include pre-releases"
     printf '    %-22s %s\n' "--tag vX.Y.Z"  "install exactly this release"
     printf '    %-22s %s\n\n' "--force"     "reinstall even if up to date"
+    info "After installation: bloodyShell help · bloodyShell settings · bloodyShell doctor"
+    printf '\n'
 }
 
 menu()

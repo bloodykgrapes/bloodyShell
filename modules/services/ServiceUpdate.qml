@@ -20,6 +20,7 @@ Singleton
     readonly property string logFile: stateDir + "/update.log"
 
     property string version: "0.0.0"
+    property bool versionReady: false
 
     function pretty(path) { const home = Quickshell.env("HOME"); return path.startsWith(home) ? "~" + path.substring(home.length) : path }
 
@@ -41,6 +42,7 @@ Singleton
     property string error: ""
     property bool   installFailed: false
     property double lastChecked: 0
+    property double autoAttemptedCheck: 0
 
     property bool   installing: false
     property string statusFile: ""
@@ -68,14 +70,14 @@ Singleton
     {
         switch (phase)
         {
-            case "dev":        return Tr.tr("service.update.updatesAreOffInADevelopment");
+            case "dev":        return Tr.tr("service.update.developmentCopy");
             case "installing": return installText !== "" ? installText : Tr.tr("service.update.installing").arg(versionLatest);
-            case "checking":   return Tr.tr("service.update.checkingForUpdates");
+            case "checking":   return Tr.tr("service.update.checking");
             case "error":      return error;
-            case "available":  return pending.length > 1 ? Tr.tr("service.update.versionIsAvailableReleases").arg(versionLatest).arg(pending.length) : Tr.tr("service.update.versionIsAvailable").arg(versionLatest);
-            case "current":    return releases.length === 0 ? Tr.tr("service.update.noReleasesYet") : Tr.tr("service.update.upToDate");
+            case "available":  return pending.length > 1 ? Tr.tr("service.update.availableReleases").arg(versionLatest).arg(pending.length) : Tr.tr("service.update.available").arg(versionLatest);
+            case "current":    return releases.length === 0 ? Tr.tr("service.update.noReleases") : Tr.tr("service.update.upToDate");
         }
-        return Config.updateCheck === 0 ? Tr.tr("service.update.automaticChecksAreOff") : Tr.tr("service.update.notCheckedYet");
+        return Config.updateCheck === 0 ? Tr.tr("service.update.checksDisabled") : Tr.tr("service.update.notChecked");
     }
 
     function parse(v)
@@ -114,7 +116,7 @@ Singleton
         const s = Math.max(0, Math.round((now - time) / 1000));
         if (s < 60) return Tr.tr("service.update.justNow");
         const m = Math.round(s / 60);
-        if (m < 60) return Tr.tr("service.update.minAgo").arg(m);
+        if (m < 60) return Tr.tr("service.update.minutesAgo").arg(m);
         const h = Math.round(m / 60);
         if (h < 24) return (h === 1 ? Tr.tr("service.update.hourAgo") : Tr.tr("service.update.hoursAgo")).arg(h);
         const d = Math.round(h / 24);
@@ -134,8 +136,8 @@ Singleton
     {
         let list;
         try { list = JSON.parse(text); }
-        catch (e) { error = Tr.tr("service.update.githubSentAnUnreadableAnswer"); return; }
-        if (!Array.isArray(list)) { error = Tr.tr("service.update.githubSentAnUnreadableAnswer"); return; }
+        catch (e) { error = Tr.tr("service.update.invalidResponse"); return; }
+        if (!Array.isArray(list)) { error = Tr.tr("service.update.invalidResponse"); return; }
 
         const beta = channel === "beta";
         const out = list
@@ -156,6 +158,23 @@ Singleton
         checked = true;
         lastChecked = Date.now();
         checkStore.setText(String(lastChecked));
+        Qt.callLater(serviceUpdate.autoUpdate);
+    }
+
+    function autoUpdate()
+    {
+        if (!Config.initialized || !Config.updateAuto || !versionReady || !installed || !checked
+            || busy || error !== "" || !availableUpdate || lastChecked <= autoAttemptedCheck) return;
+
+        autoAttemptedCheck = lastChecked;
+        update();
+    }
+
+    Connections
+    {
+        target: Config
+        function onUpdateAutoChanged() { if (Config.updateAuto) Qt.callLater(serviceUpdate.autoUpdate) }
+        function onInitializedChanged() { if (Config.initialized) Qt.callLater(serviceUpdate.autoUpdate) }
     }
 
     Process
@@ -174,7 +193,7 @@ Singleton
             if (code !== 0)
             {
                 const reason = complaint.text.trim().split("\n").pop().replace(/^curl: \(\d+\)\s*/, "");
-                serviceUpdate.error = Tr.tr("service.update.cantReachGithub") + (reason !== "" ? ": " + reason : "");
+                serviceUpdate.error = Tr.tr("service.update.connectionFailed") + (reason !== "" ? ": " + reason : "");
                 if (retry.attempts < 5) { retry.attempts++; retry.restart(); }
                 return;
             }
@@ -186,9 +205,9 @@ Singleton
             const body = text.substring(0, cut);
 
             if (http === 200) serviceUpdate.applyReleases(body);
-            else if (http === 403 || http === 429) serviceUpdate.error = Tr.tr("service.update.githubRequestLimitReached");
+            else if (http === 403 || http === 429) serviceUpdate.error = Tr.tr("service.update.rateLimited");
             else if (http === 404) serviceUpdate.error = Tr.tr("service.update.repositoryNotFound").arg(serviceUpdate.repo);
-            else serviceUpdate.error = Tr.tr("service.update.githubAnsweredWithError").arg(http);
+            else serviceUpdate.error = Tr.tr("service.update.httpError").arg(http);
         }
     }
     Timer
@@ -239,7 +258,7 @@ Singleton
         installFailed = false;
         installStep = 0;
         installSteps = 0;
-        installText = Tr.tr("service.update.startingTheUpdate");
+        installText = Tr.tr("service.update.starting");
         statusFile = stateDir + "/update-" + Date.now() + ".status";
         timeout.restart();
 
@@ -286,12 +305,12 @@ Singleton
                 serviceUpdate.installing = false;
                 timeout.stop();
                 serviceUpdate.installFailed = true;
-                serviceUpdate.error = line.substring(6).trim() || Tr.tr("service.update.updateFailed");
+                serviceUpdate.error = line.substring(6).trim() || Tr.tr("service.update.failed");
             }
             else if (line.startsWith("done"))
             {
                 serviceUpdate.installStep = serviceUpdate.installSteps;
-                serviceUpdate.installText = Tr.tr("service.update.restartingTheShell");
+                serviceUpdate.installText = Tr.tr("service.update.restarting");
             }
         }
     }
@@ -311,9 +330,13 @@ Singleton
         onFileChanged: reload()
         onLoaded:
         {
-            serviceUpdate.version = text().trim() || "0.0.0";
+            const version = text().trim();
+            serviceUpdate.version = version || "0.0.0";
+            serviceUpdate.versionReady = version !== "";
             if (serviceUpdate.installed) versionStore.path = serviceUpdate.stateDir + "/last-version";
+            Qt.callLater(serviceUpdate.autoUpdate);
         }
+        onLoadFailed: serviceUpdate.versionReady = false
     }
 
     FileView
@@ -327,8 +350,8 @@ Singleton
             if (before !== "" && before !== serviceUpdate.version && serviceUpdate.newer(serviceUpdate.version, before))
             {
                 serviceUpdate.updatedFrom = before;
-                announce.command = ["notify-send", "-a", "bloodyShell", "-A", "default=" + Tr.tr("common.whatsNew"), "-w", Tr.tr("service.update.bloodyshellUpdated"),
-                                    Tr.tr("service.update.versionIsInstalledWas").arg(serviceUpdate.version).arg(serviceUpdate.updatedFrom)];
+                announce.command = ["notify-send", "-a", "bloodyShell", "-A", "default=" + Tr.tr("common.whatsNew"), "-w", Tr.tr("service.update.completed"),
+                                    Tr.tr("service.update.installed").arg(serviceUpdate.version).arg(serviceUpdate.updatedFrom)];
                 announce.running = true;
                 if (!serviceUpdate.checked) serviceUpdate.check();
             }

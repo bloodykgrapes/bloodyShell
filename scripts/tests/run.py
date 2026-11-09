@@ -28,9 +28,26 @@ def module(base, folder):
 
 
 def check_sources():
-    english = json.loads((ROOT / "translations/en.json").read_text())["strings"]
-    russian = json.loads((ROOT / "translations/ru.json").read_text())["strings"]
+    qml_files = [ROOT / "shell.qml", *ROOT.glob("modules/**/*.qml")]
+    for path in qml_files:
+        source = path.read_text()
+        for relative in re.findall(r'^import "([^"\n]+)"', source, re.M):
+            if path.name == "Monitor.qml" and relative == "plugin":
+                continue
+            assert (path.parent / relative).exists(), f"{path}: missing import {relative}"
+        for relative in re.findall(r'Qt\.resolvedUrl\("([^"\n]+)"', source):
+            assert (path.parent / relative).exists(), f"{path}: missing resource {relative}"
+    def unique_entries(pairs):
+        entries = dict(pairs)
+        assert len(entries) == len(pairs), "Duplicate translation keys"
+        return entries
+
+    english = json.loads((ROOT / "translations/en.json").read_text(), object_pairs_hook=unique_entries)["strings"]
+    russian = json.loads((ROOT / "translations/ru.json").read_text(), object_pairs_hook=unique_entries)["strings"]
     assert english.keys() == russian.keys(), "Translation dictionaries differ"
+    for key, text in english.items():
+        assert isinstance(text, str) and text.strip() and isinstance(russian[key], str) and russian[key].strip(), f"Empty translation: {key}"
+        assert sorted(re.findall(r"%\d+", text)) == sorted(re.findall(r"%\d+", russian[key])), f"Translation placeholders differ: {key}"
     for path in ROOT.glob("modules/**/*.qml"):
         for key in re.findall(r'Tr\.tr\("([^"\n]+)"\)', path.read_text()):
             assert key in english, f"{path}: missing translation {key}"
@@ -49,7 +66,7 @@ def check_sources():
                 _, _, _, file = line.split()
                 assert (ROOT / f"modules/{folder}" / file).is_file(), file
     shell_scripts = [ROOT / "setup"] + sorted(
-        path for path in (ROOT / "scripts").iterdir()
+        path for path in (ROOT / "scripts").rglob("*")
         if path.is_file() and path.read_bytes().startswith(b"#!/usr/bin/env bash")
     )
     for path in shell_scripts:
@@ -58,7 +75,7 @@ def check_sources():
 
 def run_user_editor(base):
     base.mkdir()
-    for folder in ("core", "services", "components", "bin", "account", "home", "runtime", "cache", "config"):
+    for folder in ("core", "services", "common", "bin", "account", "home", "runtime", "cache", "config"):
         (base / folder).mkdir(mode=0o700)
     for name in ("Paths",):
         put(base, f"core/{name}.qml", (ROOT / f"modules/core/{name}.qml").read_text())
@@ -67,7 +84,7 @@ def run_user_editor(base):
     for file in ("passwd", "group", "shells"):
         source = source.replace(f'"/etc/{file}"', json.dumps(str(base / "account" / file)))
     put(base, "services/ServiceUser.qml", source)
-    put(base, "components/CommandProcess.qml", (ROOT / "modules/components/CommandProcess.qml").read_text())
+    put(base, "common/CommandProcess.qml", (ROOT / "modules/common/CommandProcess.qml").read_text())
     username = os.environ.get("USER", "user")
     put(base, "account/passwd", f"{username}:x:2000:2000:Tester,Room:{base / 'home'}:/bin/sh\noccupied:x:3000:2000:Other:/home/other:/bin/sh\n")
     put(base, "account/group", "users:x:2000:\nwheel:x:10:\naudio:x:20:\n")
@@ -131,16 +148,17 @@ else:
 
 def run_storage(base):
     base.mkdir()
-    for folder in ("core", "services", "components", "bin", "runtime", "cache", "config", "scripts"):
+    for folder in ("core", "services", "common", "bin", "runtime", "cache", "config", "scripts"):
         (base / folder).mkdir(mode=0o700)
     for name in ("Paths",):
         put(base, f"core/{name}.qml", (ROOT / f"modules/core/{name}.qml").read_text())
     stub(base, "core", "Tr", "function tr(key) { return key }")
     source = (ROOT / "modules/services/ServiceStorage.qml").read_text().replace('"/etc/fstab"', json.dumps(str(base / "fstab")))
     put(base, "services/ServiceStorage.qml", source)
+    put(base, "src/Clients.js", (ROOT / "modules/src/Clients.js").read_text())
     put(base, "src/ModelSync.js", (ROOT / "modules/src/ModelSync.js").read_text())
-    put(base, "components/CommandProcess.qml", (ROOT / "modules/components/CommandProcess.qml").read_text())
-    put(base, "scripts/storage", (ROOT / "scripts/storage").read_text())
+    put(base, "common/CommandProcess.qml", (ROOT / "modules/common/CommandProcess.qml").read_text())
+    put(base, "scripts/runtime/storage", (ROOT / "scripts/runtime/storage").read_text())
     put(base, "fstab", "")
     put(base, "mounts.json", "{}")
     tool = f"#!{sys.executable}\nBASE = {str(base)!r}\n" + r'''
@@ -176,7 +194,7 @@ elif name in ("udisksctl", "pkexec"):
         assert args[2] == "/dev/test-data" and args[3:] == ["--options", "ro"]
         mounts[args[2]] = "/run/media/test/Data"
     else:
-        assert args[0] == str(base / "scripts/storage")
+        assert args[0] == str(base / "scripts/runtime/storage")
         assert args[1] == "mount"
         if args[-1] == "/mnt/Denied":
             sys.exit(126)
@@ -208,15 +226,18 @@ else:
 
 def run_media(base):
     base.mkdir()
-    for folder in ("core", "services", "components", "runtime", "cache", "config"):
+    for folder in ("core", "services", "common", "runtime", "cache", "config"):
         (base / folder).mkdir(mode=0o700)
-    stub(base, "core", "Config", "property bool animationsEnabled: true")
+    stub(base, "core", "Config", "property bool animationsEnabled: true\nproperty int equalizerStyle: 0")
+    put(base, "core/Enums.qml", (ROOT / "modules/core/Enums.qml").read_text())
     stub(base, "core", "Mpris", "property var players: ({ values: [] })")
+    stub(base, "services", "ServiceLock", "property bool locked: false")
     source = (ROOT / "modules/services/ServiceMedia.qml").read_text().replace("import Quickshell.Services.Mpris\n", "")
     put(base, "services/ServiceMedia.qml", source)
-    put(base, "components/RenderActivity.qml", (ROOT / "modules/components/RenderActivity.qml").read_text())
-    put(base, "components/Equalizer.qml", (ROOT / "modules/components/Equalizer.qml").read_text())
+    put(base, "common/RenderActivity.qml", (ROOT / "modules/common/RenderActivity.qml").read_text())
+    put(base, "common/Equalizer.qml", (ROOT / "modules/common/Equalizer.qml").read_text())
     stub(base, "core", "Theme", "property bool accentShell: true\nfunction accentAlpha(alpha) { return Qt.rgba(1, 1, 1, alpha) }\nfunction inkAlpha(alpha) { return Qt.rgba(0, 0, 0, alpha) }")
+    put(base, "src/Clients.js", (ROOT / "modules/src/Clients.js").read_text())
     put(base, "src/Visualizer.js", (ROOT / "modules/src/Visualizer.js").read_text())
     module(base, "core")
     module(base, "services")
@@ -234,13 +255,15 @@ def main():
     with tempfile.TemporaryDirectory(prefix="bloodyShell-tests-") as temporary:
         base = Path(temporary)
         copies = {
-            "core": ["OverlayState", "MenuState", "SurfaceState", "Paths", "Enums"],
+            "core": ["OverlayState", "MenuState", "Paths", "Enums"],
             "services": ["ServiceApplications", "ServiceWindowActions", "ServiceDock"],
-            "components": ["CommandProcess"],
+            "common": ["CommandProcess"],
         }
         for folder, names in copies.items():
             for name in names:
                 put(base, f"{folder}/{name}.qml", (ROOT / f"modules/{folder}/{name}.qml").read_text())
+        put(base, "src/Clients.js", (ROOT / "modules/src/Clients.js").read_text())
+        put(base, "src/ModelSync.js", (ROOT / "modules/src/ModelSync.js").read_text())
         put(base, "src/AppIdentity.js", (ROOT / "modules/src/AppIdentity.js").read_text())
         stub(base, "core", "Config", '''
     property bool debug: false
@@ -253,6 +276,7 @@ def main():
         stub(base, "services", "ServiceCompositor", '''
     property var windowList: []
     property var focusedWindowId: null
+    property var lastWindowId: null
     property var focusedWorkspaceId: null
     property bool overviewOpen: false
     property var focusedCalls: []
@@ -277,14 +301,26 @@ def main():
         run_user_editor(base / "user-editor")
         run_storage(base / "storage")
         run_media(base / "media")
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/runtime_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/storage_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/installer_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/command_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/program_choices_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/dependency_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/update_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/network_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/notifications_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/screenshot_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/battery_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/autostart_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/helper_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/greeter_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/lock_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/greeter_install_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/alt_tab_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/surface_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/menu_geometry_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/island_checks.py")], check=True)
     print("Source checks and isolated QML regressions passed.")
 
 

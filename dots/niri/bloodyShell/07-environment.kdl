@@ -1,0 +1,5 @@
+spawn-at-startup "awww-daemon"
+
+spawn-sh-at-startup "qs -n -c bloodyShell"
+
+screenshot-path "~/Pictures/Screenshots/%Y-%m-%d %H-%M-%S.png"

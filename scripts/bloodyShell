@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import time
+
+NAME = "bloodyShell"
+ACTIONS = {
+    **{name: ("toggle", ("show", "hide", "toggle")) for name in ("settings", "launcher", "wallpapers", "power", "helper")},
+    "screenshot": ("show", ("show", "screen", "hide")),
+    "alt-tab": ("next", ("next", "previous")),
+    "lock": ("", ())
+}
+MAINTENANCE = ("setup", "install", "update", "doctor", "configs", "greetd")
+LIFECYCLE = ("start", "run", "restart", "stop", "status")
+
+
+def runtime_path():
+    source = Path(__file__).resolve().parents[1]
+    if (source / "shell.qml").is_file():
+        return source
+    home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    return home / "quickshell" / NAME
+
+
+def runtime():
+    path = runtime_path()
+    if not (path / "shell.qml").is_file():
+        raise RuntimeError("The shell is not installed. Run ./setup install from the source folder.")
+    return path
+
+
+def quickshell():
+    command = shutil.which("qs") or shutil.which("quickshell")
+    if not command:
+        raise RuntimeError("Quickshell is missing. Run bloodyShell doctor for installation details.")
+    return command
+
+
+def execute(args):
+    os.execvp(str(args[0]), [str(arg) for arg in args])
+
+
+def instances(command, path=None):
+    selection = ["--path", str(path)] if path is not None else ["--all"]
+    result = subprocess.run([command, "list", *selection, "--json", "--no-color"], capture_output=True, text=True, timeout=5)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or "Could not query the running shell.")
+    try:
+        output = result.stdout.strip()
+        entries = json.loads(output) if output and not output.startswith("No running instances") else []
+        if not isinstance(entries, list) or any(not isinstance(entry, dict) or not isinstance(entry.get("id"), str) or not entry["id"] for entry in entries):
+            raise ValueError("Invalid instance list")
+        return entries
+    except ValueError as error:
+        raise RuntimeError("Quickshell returned an invalid instance list.") from error
+
+
+def is_shell(entry):
+    if entry.get("shell_id") == NAME:
+        return True
+    path = entry.get("config_path")
+    if not isinstance(path, str):
+        return False
+    try:
+        return "//@ pragma ShellId " + NAME in Path(path).read_text().splitlines()
+    except (OSError, UnicodeError):
+        return False
+
+
+def display(environment):
+    wayland = environment.get("WAYLAND_DISPLAY")
+    if wayland:
+        directory = environment.get("XDG_RUNTIME_DIR") or "/run/user/" + str(os.getuid())
+        return "wayland", os.path.normpath(os.path.join(directory, wayland))
+    if environment.get("DISPLAY"):
+        return "x11", environment["DISPLAY"]
+    return None
+
+
+def instance_display(entry):
+    pid = entry.get("pid")
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return None
+    try:
+        values = Path("/proc", str(pid), "environ").read_bytes().decode(errors="replace").split("\0")
+        return display(dict(value.split("=", 1) for value in values if "=" in value))
+    except OSError:
+        return None
+
+
+def active_instance(command):
+    current_display = display(os.environ)
+    running = [entry for entry in instances(command)
+               if is_shell(entry) and (current_display is None or instance_display(entry) == current_display)]
+    if not running:
+        raise RuntimeError("No running bloodyShell instance in this session. Start it with bloodyShell start or ./scripts/bloodyShell run.")
+    return max(running, key=lambda entry: (str(entry.get("launch_time", "")), entry["id"]))
+
+
+def ipc(target, function, *args):
+    command = quickshell()
+    instance = active_instance(command)
+    execute([command, "ipc", "--id", instance["id"], "call", "--", target, function, *args])
+
+
+def action_usage(action):
+    modes = ACTIONS[action][1]
+    return action + (" [" + "|".join(modes) + "]" if modes else "")
+
+
+def action_request(action, args):
+    default, modes = ACTIONS[action]
+    if len(args) > 1 or (args and args[0] not in modes):
+        raise RuntimeError("Usage: bloodyShell " + action_usage(action))
+    mode = args[0] if args else default
+    if action == "alt-tab":
+        return "altTab", "begin", "true" if mode == "previous" else "false"
+    return action, mode if modes else action
+
+
+def stop(command, path, quiet=False):
+    running = instances(command, path)
+    if not running:
+        if not quiet:
+            print("bloodyShell is not running.")
+        return
+    for entry in running:
+        result = subprocess.run([command, "kill", "--id", entry["id"]], capture_output=True, text=True, timeout=5)
+        if result.returncode and any(item["id"] == entry["id"] for item in instances(command, path)):
+            raise RuntimeError(result.stderr.strip() or "Could not stop the shell.")
+    deadline = time.monotonic() + 5
+    while instances(command, path):
+        if time.monotonic() >= deadline:
+            raise RuntimeError("The shell did not stop. Check bloodyShell logs before restarting.")
+        time.sleep(0.1)
+    if not quiet:
+        print("bloodyShell stopped.")
+
+
+def start(command, path, foreground=False, args=()):
+    if not os.environ.get("WAYLAND_DISPLAY"):
+        raise RuntimeError("Start bloodyShell inside your niri Wayland session.")
+    options = [command, "--no-duplicate", "--path", str(path)]
+    if not foreground:
+        options.append("--daemonize")
+    execute([*options, *args])
+
+
+def usage():
+    actions = "\n".join("  " + action_usage(action) for action in ACTIONS)
+    print(f"""bloodyShell — desktop shell controls
+
+Usage: bloodyShell [command] [options]
+
+  start                 Start in the background (default)
+  run [qs options]      Run in the foreground
+  restart               Restart this shell
+  stop                  Stop this shell
+  status [--json]       Show running instances
+  logs [qs log options] Read runtime logs (last 200 lines by default)
+
+{actions}
+
+  setup                 Open the setup menu
+  install               Install or repair using setup
+  update [options]      Update using setup
+  doctor [--json]       Check the installation
+  configs [names]       Apply optional app configurations
+  greetd                Configure the login screen
+  path                  Print the runtime directory
+  version               Print the installed version
+  help                  Show this help
+
+Start with ./setup install when using a fresh source checkout.
+Startup applications are managed in Settings → Applications → Autostart.
+Actions and logs target the newest running bloodyShell in this desktop session.""")
+
+
+def control(action, args):
+    if action in ("start", "restart", "stop") and args:
+        raise RuntimeError(f"{action} does not take arguments")
+    if action == "status" and args not in ([], ["--json"]):
+        raise RuntimeError("Usage: bloodyShell status [--json]")
+    path = runtime()
+    command = quickshell()
+    if action == "stop":
+        stop(command, path)
+    elif action == "status":
+        running = instances(command, path)
+        version = (path / "version").read_text().strip()
+        if args:
+            print(json.dumps(dict(running=bool(running), path=str(path), version=version, instances=running)))
+        else:
+            print(f"bloodyShell {version} · {'running' if running else 'stopped'}\n{path}")
+            for entry in running:
+                print(f"  {entry['id']} · PID {entry.get('pid', '?')}")
+    else:
+        if action == "restart":
+            if not os.environ.get("WAYLAND_DISPLAY"):
+                raise RuntimeError("Restart bloodyShell inside your niri Wayland session.")
+            stop(command, path, quiet=True)
+        start(command, path, foreground=action == "run", args=args)
+
+
+def main():
+    args = sys.argv[1:]
+    action = args.pop(0) if args else "start"
+    aliases = {"--help": "help", "-h": "help", "--version": "version", "-V": "version"}
+    action = aliases.get(action, action)
+    if action in ("help", "version", "path"):
+        if args:
+            raise RuntimeError(f"{action} does not take arguments")
+        if action == "help":
+            usage()
+        elif action == "version":
+            print(NAME + " " + (runtime() / "version").read_text().strip())
+        else:
+            print(runtime())
+    elif action in ACTIONS:
+        ipc(*action_request(action, args))
+    elif action == "logs":
+        command = quickshell()
+        instance = active_instance(command)
+        execute([command, "log", "--id", instance["id"], *(args or ["--tail", "200"])])
+    elif action in MAINTENANCE:
+        path = runtime() / "setup"
+        if not path.is_file():
+            raise RuntimeError("The setup script is missing from this installation.")
+        execute(["bash", str(path), *([] if action == "setup" else [action]), *args])
+    elif action in LIFECYCLE:
+        control(action, args)
+    else:
+        raise RuntimeError(f"Unknown command: {action}. Run bloodyShell help.")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        print(f"bloodyShell: {error}", file=sys.stderr)
+        sys.exit(1)

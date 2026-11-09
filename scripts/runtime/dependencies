@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+
+import json
+from pathlib import Path
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def catalog():
+    text = (ROOT / "setup").read_text().split("readonly DEPENDENCIES=(", 1)[1].split("\n)", 1)[0]
+    return [dict(zip(("kind", "tool", "feature", "arch", "fedora", "debian"), match.split("|")))
+            for match in re.findall(r'^\s*"([^"\n]+)"', text, re.M)]
+
+
+def available(tool):
+    if not shutil.which(tool):
+        return False
+    if tool == "nmcli":
+        helper = ROOT / "scripts/runtime/network-auth"
+        try:
+            return helper.is_file() and subprocess.run([sys.executable, str(helper), "--check"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+    return True
+
+
+def family():
+    fields = {}
+    for line in Path("/etc/os-release").read_text().splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            fields[key] = value.strip('"')
+    names = (fields.get("ID", "") + " " + fields.get("ID_LIKE", "")).split()
+    for name, result in (("arch", "arch"), ("fedora", "fedora"), ("rhel", "fedora"), ("debian", "debian"), ("ubuntu", "debian")):
+        if name in names:
+            return result
+    return ""
+
+
+def terminal():
+    for executable, args in (("kitty", []), ("foot", []), ("konsole", ["--nofork", "-e"]), ("gnome-terminal", ["--wait", "--"]), ("xterm", ["-e"])):
+        path = shutil.which(executable)
+        if path:
+            return [path] + args
+    return []
+
+
+def packages(entry, distro):
+    return [value for value in entry.get(distro, "-").split() if value != "-" and not value.startswith("copr:")]
+
+
+def plan(action, tool, distro=None):
+    distro = family() if distro is None else distro
+    entries = catalog()
+    entry = next((item for item in entries if item["tool"] == tool), None)
+    if not entry or action not in ("install", "remove"):
+        raise ValueError("Unknown dependency or operation")
+    names = packages(entry, distro)
+    if not names:
+        raise ValueError("This dependency needs manual installation on this distribution")
+    protected = {name for item in entries if item["kind"] == "required" for name in packages(item, distro)}
+    if action == "remove" and (entry["kind"] == "required" or tool == "python3" or protected.intersection(names)):
+        raise ValueError("Required shell packages cannot be removed here")
+    if distro == "arch":
+        if action == "remove":
+            return [["sudo", "pacman", "-R", *names]]
+        repo = all(subprocess.run(["pacman", "-Si", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0 for name in names)
+        if repo:
+            return [["sudo", "pacman", "-S", "--needed", *names]]
+        helper = shutil.which("paru") or shutil.which("yay")
+        if not helper:
+            raise ValueError("Install paru or yay to download this AUR dependency")
+        return [[helper, "-S", "--needed", *names]]
+    if distro == "fedora":
+        commands = []
+        if action == "install":
+            commands = [["sudo", "dnf", "copr", "enable", token[5:]] for token in entry["fedora"].split() if token.startswith("copr:")]
+        return commands + [["sudo", "dnf", action, *names]]
+    if distro == "debian":
+        return [["sudo", "apt-get", action, *names]]
+    raise ValueError("Unsupported distribution")
+
+
+def status():
+    distro = family()
+    entries = catalog()
+    protected = {name for item in entries if item["kind"] == "required" for name in packages(item, distro)}
+    return {"terminal": terminal(), "entries": [
+        {"tool": item["tool"], "required": item["kind"] == "required" or item["tool"] == "python3", "installed": available(item["tool"]),
+         "packages": packages(item, distro), "removable": item["kind"] != "required" and item["tool"] != "python3" and not protected.intersection(packages(item, distro)),
+         "supported": bool(packages(item, distro))} for item in entries]}
+
+
+def main():
+    if sys.argv[1:] == ["status"]:
+        print(json.dumps(status()))
+        return 0
+    try:
+        if len(sys.argv) != 3:
+            raise ValueError("Usage: dependencies status | install/remove <tool>")
+        commands = plan(*sys.argv[1:])
+        for command in commands:
+            print("\n" + shlex.join(command) + "\n", flush=True)
+            result = subprocess.run(command)
+            if result.returncode:
+                return result.returncode
+        return 0
+    except (ValueError, OSError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    finally:
+        if sys.stdin.isatty():
+            try:
+                input("\nPress Enter to close…")
+            except (EOFError, KeyboardInterrupt):
+                pass
+
+
+if __name__ == "__main__":
+    sys.exit(main())

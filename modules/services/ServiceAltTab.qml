@@ -57,7 +57,7 @@ Singleton
     {
         step = Math.trunc(step);
         if (!Number.isFinite(step) || step === 0) return;
-        if (ServiceLock.locked || !Config.initialized) return;
+        if (ServiceLock.locked || OverlayState.inhibited || !Config.initialized) return;
         if (!active)
         {
             remember();
@@ -67,7 +67,7 @@ Singleton
             if (windows.length < 2) return;
             output = ServiceCompositor.focusedOutput;
             selected = step < 0 ? windows.length - 1 : Math.min(1, windows.length - 1);
-            OverlayState.windows.forEach(name => OverlayState.hide(name));
+            OverlayState.close();
             MenuState.close();
             requestedFocus = null;
             active = true;
@@ -118,11 +118,7 @@ Singleton
     Connections
     {
         target: OverlayState
-        function onLauncherActiveChanged() { if (OverlayState.launcherActive) serviceAltTab.cancel() }
-        function onSettingsActiveChanged() { if (OverlayState.settingsActive) serviceAltTab.cancel() }
-        function onPowerActiveChanged() { if (OverlayState.powerActive) serviceAltTab.cancel() }
-        function onWallpapersActiveChanged() { if (OverlayState.wallpapersActive) serviceAltTab.cancel() }
-        function onHelperActiveChanged() { if (OverlayState.helperActive) serviceAltTab.cancel() }
+        function onCurrentChanged() { if (OverlayState.active) serviceAltTab.cancel() }
     }
 
     Timer

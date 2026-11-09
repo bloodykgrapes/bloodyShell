@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 
-import "components"
+import "common"
 import "core"
 import "services"
 import "src/Visualizer.js" as Visualizer
@@ -102,6 +102,25 @@ ShellRoot
         equalizer.width = 100;
         equalizer.active = true;
         check(ServiceMedia.visualizerUsers === 1, "equalizer subscribes independently");
+        Config.equalizerStyle = Enums.EqualizerWaves;
+        check(equalizer.style === Enums.EqualizerWaves && ServiceMedia.visualizerUsers === 1, "Global Waves selection changed subscriptions");
+        ServiceMedia.levels = [0.2, 0.8, 0.4];
+        check(equalizer.levels.length === 7, "Waves ignored the requested sample count");
+        const waves = equalizer.children.find(item => item.item !== undefined).item;
+        check(waves && waves.objectName === "equalizerWaves", "Waves renderer was not loaded");
+        check(Math.max(...waves.target) < Math.max(...equalizer.levels), "Waves did not smooth neighboring frequency samples");
+        const beforeRetarget = JSON.stringify(waves.values);
+        ServiceMedia.levels = [0.8, 0.1, 0.9];
+        check(waves.settling && JSON.stringify(waves.values) === beforeRetarget, "New samples snapped the wave instead of retargeting its motion");
+        const path = waves.curve([0.2, 0.8, 0.4]);
+        check(path.startsWith("M 0 40 L 0 ") && path.endsWith("L 100 40 Z") && path.includes(" C "), "Waves are not a closed, curved fill");
+        equalizer.bars = 100;
+        check(equalizer.levels.length === 32, "Wave complexity is not bounded");
+        Config.equalizerStyle = Enums.EqualizerBars;
+        check(equalizer.style === Enums.EqualizerBars && equalizer.barCount === 100, "Switching back changed Bars layout");
+        equalizer.samples = [0.4, 0.7];
+        check(ServiceMedia.visualizerUsers === 0 && equalizer.levels.length === 100, "Preview samples started a live visualizer");
+        equalizer.samples = null;
         equalizer.visible = false;
         check(ServiceMedia.visualizerUsers === 0, "hidden equalizer releases shared cava");
         equalizer.visible = true;
@@ -114,6 +133,10 @@ ShellRoot
         check(!activity.active && !ServiceMedia.visualizerRunning, "transparent ancestor stops visualizer");
         parentItem.opacity = 1;
         check(ServiceMedia.visualizerRunning, "visualizer resumes when shown");
+        ServiceLock.locked = true;
+        check(!ServiceMedia.visualizerRunning, "lock screen suspends background visualizers");
+        ServiceLock.locked = false;
+        check(ServiceMedia.visualizerRunning, "unlock resumes visualizers");
         Config.animationsEnabled = false;
         check(!ServiceMedia.visualizerRunning, "disabled animations stop visualizer work");
         Config.animationsEnabled = true;

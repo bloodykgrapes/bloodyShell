@@ -3,8 +3,9 @@ pragma Singleton
 import QtQuick
 import Quickshell
 
-import "../core"
 import "../src/AppIdentity.js" as AppIdentity
+import "../src/ModelSync.js" as ModelSync
+import "../core"
 
 Singleton
 {
@@ -120,33 +121,7 @@ Singleton
         sync(newItems);
     }
 
-    function sync(newItems)
-    {
-        const fields = ["type", "key", "app_id", "id", "title", "is_running", "is_urgent", "is_focused", "is_pinned", "count", "windows", "focused_index"];
-
-        for (let target = 0; target < newItems.length; target++)
-        {
-            const incoming = newItems[target];
-            const incomingKey = itemKey(incoming);
-            let found = -1;
-
-            for (let i = target; i < dockModel.count; i++)
-            {
-                if (itemKey(dockModel.get(i)) === incomingKey) { found = i; break; }
-            }
-
-            if (found < 0) dockModel.insert(target, incoming);
-            else
-            {
-                if (found !== target) dockModel.move(found, target, 1);
-                if (incoming.type === "separator") continue;
-
-                const oldItem = dockModel.get(target);
-                if (fields.some(f => oldItem[f] !== incoming[f])) dockModel.set(target, incoming);
-            }
-        }
-        while (dockModel.count > newItems.length) dockModel.remove(dockModel.count - 1);
-    }
+    function sync(items) { ModelSync.sync(dockModel, items, itemKey) }
 
     function move(from, to)
     {

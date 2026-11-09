@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
 
+import "../src/Clients.js" as Clients
 import "../core"
 
 Singleton
@@ -82,17 +83,15 @@ Singleton
 
     function setPositionActive(client, active)
     {
-        const present = positionClients.includes(client);
-        if (present === active) return;
-        positionClients = active ? positionClients.concat([client]) : positionClients.filter(c => c !== client);
-        if (active && positionClients.length === 1 && player && player.positionSupported) player.positionChanged();
+        const next = Clients.update(positionClients, client, active);
+        if (next === positionClients) return;
+        positionClients = next;
+        if (active && positionUsers === 1 && player && player.positionSupported) player.positionChanged();
     }
 
     function setVisualizerActive(client, active)
     {
-        const present = visualizerClients.includes(client);
-        if (present === active) return;
-        visualizerClients = active ? visualizerClients.concat([client]) : visualizerClients.filter(c => c !== client);
+        visualizerClients = Clients.update(visualizerClients, client, active);
     }
 
     Timer
@@ -105,7 +104,7 @@ Singleton
 
     readonly property int bars: 28
     property var levels: []
-    readonly property bool visualizerRunning: visualizerUsers > 0 && playing && Config.animationsEnabled
+    readonly property bool visualizerRunning: visualizerUsers > 0 && playing && Config.animationsEnabled && !ServiceLock.locked
     property bool cavaMissing: false
 
     readonly property string cavaConfig: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/bloodyShell-cava.conf"

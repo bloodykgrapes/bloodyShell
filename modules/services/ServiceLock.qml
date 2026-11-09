@@ -7,7 +7,7 @@ import Quickshell.Services.Pam
 import Quickshell.Wayland
 
 import "../core"
-import "../lock"
+import "../ui/lock"
 
 Singleton
 {

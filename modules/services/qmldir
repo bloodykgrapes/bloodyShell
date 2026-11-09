@@ -12,6 +12,7 @@ singleton ServiceDisplay             1.0 ServiceDisplay.qml
 singleton ServiceDock                1.0 ServiceDock.qml
 singleton ServiceGreeter             1.0 ServiceGreeter.qml
 singleton ServiceIdle                1.0 ServiceIdle.qml
+singleton ServiceIsland              1.0 ServiceIsland.qml
 singleton ServiceKeyboard            1.0 ServiceKeyboard.qml
 singleton ServiceLock                1.0 ServiceLock.qml
 singleton ServiceMedia               1.0 ServiceMedia.qml
@@ -20,6 +21,7 @@ singleton ServiceNotifications       1.0 ServiceNotifications.qml
 singleton ServiceOSD                 1.0 ServiceOSD.qml
 singleton ServicePower               1.0 ServicePower.qml
 singleton ServiceRegion              1.0 ServiceRegion.qml
+singleton ServiceScreenshot          1.0 ServiceScreenshot.qml
 singleton ServiceStorage             1.0 ServiceStorage.qml
 singleton ServiceSystem              1.0 ServiceSystem.qml
 singleton ServiceUpdate              1.0 ServiceUpdate.qml

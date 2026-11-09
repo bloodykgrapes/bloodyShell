@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 
-import "components"
+import "common"
 import "core"
 import "services"
 
@@ -91,7 +91,7 @@ ShellRoot
         check(Paths.settingsDir === Quickshell.env("XDG_CONFIG_HOME") + "/bloodyShell", "settings honor XDG_CONFIG_HOME");
         check(Paths.stateDir === Quickshell.env("XDG_CACHE_HOME") + "/bloodyShell", "state honors XDG_CACHE_HOME");
         check(Paths.shellDir + "/assets/wallpapers" === String(Quickshell.shellDir) + "/assets/wallpapers", "wallpapers follow checkout");
-        check(Enums.EdgeRight === 3 && Enums.BarIslands === 3 && Enums.BackgroundBlur === 1, "enum values preserve settings");
+        check(Enums.EdgeRight === 3 && Enums.InFrame === 0 && Enums.OutFrame === 1, "frame styles and shared enum values are stable");
         checkDockAndWindows();
         ServiceApplications.launching = { earliest: Date.now() - 14900, later: Date.now() - 14500 };
         launchDeadline.start();
@@ -100,10 +100,6 @@ ShellRoot
         widget.active = false;
         check(!MenuState.menuActive, "inactive widget closes its menu");
         check(MenuState.menuWidget === null && MenuState.menuOwner === null, "menu references cleared");
-        SurfaceState.setDockCut("screen", Qt.rect(1, 2, 3, 4));
-        check(SurfaceState.dockCut.screen.width === 3, "surface stores per-screen geometry");
-        SurfaceState.setDockCut("screen", null);
-        check(SurfaceState.dockCut.screen === undefined, "surface removes stale geometry");
         OverlayState.show("launcher");
         OverlayState.show("settings");
         OverlayState.show("power");
@@ -118,8 +114,8 @@ ShellRoot
         interval: 320
         onTriggered:
         {
-            tests.check(!OverlayState.launcherMounted && !OverlayState.settingsMounted, "rapid switching cleans every hidden overlay");
-            tests.check(OverlayState.powerActive && OverlayState.powerMounted, "current overlay stays mounted");
+            tests.check(!(OverlayState.mounted === "launcher") && !(OverlayState.mounted === "settings"), "rapid switching cleans every hidden overlay");
+            tests.check((OverlayState.current === "power") && (OverlayState.mounted === "power"), "current overlay stays mounted");
             OverlayState.hide("power");
             OverlayState.show("power");
             OverlayState.show("unknown");
@@ -135,8 +131,8 @@ ShellRoot
         interval: 320
         onTriggered:
         {
-            tests.check(OverlayState.powerActive && OverlayState.powerMounted, "reopened overlay survives pending cleanup");
-            tests.check(!OverlayState.launcherActive, "disabled launcher stays closed");
+            tests.check((OverlayState.current === "power") && (OverlayState.mounted === "power"), "reopened overlay survives pending cleanup");
+            tests.check(!(OverlayState.current === "launcher"), "disabled launcher stays closed");
             tests.overlaysDone = true;
             tests.finish();
         }

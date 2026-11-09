@@ -51,11 +51,13 @@ Quickshell needs Qt Quick, Qt SVG, and Qt Wayland.
 | Package        | Purpose          | Required |
 | :------------- | :--------------- | :------: |
 | `ffmpeg`       | Video processing | Yes      |
+| `grim`         | Screen capture   | Yes      |
+| `wl-clipboard` | Screenshot copy  | Yes      |
 | `mpv`          | Media playback   | Yes      |
 
 ---
 
-Optional features use brightnessctl, bluetoothctl, wlsunset, ffmpeg, lpstat,
+Optional features use brightnessctl, bluetoothctl, wlsunset, lpstat,
 notify-send, cava, playerctl, udisksctl, and pkexec. App shortcuts use Kitty,
 Nautilus, and btop. gum enables arrow-key setup menus; numbered menus work
 without it.

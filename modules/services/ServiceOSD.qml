@@ -2,7 +2,6 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
-import Quickshell.Services.Notifications
 
 import "../core"
 
@@ -18,7 +17,6 @@ Singleton
     property string context: ""
     property real   value: -1
     property bool   dim: false
-    property var    currentNotification: null
 
     property int displayTimeout: Config.osdDuration
     property int presentationRevision: 0
@@ -32,7 +30,6 @@ Singleton
 
     function allowed(type)
     {
-        if (type === "notifications") return Config.notificationsEnabled;
         if (!Config.osdEnabled) return false;
 
         switch (type)
@@ -57,16 +54,14 @@ Singleton
     {
         hideTimer.stop();
         active = false;
-        currentNotification = null;
     }
 
-    function show(type, icon, text, value, dim, force, detail, context, timeoutOverride, notification)
+    function show(type, icon, text, value, dim, force, detail, context, timeoutOverride)
     {
-        if (!armed && !force && type !== "notifications") return;
+        if (!armed && !force) return;
         if (!(force ? Config.osdEnabled : allowed(type))) return;
 
         osd.forced = force === true;
-        osd.currentNotification = type === "notifications" ? (notification || null) : null;
         osd.type = type;
         osd.icon = icon || "";
         osd.text = text || "";
@@ -83,51 +78,6 @@ Singleton
     function preview()
     {
         show("volume", iconOf("volume"), "OSD preview · 72%", 0.72, false, true);
-    }
-
-    function showNotification(n)
-    {
-        if (!n || !allowed("notifications")) return;
-
-        const summary = String(n.summary || n.appName || Tr.tr("osd.notification")).replace(/<[^>]*>/g, "").trim();
-        const body = String(n.body || "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
-        const app = String(n.appName || "");
-        const critical = n.urgency === NotificationUrgency.Critical;
-
-        let timeout = n.expireTimeout > 0 ? n.expireTimeout * 1000 : Config.notificationsDuration;
-        if (critical && n.expireTimeout <= 0) timeout = Math.max(timeout, 10000);
-
-        show("notifications", iconOf("bell"), summary, -1, critical, false, body, app, timeout, n);
-
-        n.closed.connect(function()
-        {
-            if (osd.currentNotification === n) osd.hide();
-        });
-    }
-
-    function activateNotification()
-    {
-        const n = osd.currentNotification;
-        if (!n) return;
-
-        const actions = n.actions || [];
-        const action = actions.find(a => a.identifier === "default");
-        if (action) action.invoke();
-        else ServiceNotifications.dismiss(n);
-        osd.hide();
-    }
-
-    function dismissNotification()
-    {
-        const n = osd.currentNotification;
-        if (n) ServiceNotifications.dismiss(n);
-        osd.hide();
-    }
-
-    Connections
-    {
-        target: ServiceNotifications
-        function onNotificationReceived(notification) { osd.showNotification(notification) }
     }
 
     property double suppressVolumeUntil: 0

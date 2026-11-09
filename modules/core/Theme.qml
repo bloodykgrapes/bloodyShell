@@ -9,15 +9,13 @@ Singleton
 {
     id: theme
 
-    readonly property string fontText: "Noto Sans"
+    readonly property string fontText: "sans-serif"
     readonly property string fontMono: "JetBrains Mono"
 
     readonly property var neutralStyles:
     [
         ["#eeeef2", "#e3e3e9", "#fafafd"],
-        ["#242426", "#1d1d20", Qt.rgba(1, 1, 1, 0.055)],
-        ["#121214", "#0e0e10", Qt.rgba(1, 1, 1, 0.05)],
-        ["#000000", "#0a0a0b", Qt.rgba(1, 1, 1, 0.065)]
+        ["#101012", "#08080a", "#1c1c1e"]
     ]
     function tinted(base: color, saturation: real): color
     {
@@ -26,7 +24,7 @@ Singleton
     }
 
     readonly property var styles: neutralStyles.map(palette => palette.map(color => tinted(color, 0.24)))
-    readonly property var  style: styles[Config.themeStyle] || styles[1]
+    readonly property var  style: styles[light ? Enums.ThemeLight : Enums.ThemeDark]
     readonly property bool light: Config.themeStyle === Enums.ThemeLight
 
     readonly property real ink: light ? 0 : 1
@@ -35,10 +33,10 @@ Singleton
     readonly property color colorSolid: style[0]
     readonly property color colorLine:  tinted(light ? "#ababB5" : "#47474a", 0.16)
 
-    readonly property color text1: tinted(light ? "#1d1d1f" : "#ffffff", 0.10)
-    readonly property color text2: tinted(light ? "#34343a" : "#c9c9c9", 0.10)
-    readonly property color text3: tinted(light ? "#414147" : blur ? "#b8b8be" : "#9a9a9a", 0.10)
-    readonly property color text4: inkAlpha(blur ? 0.65 : 0.5)
+    readonly property color text1: tinted(light ? "#1d1d1f" : "#f5f5f7", 0.10)
+    readonly property color text2: tinted(light ? "#34343a" : "#aeaeb2", 0.10)
+    readonly property color text3: tinted(light ? "#414147" : "#9a9a9a", 0.10)
+    readonly property color text4: inkAlpha(0.5)
 
     readonly property bool  accentShell: Config.themeAccent
     readonly property color accentBase:  ServiceAppearance.accent
@@ -70,43 +68,27 @@ Singleton
     readonly property color colorCritical:  light ? "#b42332" : "#ff6b6b"
     readonly property color colorAttention: light ? "#874500" : "#ff9f0a"
 
-    readonly property bool blur:        Config.themeBackground === Enums.BackgroundBlur
-    readonly property bool translucent: Config.themeBackground !== Enums.BackgroundSolid
-
-    readonly property real  blurAmount:       Math.max(0, Math.min(1, Config.themeBackgroundBlur / 100))
-    readonly property real  blurAlpha:        0.2 + 0.5 * blurAmount
-    readonly property real  transparentAlpha: Math.max(0.1, Math.min(0.95, Config.themeBackgroundTransparent / 100))
-    readonly property real  glassAlpha:       blur ? blurAlpha : transparentAlpha
-    readonly property color glassFill:        Qt.rgba(colorSolid.r, colorSolid.g, colorSolid.b, Math.min(1, glassAlpha + (light ? 0.1 : 0)))
-    readonly property color glassEdge:        light ? Qt.rgba(1, 1, 1, 0.45) : inkAlpha(0.14)
-
-    function onGlass(item): bool
-    {
-        if (!blur) return false;
-        for (let parent = item.parent; parent; parent = parent.parent)
-            if (parent.glassContent !== undefined) return parent.glassContent;
-        return false;
-    }
-    readonly property color foregroundShadow: light ? Qt.rgba(1, 1, 1, 0.85) : Qt.rgba(0, 0, 0, 0.85)
-
     readonly property int borderWidth: Config.themeBorder ? 1 : 0
+
+    readonly property color frameColor: tinted(light ? "#f5f5f7" : accentShell ? "#08080a" : "#000000", 0.24)
+    readonly property int frameThickness: Math.max(0, Math.min(8, Config.frameThickness))
+    readonly property int frameRadius: 24
+    readonly property int frameSmoothing: 24
+    readonly property int sidebarWidth: 380
+    readonly property int sidebarCorner: 28
 
     readonly property int radiusSmall:  8
     readonly property int radiusMedium: 10
     readonly property int radiusLarge:  16
 
-    readonly property real barThickness:     46
+    readonly property real barThickness:     44
     readonly property real barVerticalWidth: 38
     readonly property int  barPadding:       10
     readonly property int  barMargin:        10
-    readonly property int  barRadius:        18
+    readonly property int  barRadius:        22
     readonly property int  barSpacing:       10
-    readonly property int  barFloatingGap:   200
     readonly property int  barReveal:        4
     readonly property int  barHideDelay:     450
-
-    readonly property int barFrameThickness: 8
-    readonly property int barFrameRadius:    22
 
     readonly property int barWidgetHeight:  24
     readonly property int barWidgetPadding: 2
@@ -114,13 +96,8 @@ Singleton
 
     readonly property int barGroupThickness:  barWidgetHeight + 4
     readonly property int barGroupRadius:     barGroupThickness / 2
-    readonly property int barGroupPadding:    4
 
-    readonly property color barSurface:     translucent ? glassFill : colorSolid
-    readonly property color barSurfaceEdge: translucent ? glassEdge : colorLine
-    readonly property color barColorGroup:  inkAlpha(0.05)
-
-    readonly property int titleMaxWidth: 260
+    readonly property int titleMaxWidth: 200
 
     readonly property int   menuWidth:      280
     readonly property int   menuPadding:    10
@@ -133,9 +110,6 @@ Singleton
     readonly property int dockReveal:        20
     readonly property int dockSeparatorSize: 9
     readonly property int dockHideDelay:     300
-
-    readonly property color dockSurface:     translucent ? glassFill : colorSolid
-    readonly property color dockSurfaceEdge: translucent ? glassEdge : colorLine
 
     readonly property int launcherWidth:   660
     readonly property int launcherSearch:  54
@@ -154,10 +128,8 @@ Singleton
     readonly property color settingsColorCard:       style[2]
     readonly property color settingsColorLine:       inkAlpha(0.06)
 
-    readonly property bool  lockSampled:   Config.themeBackground !== Enums.BackgroundSolid
-    readonly property real  lockBlur:      Config.themeBackground === Enums.BackgroundBlur ? 0.4 + 0.6 * blurAmount : 0
-    readonly property color lockGlass:     Qt.rgba(colorSolid.r, colorSolid.g, colorSolid.b, translucent ? Math.max(0.7, glassAlpha) : 1)
-    readonly property color lockGlassEdge: inkAlpha(0.12)
+    readonly property color lockSurface: colorSolid
+    readonly property color lockSurfaceEdge: inkAlpha(0.12)
     readonly property color lockHover:     accentShell ? Qt.rgba(accentBase.r, accentBase.g, accentBase.b, 0.32) : inkAlpha(0.16)
     readonly property color lockPressed:   accentShell ? Qt.rgba(accentBase.r, accentBase.g, accentBase.b, 0.45) : inkAlpha(0.26)
     readonly property color lockStrong:    inkAlpha(0.14)

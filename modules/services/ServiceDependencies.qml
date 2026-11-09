@@ -4,7 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-import "../components"
+import "../common"
 import "../core"
 
 Singleton
@@ -17,7 +17,7 @@ Singleton
     property string operation: ""
     property var pending: null
     readonly property bool busy: probe.busy || command.busy
-    readonly property string helper: Paths.shellDir + "/scripts/dependencies"
+    readonly property string helper: Paths.runtimeScriptsDir + "/dependencies"
 
     function refresh(clearError = true)
     {

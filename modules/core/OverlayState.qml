@@ -8,56 +8,51 @@ Singleton
     id: overlayState
 
     readonly property var windows: Registry.windows
+    property string current: ""
+    property string mounted: ""
+    readonly property bool active: current !== ""
+    property bool inhibited: false
 
-    property bool helperActive: false
-    property bool helperMounted: false
-
-    property bool launcherActive: false
-    property bool launcherMounted: false
-    property bool settingsActive: false
-    property bool settingsMounted: false
     property int settingsPage: 0
     property bool settingsPopup: false
-    property bool powerActive: false
-    property bool powerMounted: false
-    property bool wallpapersActive: false
-    property bool wallpapersMounted: false
+    property string screenName: ""
+    property point origin: Qt.point(0, 0)
 
     function show(name)
     {
-        if (!windows.includes(name)) return;
+        if (inhibited) return;
+        if (!windows.includes(name) && name !== "desktopMenu") return;
         if (name === "launcher" && !Config.launcherEnabled) return;
         if (name === "helper") Config.set("helperSeen", true);
         MenuState.close();
-        overlayState[name + "Mounted"] = true;
-        overlayState[name + "Active"] = true;
-        windows.forEach(w =>
-        {
-            if (w !== name) overlayState[w + "Active"] = false;
-        });
-        unmountTimer.restart();
+        unmountTimer.stop();
+        if (name !== "desktopMenu") screenName = "";
+        mounted = name;
+        current = name;
+    }
+
+    function showDesktopMenu(screen, x, y)
+    {
+        screenName = screen;
+        origin = Qt.point(x, y);
+        show("desktopMenu");
     }
 
     function hide(name)
     {
-        if (!windows.includes(name)) return;
-        overlayState[name + "Active"] = false;
+        if (name !== current) return;
+        current = "";
         unmountTimer.restart();
     }
 
-    function toggle(name)
-    {
-        if (!windows.includes(name)) return;
-        overlayState[name + "Active"] ? hide(name) : show(name);
-    }
+    function close() { if (active) hide(current) }
+
+    function toggle(name) { current === name ? hide(name) : show(name) }
 
     Timer
     {
         id: unmountTimer
         interval: Config.animationsEnabled ? Theme.animationDurationClose + 50 : 0
-        onTriggered: overlayState.windows.forEach(w =>
-        {
-            if (!overlayState[w + "Active"]) overlayState[w + "Mounted"] = false;
-        })
+        onTriggered: if (!overlayState.active) overlayState.mounted = ""
     }
 }

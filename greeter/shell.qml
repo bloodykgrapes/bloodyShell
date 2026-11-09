@@ -1,21 +1,10 @@
-//@ pragma UseQApplication
 import QtQuick
 import QtQuick.Controls.Basic as Controls
 import Quickshell
 import Quickshell.Io
 import Quickshell.Widgets
-import QtQuick.Effects
 import Quickshell.Services.Greetd
 
-
-// Экран входа bloodyShell для greetd: обои, часы, аватар, поле пароля, выбор сеанса, кнопки питания.
-// Папка greeter/ — отдельная конфигурация Quickshell, в ней всё, что нужно; greetd запускает её в cage
-// (./setup greetd копирует папку в /usr/share/bloodyShell):
-//   qs -p /usr/share/bloodyShell/shell.qml
-// Файлы: shell.qml — вход и экран, Widgets.qml — детали (кнопки, поле пароля, тени), Theme.qml — настройки,
-// цвета, значки и питание; icons/ — значки. Оформление (акцент, обои, анимации, часы) — из /var/lib/bloodyShell,
-// туда его кладёт шелл (ServiceGreeter).
-// Без greetd (запуск из сеанса) — предпросмотр: вход не выполняется.
 ShellRoot
 {
     id: root
@@ -24,7 +13,6 @@ ShellRoot
     readonly property bool preview: !authenticator.available || Quickshell.env("BLOODYSHELL_GREETER_PREVIEW") === "1"
     property var authenticator: Greetd
 
-    // ---------- пользователи: обычные учётные записи из /etc/passwd ----------
     property var users: []
     property int userIndex: 0
     property bool manualMode: false
@@ -57,7 +45,6 @@ ShellRoot
         return u && !manualMode ? [root.stateDir + "/avatars/" + u.name, "/var/lib/AccountsService/icons/" + u.name] : [];
     }
 
-    // ---------- сеансы: /usr/share/wayland-sessions ----------
     property var sessions: []
     property int sessionIndex: 0
     readonly property var session: sessions.length > 0 ? sessions[Math.max(0, Math.min(sessionIndex, sessions.length - 1))] : null
@@ -76,7 +63,6 @@ ShellRoot
         }
     }
 
-    // ---------- последний выбор (пользователь и сеанс) ----------
     property var remembered: ({})
     FileView
     {
@@ -89,7 +75,6 @@ ShellRoot
     {
         const u = users.findIndex(x => x.name === remembered.user);
         if (u >= 0) userIndex = u;
-        // сеанс: последний, а впервые — niri, если он есть
         const s = sessions.findIndex(x => x.id === (remembered.session || "niri"));
         if (s >= 0) sessionIndex = s;
     }
@@ -99,7 +84,6 @@ ShellRoot
         memory.setText(JSON.stringify({ user: user.name, session: session.id }) + "\n");
     }
 
-    // ---------- вход ----------
     property bool busy: false
     property bool leaving: false
     property bool failed: false
@@ -217,8 +201,6 @@ ShellRoot
         }
     }
 
-    // ---------- окно ----------
-    // cage не умеет layer-shell — обычное окно, cage сам разворачивает его на весь экран
     FloatingWindow
     {
         color: "black"
@@ -232,7 +214,6 @@ ShellRoot
             Keys.onEscapePressed: root.cancelAuthentication()
             anchors.fill: parent
 
-            // ---------- появление и уход (каскадом, как у экрана блокировки) ----------
             property real intro: Theme.animationsEnabled ? 0 : 1
             function phase(from, length) { return Math.max(0, Math.min(1, (intro - from) / length)) }
             readonly property real introBack: phase(0.0, 0.7)
@@ -254,7 +235,6 @@ ShellRoot
             Behavior on outro { enabled: Theme.animationsEnabled; NumberAnimation { duration: 420; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingAccelerate } }
             readonly property real shown: 1 - outro
 
-            // ---------- обои: размытые и приглушённые; уходя, чуть приближаются и темнеют ----------
             Item
             {
                 id: backdrop
@@ -262,34 +242,14 @@ ShellRoot
                 property real appear: screen.introBack
                 property real leave: screen.outro
 
-                // размывается уже обрезанная по экрану картинка (слой), а не исходная текстура целиком
-                Item
-                {
-                    id: wallpaper
-                    anchors.fill: parent
-                    visible: false
-                    layer.enabled: true
-
-                    Image
-                    {
-                        id: wallImage
-                        anchors.fill: parent
-                        source: Theme.wallpaperCurrent !== "" ? "file://" + String(Theme.wallpaperCurrent).replace(/^file:\/\//, "") : ""
-                        fillMode: Image.PreserveAspectCrop
-                        sourceSize: Qt.size(Math.round(backdrop.width / 2), Math.round(backdrop.height / 2))   // под размытие хватит и половины
-                        asynchronous: true
-                    }
-                }
-                MultiEffect
+                Image
                 {
                     anchors.fill: parent
-                    source: wallpaper
-                    visible: wallImage.status === Image.Ready
+                    source: Theme.wallpaperCurrent !== "" ? "file://" + String(Theme.wallpaperCurrent).replace(/^file:\/\//, "") : ""
+                    fillMode: Image.PreserveAspectCrop
+                    sourceSize: Qt.size(Math.round(backdrop.width), Math.round(backdrop.height))
+                    asynchronous: true
                     opacity: backdrop.appear
-                    blurEnabled: true
-                    blur: 0.55
-                    blurMax: 48
-                    autoPaddingEnabled: false
                     scale: 1 + 0.04 * backdrop.leave
                 }
                 Rectangle { anchors.fill: parent; color: "#000000"; opacity: 0.45 + 0.35 * backdrop.leave }
@@ -297,267 +257,293 @@ ShellRoot
 
             MouseArea { anchors.fill: parent; onClicked: field.focusInput() }
 
-            // ---------- часы и дата ----------
-            Column
+            Item
             {
-                id: clock
-                anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: Math.round(parent.height * 0.1) }
-                opacity: screen.introTop * screen.shown
-                transform: Translate { y: (1 - screen.introTop) * -screen.rise - screen.outro * 20 }
+                id: contentArea
+                anchors { left: parent.left; right: parent.right; top: parent.top; bottom: footer.top; margins: 24 }
 
-                readonly property date now: minuteClock.date
-                SystemClock { id: minuteClock; precision: SystemClock.Minutes }
-
-                spacing: 4
-                layer.enabled: true
-                layer.effect: Widgets.TextShadow {}
-
-                Text
-                {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: Qt.formatTime(clock.now, Theme.widgetClock24 ? "HH:mm" : "h:mm")
-                    color: "#ffffff"
-                    font.family: Theme.fontText
-                    font.pixelSize: 96
-                    font.weight: Font.Bold
-                }
-                Text
-                {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: { const s = clock.now.toLocaleDateString(Qt.locale("en_US"), "dddd, d MMMM"); return s.charAt(0).toUpperCase() + s.slice(1) }
-                    color: Theme.text1
-                    font.family: Theme.fontText
-                    font.pixelSize: 18
-                }
-            }
-
-            // ---------- вход: аватар со стрелками по бокам, имя, поле пароля, сеанс ----------
-            Column
-            {
-                id: login
-
-                anchors.centerIn: parent
-                anchors.verticalCenterOffset: 60
-                width: 340
-                spacing: 14
-
-                opacity: screen.introMain * screen.shown
-                scale: 1 - 0.04 * screen.outro
-                transform: Translate { id: loginShift; y: (1 - screen.introMain) * screen.rise }
-
-                SequentialAnimation
-                {
-                    id: shake
-                    NumberAnimation { target: loginShift; property: "x"; to: -6; duration: 50; easing.type: Easing.InOutQuad }
-                    NumberAnimation { target: loginShift; property: "x"; to: 5;  duration: 50 }
-                    NumberAnimation { target: loginShift; property: "x"; to: -3; duration: 40 }
-                    NumberAnimation { target: loginShift; property: "x"; to: 0;  duration: 40 }
-                }
-                Connections
-                {
-                    target: root
-                    function onFailuresChanged()
-                    {
-                        field.clear();
-                        field.focusInput();
-                        if (Theme.animationsEnabled) shake.restart();
-                    }
-                }
-
-                // аватар; пользователей несколько — стрелки слева и справа
-                Item
-                {
-                    width: parent.width
-                    height: avatar.height
-
-                    Widgets.Button
-                    {
-                        size: 28; iconSize: 14
-                        visible: root.users.length > 1 && !root.manualMode
-                        anchors { right: avatar.left; rightMargin: 20; verticalCenter: avatar.verticalCenter }
-                        icon: Theme.icon("chevron_left")
-                        enabled: !root.authenticating && root.userIndex > 0
-                        onClicked: root.userIndex--
-                    }
-
-                    Widgets.Shadow { target: avatar }
-
-                    ClippingRectangle
-                    {
-                        id: avatar
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width: 104
-                        height: width
-                        radius: width / 2
-                        color: Theme.surface
-                        border.width: 2
-                        border.color: Theme.colorLine
-
-                        Image
-                        {
-                            anchors.centerIn: parent
-                            visible: face.status !== Image.Ready
-                            source: Theme.icon("user")
-                            width: Math.round(parent.width * 0.42)
-                            height: width
-                            sourceSize: Qt.size(width * 2, height * 2)
-                        }
-                        Image
-                        {
-                            id: face
-                            // первый файл, который откроется: копия от шелла или AccountsService
-                            property int attempt: 0
-                            readonly property var candidates: root.avatarOf(root.user)
-                            anchors.fill: parent
-                            source: attempt < candidates.length ? "file://" + candidates[attempt] : ""
-                            onCandidatesChanged: attempt = 0
-                            onStatusChanged: if (status === Image.Error) attempt++
-                            sourceSize: Qt.size(208, 208)
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                        }
-                    }
-
-                    Widgets.Button
-                    {
-                        size: 28; iconSize: 14
-                        visible: root.users.length > 1 && !root.manualMode
-                        anchors { left: avatar.right; leftMargin: 20; verticalCenter: avatar.verticalCenter }
-                        icon: Theme.icon("chevron_right")
-                        enabled: !root.authenticating && root.userIndex < root.users.length - 1
-                        onClicked: root.userIndex++
-                    }
-                }
-
-                // имя (и логин под ним, если есть полное имя)
                 Column
                 {
-                    width: parent.width
-                    spacing: 2
-                    layer.enabled: true
-                    layer.effect: Widgets.TextShadow {}
+                    id: content
+                    objectName: "greeterContent"
+                    anchors.centerIn: parent
+                    width: 360
+                    spacing: 30
+                    scale: Math.max(0.1, Math.min(1, contentArea.width / width, contentArea.height / implicitHeight))
 
-                    Widgets.Label
+                    Column
                     {
+                        id: clock
+                        anchors.horizontalCenter: parent.horizontalCenter
                         width: parent.width
-                        horizontalAlignment: Text.AlignHCenter
-                        text: root.user ? (root.user.fullName || root.user.name) : ""
-                        size: 20
-                        color: "#ffffff"
-                        font.weight: Font.DemiBold
-                    }
-                    Widgets.Label
-                    {
-                        width: parent.width
-                        horizontalAlignment: Text.AlignHCenter
-                        visible: root.user !== null && root.user.fullName !== ""
-                        text: root.user ? "@" + root.user.name : ""
-                        size: 12
-                        color: Theme.text2
-                    }
-                }
+                        spacing: 0
+                        layer.enabled: true
+                        layer.effect: Widgets.TextShadow {}
+                        opacity: screen.introTop * screen.shown
+                        transform: Translate { y: (1 - screen.introTop) * -screen.rise - screen.outro * 20 }
+                        readonly property date now: minuteClock.date
+                        SystemClock { id: minuteClock; precision: SystemClock.Minutes }
 
-                Controls.TextField
-                {
-                    id: manualName
-                    width: parent.width
-                    height: 44
-                    visible: root.manualMode
-                    enabled: !root.authenticating
-                    text: root.manualUsername
-                    placeholderText: "Username"
-                    color: Theme.text1
-                    placeholderTextColor: Theme.text2
-                    font.family: Theme.fontText
-                    font.pixelSize: 14
-                    leftPadding: 14
-                    selectByMouse: true
-                    onTextEdited: root.manualUsername = text
-                    onAccepted: field.focusInput()
-                    background: Rectangle { radius: 14; color: Theme.colorField; border.width: 1; border.color: Theme.colorLine }
-                }
-
-                Widgets.PasswordField
-                {
-                    id: field
-                    width: parent.width
-                    plain: root.echoResponse
-                    busy: root.busy
-                    failed: root.failed
-                    closed: root.leaving
-                    onSubmitted: password => root.submit(password)
-                    onEdited: root.failed = false
-                    onCancelled: root.cancelAuthentication()
-                    Connections { target: root; function onClearSecret() { field.clear(); field.focusInput(); } }
-                }
-
-
-                Widgets.Label
-                {
-                    width: parent.width
-                    text: root.preview ? "Preview · sign-in and power actions disabled" : root.statusMessage
-                    visible: text !== ""
-                    wrapMode: Text.Wrap
-                    horizontalAlignment: Text.AlignHCenter
-                    color: root.failed ? Theme.colorCritical : Theme.text2
-                    size: 12
-                }
-
-                Widgets.Label
-                {
-                    width: parent.width
-                    horizontalAlignment: Text.AlignHCenter
-                    text: root.manualMode ? "Back to accounts" : "Other user"
-                    visible: root.users.length > 0
-                    opacity: root.authenticating ? 0.4 : 1
-                    size: 12
-                    MouseArea
-                    {
-                        anchors.fill: parent
-                        enabled: !root.authenticating
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked:
+                        Text
                         {
-                            root.manualMode = !root.manualMode;
-                            if (root.manualMode) Qt.callLater(() => manualName.forceActiveFocus());
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            text: { const date = clock.now.toLocaleDateString(Theme.locale, "dddd, d MMMM"); return date.charAt(0).toUpperCase() + date.slice(1) }
+                            color: "#e2e2e7"
+                            font.family: Theme.fontText
+                            font.pixelSize: 16
+                            font.weight: Font.Medium
+                            font.letterSpacing: 0.5
+                        }
+                        Text
+                        {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            text: Qt.formatTime(clock.now, Theme.widgetClock24 ? "HH:mm" : "h:mm")
+                            color: "#ffffff"
+                            font.family: Theme.fontText
+                            font.pixelSize: 104
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: -4
+                        }
+                        Text
+                        {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            visible: !Theme.widgetClock24
+                            text: Qt.formatTime(clock.now, "AP")
+                            color: Theme.text2
+                            font.family: Theme.fontText
+                            font.pixelSize: 12
+                            font.letterSpacing: 2
+                        }
+                    }
+
+                    Column
+                    {
+                        id: login
+
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: parent.width
+                        spacing: 14
+
+                        opacity: screen.introMain * screen.shown
+                        scale: 1 - 0.04 * screen.outro
+                        transform: Translate { id: loginShift; y: (1 - screen.introMain) * screen.rise }
+
+                        SequentialAnimation
+                        {
+                            id: shake
+                            NumberAnimation { target: loginShift; property: "x"; to: -6; duration: 50; easing.type: Easing.InOutQuad }
+                            NumberAnimation { target: loginShift; property: "x"; to: 5;  duration: 50 }
+                            NumberAnimation { target: loginShift; property: "x"; to: -3; duration: 40 }
+                            NumberAnimation { target: loginShift; property: "x"; to: 0;  duration: 40 }
+                        }
+                        Connections
+                        {
+                            target: root
+                            function onFailuresChanged()
+                            {
+                                field.clear();
+                                field.focusInput();
+                                if (Theme.animationsEnabled) shake.restart();
+                            }
+                        }
+
+                        Item
+                        {
+                            width: parent.width
+                            height: avatar.height
+
+                            Widgets.Button
+                            {
+                                size: 28; iconSize: 14
+                                visible: root.users.length > 1 && !root.manualMode
+                                anchors { right: avatar.left; rightMargin: 20; verticalCenter: avatar.verticalCenter }
+                                icon: Theme.icon("chevron_left")
+                                label: "Previous account"
+                                enabled: !root.authenticating && root.userIndex > 0
+                                onClicked: root.userIndex--
+                            }
+
+                            Widgets.Shadow { target: avatar }
+
+                            ClippingRectangle
+                            {
+                                id: avatar
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                width: 88
+                                height: width
+                                radius: width / 2
+                                color: Theme.surface
+                                border.width: 1
+                                border.color: Theme.colorLine
+
+                                Image
+                                {
+                                    anchors.centerIn: parent
+                                    visible: face.status !== Image.Ready
+                                    source: Theme.icon("user")
+                                    width: Math.round(parent.width * 0.42)
+                                    height: width
+                                    sourceSize: Qt.size(width * 2, height * 2)
+                                }
+                                Image
+                                {
+                                    id: face
+                                    property int attempt: 0
+                                    readonly property var candidates: root.avatarOf(root.user)
+                                    anchors.fill: parent
+                                    source: attempt < candidates.length ? "file://" + candidates[attempt] : ""
+                                    onCandidatesChanged: attempt = 0
+                                    onStatusChanged: if (status === Image.Error) attempt++
+                                    sourceSize: Qt.size(208, 208)
+                                    fillMode: Image.PreserveAspectCrop
+                                    asynchronous: true
+                                }
+                            }
+
+                            Widgets.Button
+                            {
+                                size: 28; iconSize: 14
+                                visible: root.users.length > 1 && !root.manualMode
+                                anchors { left: avatar.right; leftMargin: 20; verticalCenter: avatar.verticalCenter }
+                                icon: Theme.icon("chevron_right")
+                                label: "Next account"
+                                enabled: !root.authenticating && root.userIndex < root.users.length - 1
+                                onClicked: root.userIndex++
+                            }
+                        }
+
+                        Column
+                        {
+                            width: parent.width
+                            spacing: 2
+                            layer.enabled: true
+                            layer.effect: Widgets.TextShadow {}
+
+                            Widgets.Label
+                            {
+                                width: parent.width
+                                horizontalAlignment: Text.AlignHCenter
+                                text: root.user ? (root.user.fullName || root.user.name) : ""
+                                size: 22
+                                color: "#ffffff"
+                                font.weight: Font.DemiBold
+                            }
+                            Widgets.Label
+                            {
+                                width: parent.width
+                                horizontalAlignment: Text.AlignHCenter
+                                visible: root.user !== null && root.user.fullName !== ""
+                                text: root.user ? "@" + root.user.name : ""
+                                size: 12
+                                color: Theme.text2
+                            }
+                        }
+
+                        Controls.TextField
+                        {
+                            id: manualName
+                            width: parent.width
+                            height: 44
+                            visible: root.manualMode
+                            enabled: !root.authenticating
+                            text: root.manualUsername
+                            placeholderText: "Username"
+                            color: Theme.text1
+                            placeholderTextColor: Theme.text2
+                            font.family: Theme.fontText
+                            font.pixelSize: 14
+                            leftPadding: 14
+                            selectByMouse: true
+                            onTextEdited: root.manualUsername = text
+                            onAccepted: field.focusInput()
+                            background: Rectangle { radius: 14; color: Theme.colorField; border.width: 1; border.color: Theme.colorLine }
+                        }
+
+                        Widgets.PasswordField
+                        {
+                            id: field
+                            width: parent.width
+                            plain: root.echoResponse
+                            busy: root.busy
+                            failed: root.failed
+                            closed: root.leaving
+                            onSubmitted: password => root.submit(password)
+                            onEdited: root.failed = false
+                            onCancelled: root.cancelAuthentication()
+                            Connections { target: root; function onClearSecret() { field.clear(); field.focusInput(); } }
+                        }
+
+
+                        Widgets.Label
+                        {
+                            width: parent.width
+                            text: root.preview ? "Preview · sign-in and power actions disabled" : root.statusMessage
+                            visible: text !== ""
+                            wrapMode: Text.Wrap
+                            horizontalAlignment: Text.AlignHCenter
+                            color: root.failed ? Theme.colorCritical : Theme.text2
+                            size: 12
+                        }
+
+                        Widgets.Label
+                        {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            text: root.manualMode ? "Back to accounts" : "Other user"
+                            visible: root.users.length > 0
+                            opacity: root.authenticating ? 0.4 : 1
+                            size: 12
+                            MouseArea
+                            {
+                                anchors.fill: parent
+                                enabled: !root.authenticating
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked:
+                                {
+                                    root.manualMode = !root.manualMode;
+                                    if (root.manualMode) Qt.callLater(() => manualName.forceActiveFocus());
+                                }
+                            }
+                        }
+
+                        Row
+                        {
+                            visible: root.sessions.length > 0
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            spacing: 6
+
+                            Widgets.Button { size: 28; iconSize: 14; label: "Previous session"; anchors.verticalCenter: parent.verticalCenter; icon: Theme.icon("chevron_left"); enabled: !root.authenticating && root.sessionIndex > 0; onClicked: root.sessionIndex-- }
+                            Widgets.Label
+                            {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Math.min(220, Math.max(implicitWidth, 120))
+                                horizontalAlignment: Text.AlignHCenter
+                                text: root.session ? root.session.name : ""
+                                layer.enabled: true
+                                layer.effect: Widgets.TextShadow {}
+                                size: 13
+                                color: "#ffffff"
+                            }
+                            Widgets.Button { size: 28; iconSize: 14; label: "Next session"; anchors.verticalCenter: parent.verticalCenter; icon: Theme.icon("chevron_right"); enabled: !root.authenticating && root.sessionIndex < root.sessions.length - 1; onClicked: root.sessionIndex++ }
                         }
                     }
                 }
-
-                // сеанс: ‹ niri ›
-                Row
-                {
-                    visible: root.sessions.length > 0
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: 6
-
-                    Widgets.Button { size: 28; iconSize: 14; anchors.verticalCenter: parent.verticalCenter; icon: Theme.icon("chevron_left"); enabled: !root.authenticating && root.sessionIndex > 0; onClicked: root.sessionIndex-- }
-                    Widgets.Label
-                    {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: Math.max(implicitWidth, 120)
-                        horizontalAlignment: Text.AlignHCenter
-                        text: root.session ? root.session.name : ""
-                        layer.enabled: true
-                        layer.effect: Widgets.TextShadow {}
-                        size: 13
-                        color: "#ffffff"
-                    }
-                    Widgets.Button { size: 28; iconSize: 14; anchors.verticalCenter: parent.verticalCenter; icon: Theme.icon("chevron_right"); enabled: !root.authenticating && root.sessionIndex < root.sessions.length - 1; onClicked: root.sessionIndex++ }
-                }
             }
 
-            // ---------- низ: питание ----------
             Row
             {
-                anchors { right: parent.right; bottom: parent.bottom; margins: 28 }
+                id: footer
+                objectName: "greeterFooter"
+                anchors { right: parent.right; bottom: parent.bottom; margins: 24 }
                 spacing: 8
                 opacity: screen.introFoot * screen.shown
                 transform: Translate { y: (1 - screen.introFoot) * screen.rise + screen.outro * 16 }
 
-                Widgets.Button { icon: Theme.icon("sleep");    enabled: !root.preview; onClicked: Theme.power("suspend") }
-                Widgets.Button { icon: Theme.icon("reboot");   enabled: !root.preview; onClicked: Theme.power("reboot") }
-                Widgets.Button { icon: Theme.icon("poweroff"); enabled: !root.preview; onClicked: Theme.power("poweroff") }
+                Widgets.Button { icon: Theme.icon("sleep");    label: "Sleep"; enabled: !root.preview; onClicked: Theme.power("suspend") }
+                Widgets.Button { icon: Theme.icon("reboot");   label: "Restart"; enabled: !root.preview; onClicked: Theme.power("reboot") }
+                Widgets.Button { icon: Theme.icon("poweroff"); label: "Shut down"; enabled: !root.preview; onClicked: Theme.power("poweroff") }
             }
         }
     }

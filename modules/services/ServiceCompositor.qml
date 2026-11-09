@@ -4,9 +4,10 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-import "../components"
-import "../core"
 import "../src/Kdl.js" as Kdl
+import "../src/ModelSync.js" as ModelSync
+import "../common"
+import "../core"
 
 Singleton
 {
@@ -107,7 +108,11 @@ Singleton
     }
     function windowSet(id, key, value)
     {
-        windowList = windowList.map(w => w.id !== id || w[key] === value ? w : Object.assign({}, w, { [key]: value }));
+        const index = windowList.findIndex(w => w.id === id);
+        if (index < 0 || windowList[index][key] === value) return;
+        const next = windowList.slice();
+        next[index] = Object.assign({}, next[index], { [key]: value });
+        windowList = next;
     }
     function windowsApply(list)
     {
@@ -128,6 +133,7 @@ Singleton
     }
     function windowRemove(id)
     {
+        if (!windowList.some(w => w.id === id)) return;
         windowList = windowList.filter(w => w.id !== id);
         if (focusedWindowId === id) focusedWindowId = null;
         if (lastWindowId === id) lastWindowId = null;
@@ -136,7 +142,15 @@ Singleton
     {
         focusedWindowId = id === undefined ? null : id;
         if (focusedWindowId !== null) lastWindowId = focusedWindowId;
-        windowList = windowList.map(w => w.is_focused === (w.id === focusedWindowId) ? w : Object.assign({}, w, { is_focused: w.id === focusedWindowId }));
+        let changed = false;
+        const next = windowList.map(w =>
+        {
+            const focused = w.id === focusedWindowId;
+            if (w.is_focused === focused) return w;
+            changed = true;
+            return Object.assign({}, w, { is_focused: focused });
+        });
+        if (changed) windowList = next;
     }
 
     function workspacesApply(list)
@@ -144,21 +158,13 @@ Singleton
         const sorted = list.slice().sort((a, b) => String(a.output).localeCompare(String(b.output)) || a.idx - b.idx);
         for (const w of sorted) if (w.is_focused) { focusedOutput = w.output || ""; focusedWorkspaceId = w.id; }
 
-        for (let i = workspaces.count - 1; i >= 0; i--)
-            if (!sorted.some(w => w.id === workspaces.get(i).wsId)) workspaces.remove(i);
-
-        sorted.forEach((w, target) =>
-        {
-            const item = { wsId: w.id, wsIdx: w.idx, output: w.output || "", focused: w.is_focused === true, activated: w.is_active === true, urgent: w.is_urgent === true };
-            let found = -1;
-            for (let i = 0; i < workspaces.count; i++) if (workspaces.get(i).wsId === w.id) { found = i; break }
-
-            if (found < 0) { workspaces.insert(Math.min(target, workspaces.count), item); return }
-            if (found !== target) workspaces.move(found, target, 1);
-            for (const key in item) if (workspaces.get(target)[key] !== item[key]) workspaces.setProperty(target, key, item[key]);
-        });
-        workspaceRevision++;
+        const items = sorted.map(w => ({
+            wsId: w.id, wsIdx: w.idx, output: w.output || "",
+            focused: w.is_focused === true, activated: w.is_active === true, urgent: w.is_urgent === true
+        }));
+        if (ModelSync.sync(workspaces, items, "wsId")) workspaceRevision++;
     }
+
     function workspacesSet(id, key, value)
     {
         for (let i = 0; i < workspaces.count; i++) if (workspaces.get(i).wsId === id) { workspaces.setProperty(i, key, value); return }
@@ -213,13 +219,6 @@ Singleton
     function setFocusRing(on)       { edit(layoutName, t => withFocusRing(t, (t, b) => on ? Kdl.removeNode(t, b, "off") : Kdl.setNode(t, b, "off", "off"))) }
     function setFocusRingWidth(w)   { edit(layoutName, t => withFocusRing(t, (t, b) => Kdl.setNode(t, b, "width", "width " + Math.round(w)))) }
 
-    function setGlass(on, strength)
-    {
-        if (!on) return;
-        const s = Math.max(0, Math.min(1, strength));
-        edit(layoutName, t => withBlock(t, ["blur"], (t, b) => Kdl.setNode(t, b, "passes", "passes " + (1 + Math.round(3 * s)))));
-        edit(layoutName, t => withBlock(t, ["blur"], (t, b) => Kdl.setNode(t, b, "offset", "offset " + number(1.5 + 3 * s))));
-    }
     function setAccent(color)       { edit(layoutName, t => withFocusRing(t, (t, b) => Kdl.setNode(t, b, "active-color", "active-color " + Kdl.quote(color)))) }
     function setGaps(px)            { edit(layoutName, t => withBlock(t, ["layout"], (t, b) => Kdl.setNode(t, b, "gaps", "gaps " + Math.round(px)))) }
     function setAnimations(on)      { edit(layoutName, t => withBlock(t, ["animations"], (t, b) => on ? Kdl.removeNode(t, b, "off") : Kdl.setNode(t, b, "off", "off"))) }
@@ -343,7 +342,7 @@ Singleton
         {
             if (code !== 0)
             {
-                serviceCompositor.error = writer.errorMessage(Tr.tr("service.compositor.couldNotSaveTheCompositorSettings"));
+                serviceCompositor.error = writer.errorMessage(Tr.tr("service.compositor.saveFailed"));
                 serviceCompositor.refresh();
             }
             if (Object.keys(serviceCompositor.drafts).length > 0) flush.restart();
@@ -406,7 +405,5 @@ Singleton
     NiriFile { id: inputView; name: serviceCompositor.inputName }
 
     readonly property string accent:     String(Theme.colorAccent)
-    readonly property real   blurAmount: Theme.blurAmount
     onAccentChanged:     setAccent(accent)
-    onBlurAmountChanged: setGlass(true, blurAmount)
 }

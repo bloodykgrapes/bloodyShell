@@ -16,25 +16,25 @@ Singleton
     property bool helperSeen: false
 
     property bool updateBeta: false
+    property bool updateAuto: false
     property int  updateCheck: 4
 
     property int  themeStyle: 1
-    property int  themeBackground: 0
     property int  themeAnimations: 1
     property bool themeAccent: false
+    property int frameThickness: 8
     property bool themeBorder: false
     property real themeScale: 1.0
-
-    property int themeBackgroundBlur: 60
-    property int themeBackgroundTransparent: 50
 
     property string wallpaperCurrent: ""
     property string wallpaperDirectory: Paths.shellDir + "/assets/wallpapers"
 
+    property int equalizerStyle: 0
     property bool desktopEqualizer: true
     property bool desktopWidgets: false
 
     property bool barEnabled: true
+    property var  barScreens: []
     property int  barSide: 0
     property int  barType: 0
     property int  barMenu: 0
@@ -42,23 +42,16 @@ Singleton
     property bool barHideAuto: false
     property bool barHideSmart: true
 
-    property var barScreens: []
-    property var barLayout:
-    ({
-        bar1: ["system", "workspaces", "media"],
-        bar2: ["window"],
-        bar3: ["tray", "status", "clock", "notifications", "update"],
-    })
-    property var barHighlight: ["status", "workspaces"]
-
     property bool barWidgetClockSeconds: false
     property bool barWidgetClock24: true
     property bool barWidgetBatteryValue: true
+    property bool barWidgetVolumeValue: false
     property bool barWidgetWindowAppID: false
 
     property bool dockEnabled: true
+    property var  dockScreens: []
     property int  dockSide: 1
-    property int  dockType: 1
+    property int  dockType: 0
 
     property bool dockHideAuto: true
     property bool dockHideSmart: true
@@ -66,11 +59,11 @@ Singleton
     property bool dockMerge: true
     property bool dockBadges: true
     property int  dockIconSize: 46
-    property var  dockScreens: []
     property var  dockPinned: []
 
+    property bool islandEnabled: true
+
     property bool osdEnabled: true
-    property int  osdSide: 0
     property int  osdDuration: 2000
 
     property bool osdTypeBattery: true
@@ -82,12 +75,18 @@ Singleton
 
     property bool notificationsEnabled: true
     property int  notificationsDuration: 5000
+    property bool notificationsRememberDnd: false
+    property bool notificationsDnd: false
+
+    property int screenshotMode: 0
+    property bool screenshotSave: false
 
     property bool launcherEnabled: true
     property int  launcherRows: 8
 
     property bool lockMediaPlayer: true
     property bool lockNotifications: true
+    property bool lockNotificationsContent: true
 
     property string shellLanguage: "system"
 
@@ -117,13 +116,6 @@ Singleton
         const next = all.filter(n => n === name ? on : current.indexOf(n) >= 0);
         if (next.length === 0) return;
         set(key, next.length === all.length ? [] : next);
-    }
-
-    function setLayout(zone, list)
-    {
-        const next = clone(barLayout);
-        next[zone] = list;
-        set("barLayout", next);
     }
 
     property int configVersion: 1
@@ -261,7 +253,7 @@ Singleton
             else console.warn("Config: could not read" + config.file + ": " + FileViewError.toString(error));
             config.initialized = true;
         }
-        onFileChanged: reload()
+        onFileChanged: if (!saveTimer.running) reload()
     }
 
     Timer

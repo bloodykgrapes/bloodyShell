@@ -2,8 +2,12 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Quickshell.Io
 
+import "../src/Clients.js" as Clients
 import "../src/AppIdentity.js" as AppIdentity
+import "../common"
+import "../core"
 
 Singleton
 {
@@ -11,54 +15,137 @@ Singleton
 
     readonly property var applications: DesktopEntries.applications.values || []
 
-    function searchScore(app, tokens)
+    property var autostartEntries: []
+    property var autostartClients: []
+    property string autostartError: ""
+    property string autostartSession: "unknown"
+    property bool autostartRefreshPending: false
+    readonly property bool autostartWatching: autostartClients.length > 0
+    readonly property bool autostartBusy: autostartCommand.busy
+    readonly property string autostartHelper: Paths.runtimeScriptsDir + "/autostart"
+
+    function setAutostartActive(client, active)
     {
-        const name =     (app.name     || "").toLocaleLowerCase();
-        const generic =  (app.generic  || "").toLocaleLowerCase();
-        const comment =  (app.comment  || "").toLocaleLowerCase();
-        const keywords = (app.keywords || []).join(" ").toLocaleLowerCase();
+        autostartClients = Clients.update(autostartClients, client, active);
+    }
 
-        let total = 0;
+    function hasAutostart(appId)
+    {
+        const id = String(appId || "").replace(/\.desktop$/, "");
+        return autostartEntries.some(entry => entry.appId === id || entry.id === id + ".desktop");
+    }
 
-        for (let i = 0; i < tokens.length; i++)
+    function refreshAutostart(clearError = true)
+    {
+        if (autostartBusy) { autostartRefreshPending = true; return; }
+        if (clearError) autostartError = "";
+        autostartCommand.run(["python3", autostartHelper, "list"]);
+    }
+
+    function changeAutostart(action, id, enabled)
+    {
+        if (autostartBusy || !id) return false;
+        autostartError = "";
+        const args = ["python3", autostartHelper, action, String(id)];
+        if (action === "set") args.push(enabled ? "true" : "false");
+        return autostartCommand.run(args);
+    }
+
+    function addAutostart(appId) { return changeAutostart("add", appId) }
+    function setAutostartEnabled(id, enabled) { return changeAutostart("set", id, enabled) }
+    function removeAutostart(id) { return changeAutostart("remove", id) }
+    function queueAutostartRefresh() { if (autostartWatching) autostartRefresh.restart() }
+
+    onAutostartWatchingChanged:
+    {
+        if (autostartWatching) refreshAutostart();
+        else { autostartRefresh.stop(); autostartRefreshPending = false; }
+    }
+
+    Timer
+    {
+        id: autostartRefresh
+        interval: 150
+        onTriggered: serviceApplications.refreshAutostart(false)
+    }
+
+    CommandProcess
+    {
+        id: autostartCommand
+        stdout: StdioCollector { id: autostartResult }
+        onCompleted: code =>
         {
-            const token = tokens[i];
-            let score = 0;
+            if (code !== 0) serviceApplications.autostartError = errorMessage(Tr.tr("settings.autostart.failed"));
+            else
+            {
+                try
+                {
+                    const result = JSON.parse(autostartResult.text);
+                    serviceApplications.autostartEntries = result.entries;
+                    serviceApplications.autostartSession = result.session;
+                }
+                catch (error) { serviceApplications.autostartError = String(error) }
+            }
+            if (serviceApplications.autostartRefreshPending)
+            {
+                serviceApplications.autostartRefreshPending = false;
+                if (serviceApplications.autostartWatching) Qt.callLater(() => serviceApplications.refreshAutostart(false));
+            }
+        }
+    }
 
-            if (name.startsWith(token))
-                score = 100;
-            else if (name.indexOf(" " + token) >= 0 || name.indexOf("-" + token) >= 0)
-                score = 80;
-            else if (name.includes(token))
-                score = 60;
-            else if (generic.includes(token) || keywords.includes(token))
-                score = 40;
-            else if (comment.includes(token))
-                score = 20;
+    Process
+    {
+        running: serviceApplications.autostartWatching
+        command: ["python3", serviceApplications.autostartHelper, "watch"]
+        stdout: SplitParser { onRead: line => { if (line === "changed") serviceApplications.queueAutostartRefresh() } }
+        onExited: (code, status) =>
+        {
+            if (serviceApplications.autostartWatching && (code !== 0 || status !== 0))
+                serviceApplications.autostartError = Tr.tr("settings.autostart.watchFailed");
+        }
+    }
+
+    readonly property var searchIndex: applications.filter(app => app && app.name && !app.noDisplay)
+        .sort((a, b) => a.name.localeCompare(b.name)).map((app, order) => ({
+        order: order,
+        app: app,
+        name: app.name.toLocaleLowerCase(),
+        generic: (app.generic || "").toLocaleLowerCase(),
+        comment: (app.comment || "").toLocaleLowerCase(),
+        keywords: (app.keywords || []).join(" ").toLocaleLowerCase()
+    }))
+
+    function searchScore(entry, tokens)
+    {
+        let total = 0;
+        for (const token of tokens)
+        {
+            if (entry.name.startsWith(token)) total += 100;
+            else if (entry.name.includes(" " + token) || entry.name.includes("-" + token)) total += 80;
+            else if (entry.name.includes(token)) total += 60;
+            else if (entry.generic.includes(token) || entry.keywords.includes(token)) total += 40;
+            else if (entry.comment.includes(token)) total += 20;
             else return 0;
-
-            total += score;
         }
         return total;
     }
 
     function search(query)
     {
-        const entries = applications;
+        const entries = searchIndex;
         const normalizedQuery = (query || "").trim().toLocaleLowerCase();
         const tokens = normalizedQuery.length > 0 ? normalizedQuery.split(/\s+/) : [];
 
         const matches = [];
         for (let i = 0; i < entries.length; i++)
         {
-            const app = entries[i];
-            if (!app || !app.name || app.noDisplay) continue;
-
-            const score = tokens.length > 0 ? searchScore(app, tokens) : 1;
-            if (score > 0) matches.push({ app: app, score: score });
+            const entry = entries[i];
+            const score = tokens.length > 0 ? searchScore(entry, tokens) : 1;
+            if (score > 0) matches.push({ app: entry.app, score: score, order: entry.order });
         }
 
-        matches.sort((a, b) => (b.score - a.score) || a.app.name.localeCompare(b.app.name));
+        matches.sort((a, b) => (b.score - a.score) || a.order - b.order);
         return matches.map(item => item.app);
     }
 
@@ -169,16 +256,19 @@ Singleton
     property var launching: ({})
     readonly property int launchTimeoutMs: 15000
 
-    onApplicationsChanged: tokenCache = ({})
+    onApplicationsChanged: { tokenCache = ({}); queueAutostartRefresh(); }
 
     function updateLaunching()
     {
+        const keys = Object.keys(launching);
+        if (keys.length === 0) return;
         const running = ServiceCompositor.windowList.map(w => w.app_id || "");
+        const now = Date.now();
         const next = {};
-        for (const key in launching)
-            if (!running.some(id => AppIdentity.sameApp(id, key)) && Date.now() - launching[key] < launchTimeoutMs)
+        for (const key of keys)
+            if (!running.some(id => AppIdentity.sameApp(id, key)) && now - launching[key] < launchTimeoutMs)
                 next[key] = launching[key];
-        if (Object.keys(next).length !== Object.keys(launching).length) launching = next;
+        if (Object.keys(next).length !== keys.length) launching = next;
     }
 
     function scheduleLaunchTimeout()

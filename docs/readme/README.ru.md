@@ -1,7 +1,7 @@
 <h1 align="center">bloodyShell</h1>
 
 <p align="center">
-    <b>A desktop shell for <a href="https://github.com/niri-wm/niri">niri</a>, built with Quickshell</b>
+    <b>Оболочка рабочего стола для <a href="https://github.com/niri-wm/niri">niri</a>, созданная с помощью Quickshell</b>
 </p>
 
 <p align="center">
@@ -19,15 +19,15 @@
 
 <p align="center">
   <sub>
-    <a href="https://github.com/bloodykgrapes/bloodyShell/README.md">English</a>
+    <a href="README.md">English</a>
     &bull;
-    <a href="https://github.com/bloodykgrapes/bloodyShell/docs/readme/README.ru.md">Русский</a>
+    <a href="docs/readme/README.ru.md">Русский</a>
     &bull;
-    <a href="https://github.com/bloodykgrapes/bloodyShell/docs/readme/README.fr.md">Français</a>
+    <a href="docs/readme/README.fr.md">Français</a>
     &bull;
-    <a href="https://github.com/bloodykgrapes/bloodyShell/docs/readme/README.de.md">Deutsch</a>
+    <a href="docs/readme/README.de.md">Deutsch</a>
     &bull;
-    <a href="https://github.com/bloodykgrapes/bloodyShell/docs/readme/README.ja.md">日本語</a>
+    <a href="docs/readme/README.ja.md">日本語</a>
   </sub>
 </p>
 
@@ -38,7 +38,7 @@
     <td valign="top">
       <table>
         <thead>
-          <tr> <th>Distro</th> <th>Support</th> </tr>
+          <tr> <th>Дистрибутив</th> <th>Поддержка</th> </tr>
         </thead>
         <tbody>
           <tr> <td>Arch</td>   <td align="center">&plus;</td>  </tr>
@@ -52,7 +52,7 @@
     <td valign="top">
       <table>
         <thead>
-          <tr> <th>Compositor</th> <th>Support</th> </tr>
+          <tr> <th>Композитор</th> <th>Поддержка</th> </tr>
         </thead>
         <tbody>
           <tr> <td>Niri</td>     <td align="center">&plus;</td>  </tr>
@@ -63,3 +63,71 @@
     </td>
   </tr>
 </table>
+
+> [!WARNING]
+> Я не могу гарантировать корректную работу непроверенных дистрибутивов или композиторов. Используйте их на свой страх и риск. Однако, если вы сможете полностью протестировать функциональность программного обеспечения на своей системе и оставить отзыв, я буду вам очень признателен. 
+
+ В настоящее время я физически не могу реализовать поддержку других композиторов. На данный момент bloodyShell напрямую привязан к niri. Однако в ближайшем будущем планируется реализовать динамическую поддержку других популярных wayland композиторов.
+
+## Скриншоты
+
+<p align="center">
+  <img src="../images/image-1.png" alt="bloodyShell desktop"  width="49%">
+  <img src="../images/image-2.png" alt="bloodyShell launcher" width="49%">
+  <img src="../images/image-3.png" alt="bloodyShell settings" width="98.5%">
+</p>
+
+## Установка
+
+```bash
+git clone https://github.com/bloodykgrapes/bloodyShell.git
+cd bloodyShell
+./setup install
+```
+
+При установке устанавливается команда `bloodyShell` и настраивается переменная окружения `PATH` вашего терминала.
+
+```bash
+bloodyShell             # запуск оболочки
+bloodyShell update      # проверить и установить обновление
+bloodyShell doctor      # диагностика
+bloodyShell restart     # перезагрузка оболочки
+```
+
+Подробности смотрите в [руководстве по установке](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL).
+
+## Keybinds
+
+| Key | Action |
+|---|---|
+| <kbd>Super</kbd> + <kbd>Number</kbd> | Изменить рабочий стол |
+| <kbd>Super</kbd> + <kbd>Arrow</kbd>  | Изменить фокус        |
+| <kbd>Super</kbd> + <kbd>Tab</kbd>    | Обзор задач           |
+| <kbd>Super</kbd> + <kbd>D</kbd>      | Лаунчер приложений    |
+| <kbd>Super</kbd> + <kbd>Y</kbd>      | Обои                  |
+| <kbd>Super</kbd> + <kbd>I</kbd>      | Настройки             |
+| <kbd>Super</kbd> + <kbd>P</kbd>      | Питание               |
+
+## Documentation
+
+| Page | About what |
+|---|---|
+|[ARCHITECTURE](https://github.com/bloodykgrapes/bloodyShell/wiki/ARCHITECTURE)|Структура кода и архитектура|
+|[INSTALL](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL)|Инструкция по установке|
+|[KEYBINDS](https://github.com/bloodykgrapes/bloodyShell/wiki/KEYBINDS)|Все горячие клавиши|
+|[PACKAGES](https://github.com/bloodykgrapes/bloodyShell/wiki/PACKAGES)|Зависимости проекта|
+
+## Credits
+
+- [**Quickshell**](https://quickshell.outfoxxed.me/): фреймворк
+- [**Niri**](https://github.com/niri-wm/niri): композитор
+
+---
+
+<p align="center">
+  <a href="https://github.com/bloodykgrapes/bloodyShell/graphs/contributors">Contributors</a>
+  &bull;
+  <a href="CHANGELOG.md">Changelog</a>
+  &bull;
+  <a href="LICENSE">License</a>
+</p>

@@ -12,6 +12,24 @@ Singleton
 
     property bool dnd: false
 
+    function restoreDnd()
+    {
+        if (Config.initialized) dnd = Config.notificationsRememberDnd && Config.notificationsDnd;
+    }
+
+    onDndChanged: if (Config.initialized && Config.notificationsRememberDnd) Config.set("notificationsDnd", dnd)
+    Component.onCompleted: restoreDnd()
+
+    Connections
+    {
+        target: Config
+        function onInitializedChanged() { serviceNotifications.restoreDnd() }
+        function onNotificationsRememberDndChanged()
+        {
+            if (Config.initialized) Config.set("notificationsDnd", Config.notificationsRememberDnd && serviceNotifications.dnd);
+        }
+    }
+
     property var receivedAt: ({})
     property int unreadCounter: 0
 
@@ -44,7 +62,7 @@ Singleton
         if (!t) return "";
         const minutes = Math.floor((now - t) / 60000);
         if (minutes < 1) return Tr.tr("service.notifications.now");
-        if (minutes < 60) return Tr.tr("service.notifications.min").arg(minutes);
+        if (minutes < 60) return Tr.tr("service.notifications.minutes").arg(minutes);
         const date = new Date(t);
         return date.toDateString() === new Date(now).toDateString() ? Qt.formatTime(date, "hh:mm") : date.toLocaleDateString(Tr.locale, "d MMM");
     }

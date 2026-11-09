@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+
+import datetime
+import json
+import math
+import os
+from pathlib import Path
+import shutil
+import signal
+import struct
+import subprocess
+import sys
+import tempfile
+import uuid
+
+
+def runtime():
+    base = Path(os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()) / ("bloodyShell-captures-" + str(os.getuid()))
+    base.mkdir(mode=0o700, exist_ok=True)
+    if base.is_symlink() or base.stat().st_uid != os.getuid():
+        raise ValueError("Invalid screenshot directory")
+    base.chmod(0o700)
+    return base
+
+
+def session(value):
+    path = Path(value)
+    directory = path.resolve()
+    if path.is_symlink() or directory.parent != runtime().resolve() or not directory.name.startswith("capture-"):
+        raise ValueError("Invalid screenshot session")
+    return directory
+
+
+def png_size(path):
+    with path.open("rb") as stream:
+        header = stream.read(24)
+    if len(header) != 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+        raise ValueError("The screenshot is not a PNG image")
+    width, height = struct.unpack(">II", header[16:24])
+    if not width or not height:
+        raise ValueError("The screenshot is empty")
+    return width, height
+
+
+def capture(output, width, height, scale=1):
+    if not all(math.isfinite(value) and value > 0 for value in (width, height, scale)):
+        raise ValueError("Invalid screenshot output size")
+    if not shutil.which("grim"):
+        raise ValueError("Install grim to take screenshots")
+    directory = Path(tempfile.mkdtemp(prefix="capture-", dir=runtime()))
+    try:
+        path = directory / "screen.png"
+        result = subprocess.run(["grim", "-o", output, "-s", str(scale), "-l", "1", str(path)], capture_output=True, text=True, timeout=12)
+        if result.returncode:
+            raise ValueError(result.stderr.strip() or "grim could not capture this output")
+        pixel_width, pixel_height = png_size(path)
+        return dict(directory=str(directory), image=path.as_uri(), width=pixel_width, height=pixel_height)
+    except BaseException:
+        shutil.rmtree(directory, ignore_errors=True)
+        raise
+
+
+def pictures():
+    try:
+        result = subprocess.run(["xdg-user-dir", "PICTURES"], capture_output=True, text=True, timeout=2)
+        path = Path(result.stdout.strip())
+        if result.returncode == 0 and path.is_absolute():
+            return path
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return Path.home() / "Pictures"
+
+
+def copy_image(path):
+    binary = shutil.which("wl-copy")
+    if not binary:
+        raise ValueError("Install wl-clipboard to copy screenshots")
+    manager = Path(os.environ.get("XDG_RUNTIME_DIR", "/nonexistent")) / "systemd/private"
+    if manager.is_socket() and shutil.which("systemd-run"):
+        command = ["systemd-run", "--user", "--quiet", "--collect", "--service-type=forking",
+                   "--unit=bloodyShell-clipboard-" + uuid.uuid4().hex, "--property=StandardInput=file:" + str(path),
+                   *("--setenv=" + name + "=" + os.environ[name] for name in ("WAYLAND_DISPLAY", "XDG_RUNTIME_DIR") if name in os.environ),
+                   binary, "--type", "image/png"]
+        result = subprocess.run(command, capture_output=True, timeout=8)
+        if result.returncode == 0:
+            return
+    with path.open("rb") as source:
+        result = subprocess.run([binary, "--type", "image/png"], stdin=source, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=8)
+    if result.returncode:
+        raise ValueError(result.stderr.decode(errors="replace").strip() or "Clipboard copy failed")
+
+
+def publish(directory, save):
+    source = session(directory) / "result.png"
+    png_size(source)
+    if not save:
+        copy_image(source)
+        return dict(saved=False, path="")
+    folder = pictures() / "Screenshots"
+    folder.mkdir(parents=True, exist_ok=True)
+    name = "Screenshot " + datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S-%f")
+    target = folder / (name + ".png")
+    created = False
+    try:
+        with source.open("rb") as stream, target.open("xb") as destination:
+            created = True
+            shutil.copyfileobj(stream, destination)
+    except BaseException:
+        if created:
+            target.unlink(missing_ok=True)
+        raise
+    return dict(saved=True, path=str(target))
+
+
+def export(directory, save, x, y, width, height):
+    directory = session(directory)
+    image_width, image_height = png_size(directory / "screen.png")
+    if x < 0 or y < 0 or width < 1 or height < 1 or x + width > image_width or y + height > image_height:
+        raise ValueError("Invalid screenshot area")
+    if not shutil.which("ffmpeg"):
+        raise ValueError("Install ffmpeg to crop screenshots")
+    command = ["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", str(directory / "screen.png"),
+               "-filter_threads", "1", "-vf", f"crop={width}:{height}:{x}:{y}", "-frames:v", "1", "-threads", "1", str(directory / "result.png")]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+    if result.returncode:
+        raise ValueError(result.stderr.strip() or "Screenshot cropping failed")
+    return publish(directory, save)
+
+
+def interrupted(signum, frame):
+    raise SystemExit(128 + signum)
+
+
+def main():
+    signal.signal(signal.SIGTERM, interrupted)
+    args = sys.argv[1:]
+    try:
+        if len(args) in (4, 5) and args[0] == "capture":
+            result = capture(args[1], float(args[2]), float(args[3]), float(args[4]) if len(args) == 5 else 1)
+        elif len(args) == 7 and args[0] == "export" and args[2] in ("copy", "save"):
+            result = export(args[1], args[2] == "save", *(int(value) for value in args[3:]))
+        elif len(args) == 2 and args[0] == "cleanup":
+            shutil.rmtree(session(args[1]), ignore_errors=True)
+            return 0
+        else:
+            raise ValueError("Usage: screenshot capture OUTPUT WIDTH HEIGHT [SCALE] | export SESSION copy/save X Y WIDTH HEIGHT | cleanup SESSION")
+        print(json.dumps(result))
+        return 0
+    except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

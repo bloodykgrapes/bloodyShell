@@ -14,10 +14,10 @@ with tempfile.TemporaryDirectory(prefix="bloodyshell-keyboard-") as temporary:
     for name in ("runtime", "cache"):
         (base / name).mkdir(mode=0o700)
     env = dict(os.environ, XDG_CACHE_HOME=str(base / "cache"))
-    url = subprocess.check_output(["python3", str(ROOT / "scripts/build-keyboard-monitor")], env=env, text=True).strip()
+    url = subprocess.check_output(["python3", str(ROOT / "scripts/runtime/build-keyboard-monitor")], env=env, text=True).strip()
     wrapper = Path(unquote(urlparse(url).path))
     stamp = wrapper.stat().st_mtime_ns
-    cached = subprocess.check_output(["python3", str(ROOT / "scripts/build-keyboard-monitor")], env=env, text=True).strip()
+    cached = subprocess.check_output(["python3", str(ROOT / "scripts/runtime/build-keyboard-monitor")], env=env, text=True).strip()
     assert cached == url and wrapper.stat().st_mtime_ns == stamp, "Unchanged keyboard monitor cache was rewritten"
     put = base / "shell.qml"
     put.write_text('''import QtQuick

@@ -15,11 +15,21 @@ put, stub, module = (helpers[key] for key in ("put", "stub", "module"))
 
 with tempfile.TemporaryDirectory(prefix="bloodyshell-alt-tab-") as temporary:
     base = Path(temporary)
-    for folder in ("core", "services", "components", "altTab", "runtime", "cache"):
-        (base / folder).mkdir(mode=0o700)
-    shutil.copytree(ROOT / "modules/components", base / "components", dirs_exist_ok=True)
-    shutil.copyfile(ROOT / "modules/altTab/AltTabContent.qml", base / "altTab/AltTabContent.qml")
-    shutil.copyfile(ROOT / "modules/altTab/AltTabCard.qml", base / "altTab/AltTabCard.qml")
+    for folder in ("core", "services", "common", "ui/overlay/altTab", "runtime", "cache"):
+        (base / folder).mkdir(parents=True, mode=0o700)
+    shutil.copytree(ROOT / "modules/common", base / "common", dirs_exist_ok=True)
+    shutil.copytree(ROOT / "modules/animations", base / "animations")
+    for name in ("AltTabContent", "AltTabCard", "AltTabKeyboard"):
+        shutil.copyfile(ROOT / f"modules/ui/overlay/altTab/{name}.qml", base / f"ui/overlay/altTab/{name}.qml")
+    put(base, "scripts/runtime/build-keyboard-monitor", "print(" + repr(str(base / "Monitor.qml")) + ")\n")
+    put(base, "Monitor.qml", '''import QtQuick
+Item {
+    objectName: "monitorFixture"
+    property var targetWindow
+    property bool listening: false
+    signal released()
+}
+''')
     shutil.copyfile(ROOT / "modules/services/ServiceAltTab.qml", base / "services/ServiceAltTab.qml")
     for name in ("Theme", "Enums"):
         shutil.copyfile(ROOT / f"modules/core/{name}.qml", base / f"core/{name}.qml")
@@ -28,25 +38,21 @@ with tempfile.TemporaryDirectory(prefix="bloodyshell-alt-tab-") as temporary:
     property int themeStyle: 1
     property int themeAnimations: 2
     property bool themeAccent: true
-    property int themeBackground: 0
-    property real themeBackgroundBlur: 60
-    property real themeBackgroundTransparent: 50
+    property int frameThickness: 8
     property bool themeBorder: false
     property real themeScale: 1
     property bool animationsFluid: true
     property bool animationsEnabled: false
 ''')
-    stub(base, "core", "Paths", 'property string shellDir: ' + json.dumps(str(base)))
+    stub(base, "core", "Paths", 'property string runtimeScriptsDir: ' + json.dumps(str(base / "scripts/runtime")))
     stub(base, "core", "Tr", 'function tr(key) { return key }')
     stub(base, "core", "MenuState", 'function close() {}')
     stub(base, "core", "OverlayState", '''
-    property var windows: ["settings"]
-    property bool settingsActive: false
-    property bool launcherActive: false
-    property bool powerActive: false
-    property bool wallpapersActive: false
-    property bool helperActive: false
-    function hide(name) { this[name + "Active"] = false }
+    property string current: ""
+    readonly property bool active: current !== ""
+    property bool inhibited: false
+    function show(name) { current = name }
+    function close() { current = "" }
 ''')
     stub(base, "services", "ServiceAppearance", 'property color accent: "#8bbfff"')
     stub(base, "services", "ServiceApplications", 'function iconFor(id) { return "" }\nfunction appName(id, fallback) { return id }')
@@ -65,7 +71,7 @@ import QtQuick.Window
 import Quickshell
 import "core"
 import "services"
-import "altTab"
+import "ui/overlay/altTab"
 ShellRoot
 {
     function check(ok, message) { if (!ok) throw new Error(message) }
@@ -75,6 +81,7 @@ ShellRoot
         width: 1200
         height: 650
         Rectangle { anchors.fill: parent; color: "#25252b" }
+        AltTabKeyboard { id: keyboard }
         AltTabContent { id: cards; anchors.centerIn: parent; width: 1100; height: 500 }
     }
     Timer
@@ -126,7 +133,7 @@ ShellRoot
                 check(!ServiceAltTab.active, "locked entry");
                 ServiceLock.locked = false;
                 ServiceAltTab.cycle(1);
-                OverlayState.settingsActive = true;
+                OverlayState.show("settings");
                 check(!ServiceAltTab.active, "overlay conflict");
                 ServiceAltTab.cycle(1);
                 finish.start();
@@ -144,7 +151,9 @@ ShellRoot
                 console.error("ALT_TAB_FAILED held shortcut closed automatically");
             else
             {
-                ServiceAltTab.confirm();
+                const monitor = keyboard.children.find(child => child.item && child.item.objectName === "monitorFixture")?.item;
+                check(monitor && monitor.listening && monitor.targetWindow, "Keyboard monitor was not connected to the active switcher");
+                monitor.released();
                 if (ServiceAltTab.active || ServiceAltTab.presented)
                     console.error("ALT_TAB_FAILED release did not close overlay");
                 else console.log("ALT_TAB_PASSED");
@@ -197,25 +206,3 @@ ShellRoot
     assert not re.search(r"ALT_TAB_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign", output)
 
 print("Alt+Tab state and UI checks passed.")
-
-with tempfile.TemporaryDirectory(prefix="bloodyshell-bindings-") as temporary:
-    base = Path(temporary)
-    config = base / "niri/config.kdl"
-    bindings = base / "niri/bloodyShell/09-alt-tab.kdl"
-    bindings.parent.mkdir(parents=True)
-    original = 'recent-windows {\n    binds {\n        Alt+Tab { next-window; }\n    }\n}\n'
-    config.write_text(original)
-    env = dict(os.environ, XDG_CONFIG_HOME=str(base), NIRI_CONFIG=str(config))
-    command = ["bash", str(ROOT / "scripts/alt-tab-bindings")]
-    subprocess.run(command, env=env, check=True)
-    assert '"-p" ' + json.dumps(str(ROOT)) in bindings.read_text()
-    stamp = bindings.stat().st_mtime_ns
-    subprocess.run(command, env=env, check=True)
-    assert stamp == bindings.stat().st_mtime_ns, "Bindings rewritten on every startup"
-    bindings.unlink()
-    conflict = original + 'invalid-test-node\n'
-    config.write_text(conflict)
-    result = subprocess.run(command, env=env, capture_output=True)
-    assert result.returncode != 0, "Invalid configuration accepted"
-    assert config.read_text() == conflict and not bindings.exists(), "Binding rollback failed"
-print("Automatic binding registration, idempotence, and rollback passed.")

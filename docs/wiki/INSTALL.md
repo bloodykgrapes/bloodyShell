@@ -35,7 +35,14 @@ X or Tab to toggle, Enter to continue, and Ctrl+A to select or clear all. Checke
 rows show `[✓]`; unchecked rows show `[ ]`. App-config selection retains its
 existing initial selections. Without gum, numbered menus remain available.
 
-The shell installs into `~/.config/quickshell/bloodyShell`.
+Setup shows an installation plan before making changes. The shell installs into
+`~/.config/quickshell/bloodyShell`, and the `bloodyShell` command installs into
+`~/.local/bin`. `XDG_CONFIG_HOME` and `XDG_BIN_HOME` override these locations.
+When the command directory is missing from `PATH`, setup prepares it for new
+Bash, Zsh, or Fish terminals. Existing startup files and replaced commands are
+backed up. Reopen your terminal afterward, or use the command printed by setup
+to update the current terminal's `PATH`.
+
 Optional app configs replace selected directories after backing them up.
 The bundled niri config starts bloodyShell and awww. To retain your own niri
 config, add `spawn-at-startup "qs" "-c" "bloodyShell"` and
@@ -46,12 +53,21 @@ Settings → General. Monitor layout is detected automatically; configure it in
 Settings → Display.
 
 ```sh
-qs -c bloodyShell
-./setup doctor
+bloodyShell
+bloodyShell doctor
 ```
 
 The diagnostic command only checks tools, assets, and configuration. It makes
 no system changes and distinguishes optional tools from missing requirements.
+
+## Networks
+
+Enterprise Wi-Fi in Settings → Networks or the Wi-Fi menu asks for a username
+and password. Optional connection settings include the authentication method,
+server domain and CA certificate. System certificates are used unless you supply a CA file.
+Certificate-based authentication requires a profile configured in your network
+manager. Setup installs the Python GObject and libnm bindings; missing bindings
+also appear in Settings → Updates → Dependencies.
 
 ## Login screen
 
@@ -60,8 +76,10 @@ no system changes and distinguishes optional tools from missing requirements.
 ```
 
 This installs the standalone greeter, greetd, and Cage as needed, exports
-wallpaper/appearance into `/var/lib/bloodyShell`, and offers to enable greetd
-for the next boot. Shell appearance changes update that export when configured.
+wallpaper and display preferences into `/var/lib/bloodyShell`, and offers to
+enable greetd for the next boot. The greeter uses a fixed black palette. Wallpaper,
+animation mode, language, avatars, and clock format update from the shell;
+shell colors and accents do not affect the login screen.
 The exported wallpaper is readable by the greeter account; choose an image
 suitable for the login screen.
 
@@ -111,8 +129,9 @@ current graphical session.
 ./setup update --tag vX.Y.Z
 ```
 
+After installation, `bloodyShell update` accepts the same options.
 Updates stage the download before replacing the shell. App configs are not
-reapplied. Backups live under `~/.cache/bloodyShell/backups/<timestamp>/`.
+reapplied. Backups live under `~/bloodyShell.bak/<timestamp>/`.
 To roll back, stop the shell, restore the previous directory to
 `~/.config/quickshell/bloodyShell`, then start it again.
 Update the greeter explicitly with `./setup greetd`.
@@ -125,3 +144,51 @@ Update the greeter explicitly with `./setup greetd`.
 - `./setup configs`: choose app configs to apply.
 - `./setup greetd`: install/update the login screen.
 - `./setup help`: usage and update options.
+
+## Desktop command
+
+`bloodyShell` is an executable wrapper, like iNiR's `inir` command. The terminal
+finds it in `PATH`; it starts Quickshell or forwards a request to the running
+shell's IPC interface. It works from any directory and does not require keeping
+the original source checkout. Installation and updates refresh the wrapper.
+Runtime backends live in `scripts/runtime/`; installation and diagnostics helpers
+live in `scripts/setup/`. Development utilities and tests remain in the source
+checkout and are excluded from installed copies.
+
+```sh
+bloodyShell                     # Start in the background
+bloodyShell restart
+bloodyShell stop
+bloodyShell status
+bloodyShell logs
+bloodyShell settings
+bloodyShell launcher show
+bloodyShell wallpapers
+bloodyShell screenshot
+bloodyShell alt-tab previous
+bloodyShell lock
+bloodyShell setup               # Installer menu
+bloodyShell update
+bloodyShell doctor
+bloodyShell help
+```
+
+Use `bloodyShell run` for foreground debugging. `status --json` provides machine
+readable instance details. Panel commands accept `show`, `hide`, or `toggle`.
+Panel actions, screenshots, Alt+Tab, lock, and logs discover the newest running
+bloodyShell instance in the current desktop session and address its instance ID.
+They work even when that instance runs from another checkout. Other Quickshell
+configurations and the greeter are excluded.
+
+Start, stop, restart, status, and maintenance remain scoped to the installation
+or checkout containing the command. Developers can use `./scripts/bloodyShell run`
+to launch a checkout, then use the installed `bloodyShell` command for its actions.
+The shell declares `ShellId bloodyShell`; restart older running versions after
+updating so they advertise this identity. Refresh the installed command through
+setup after updating the wrapper.
+
+While developing, refresh just the command from the checkout:
+
+```sh
+install -m755 scripts/bloodyShell "${XDG_BIN_HOME:-$HOME/.local/bin}/bloodyShell"
+```

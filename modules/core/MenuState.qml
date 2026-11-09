@@ -78,5 +78,5 @@ Singleton
         }
     }
 
-    onMenuActiveChanged: if (menuActive) menuFocusWindow = ServiceCompositor.focusedWindowId === null ? -1 : ServiceCompositor.focusedWindowId
+    onMenuActiveChanged: if (menuActive) menuFocusWindow = ServiceCompositor.focusedWindowId ?? ServiceCompositor.lastWindowId ?? -1
 }

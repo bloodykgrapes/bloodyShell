@@ -114,7 +114,7 @@ ShellRoot
                 ServiceUser.edit("fullName", "Unapplied");
                 ServiceUser.fullName = "External update";
                 ServiceUser.prepareApply();
-                tests.check(ServiceUser.error === "service.user.accountChangedExternally" && !ServiceUser.confirming, "external account changes invalidate a stale draft");
+                tests.check(ServiceUser.error === "service.user.externalChanges" && !ServiceUser.confirming, "external account changes invalidate a stale draft");
                 console.log("REGRESSIONS_PASSED user editor");
                 Qt.quit();
             }

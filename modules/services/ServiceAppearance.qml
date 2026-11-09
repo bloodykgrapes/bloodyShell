@@ -4,14 +4,14 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-import "../components"
+import "../common"
 import "../core"
 
 Singleton
 {
     id: serviceAppearance
 
-    readonly property string script: Paths.shellDir + "/scripts/appearance"
+    readonly property string script: Paths.runtimeScriptsDir + "/appearance"
 
     property string colorScheme: "default"
     property string gtkTheme: ""
@@ -32,10 +32,10 @@ Singleton
 
     property var pending: ({})
 
-    function refresh()
+    function refresh(includeLists = true)
     {
         reader.running = true;
-        lister.running = true;
+        if (includeLists) lister.running = true;
     }
 
     function change(key, value)
@@ -89,8 +89,8 @@ Singleton
         onCompleted: code =>
         {
             if (code === 0) return;
-            serviceAppearance.error = writer.errorMessage(Tr.tr("service.appearance.couldNotChangeTheSystemAppearance"));
-            serviceAppearance.refresh();
+            serviceAppearance.error = writer.errorMessage(Tr.tr("service.appearance.applyFailed"));
+            serviceAppearance.refresh(false);
         }
     }
 
@@ -144,10 +144,10 @@ Singleton
                     if (tab > 0 && lists[line.substring(0, tab)]) lists[line.substring(0, tab)].push(line.substring(tab + 1));
                 }
                 const byName = (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" });
-                serviceAppearance.gtkThemes = lists.gtk.sort(byName);
-                serviceAppearance.iconThemes = lists.icon.sort(byName);
-                serviceAppearance.cursorThemes = lists.cursor.sort(byName);
-                serviceAppearance.fonts = lists.font.sort(byName);
+                serviceAppearance.gtkThemes = Array.from(new Set(lists.gtk)).sort(byName);
+                serviceAppearance.iconThemes = Array.from(new Set(lists.icon)).sort(byName);
+                serviceAppearance.cursorThemes = Array.from(new Set(lists.cursor)).sort(byName);
+                serviceAppearance.fonts = Array.from(new Set(lists.font)).sort(byName);
             }
         }
     }
@@ -229,7 +229,7 @@ Singleton
         function onInitializedChanged()
         {
             if (!Config.initialized) return;
-            serviceAppearance.refresh();
+            serviceAppearance.refresh(false);
             wallpaperCheck.command = ["sh", "-c", serviceAppearance.wallpaperCheckScript, "check", Config.wallpaperCurrent, Config.wallpaperDirectory];
             wallpaperCheck.running = true;
         }

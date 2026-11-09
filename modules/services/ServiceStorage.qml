@@ -4,17 +4,28 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-import "../components"
-import "../core"
+import "../src/Clients.js" as Clients
 import "../src/ModelSync.js" as ModelSync
+import "../common"
+import "../core"
 
 Singleton
 {
     id: serviceStorage
 
-    property int watchers: 0
+    property var watchClients: []
+    readonly property int watchers: watchClients.length
     readonly property bool watching: watchers > 0
-    onWatchingChanged: if (watching) refresh()
+    onWatchingChanged:
+    {
+        if (watching) refresh();
+        else refreshSoon.stop();
+    }
+
+    function setWatching(client, active)
+    {
+        watchClients = Clients.update(watchClients, client, active);
+    }
 
     ListModel { id: volumeItems }
     readonly property alias volumeModel: volumeItems
@@ -30,7 +41,7 @@ Singleton
     property string pkexecCommand: ""
     property bool pythonAvailable: false
     readonly property bool persistentAvailable: pkexecCommand !== "" && pythonAvailable
-    readonly property string helper: Paths.shellDir + "/scripts/storage"
+    readonly property string helper: Paths.runtimeScriptsDir + "/storage"
     property string mountMode: "once"
     property string mountPoint: ""
     property string activeMode: "once"
@@ -300,6 +311,6 @@ Singleton
         stdout: SplitParser { onRead: line => { if (/\b(add|remove|change)\b/.test(line)) refreshSoon.restart() } }
     }
 
-    Timer { id: refreshSoon; interval: 500; onTriggered: serviceStorage.refresh(false) }
+    Timer { id: refreshSoon; interval: 500; onTriggered: if (serviceStorage.watching) serviceStorage.refresh(false) }
     Timer { interval: 10000; running: serviceStorage.watching; repeat: true; onTriggered: serviceStorage.refresh(false) }
 }

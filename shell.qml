@@ -1,36 +1,19 @@
+//@ pragma ShellId bloodyShell
+
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import Quickshell.Services.Polkit
 
-import "modules/altTab"
-import "modules/bar"
-import "modules/components"
 import "modules/core"
-import "modules/desktop"
-import "modules/dock"
-import "modules/osd"
-import "modules/overlay/helper"
-import "modules/overlay/launcher"
-import "modules/overlay/polkit"
-import "modules/overlay/power"
-import "modules/overlay/settings"
-import "modules/overlay/wallpapers"
 import "modules/services"
+import "modules/ui/desktop"
+import "modules/ui/layout"
+import "modules/ui/overlay"
+import "modules/ui/overlay/helper"
 
 ShellRoot
 {
     id: shell
-
-    function screensFor(wanted)
-    {
-        const all = Quickshell.screens, out = [];
-        for (let i = 0; i < all.length; i++) if (wanted.length === 0 || wanted.indexOf(all[i].name) >= 0) out.push(all[i]);
-        if (out.length === 0) for (let i = 0; i < all.length; i++) out.push(all[i]);
-        return out;
-    }
-    readonly property var screensBar:  screensFor(Config.barScreens)
-    readonly property var screensDock: screensFor(Config.dockScreens)
 
     Component.onCompleted:
     {
@@ -43,21 +26,10 @@ ShellRoot
     }
 
     Variants { model: Config.initialized ? Quickshell.screens : []; Desktop { } }
-    Variants { model: Config.initialized && Config.osdEnabled  ? Quickshell.screens : []; OSD  { } }
-    Variants { model: Config.initialized && Config.barEnabled  ? shell.screensBar   : []; Bar  { } }
-    Variants { model: Config.initialized && Config.dockEnabled ? shell.screensDock  : []; Dock { } }
+    Variants { model: Config.initialized ? Quickshell.screens : []; Layout { } }
 
+    Overlay { }
     HelperStartup { }
-    AltTab { }
-
-    PolkitAgent { id: polkit }
-    LazyLoader { active: polkit.isActive; Polkit { agent: polkit } }
-
-    Loader { active: OverlayState.helperMounted;     source: "modules/overlay/helper/Helper.qml"         }
-    Loader { active: OverlayState.launcherMounted;   source: "modules/overlay/launcher/Launcher.qml"     }
-    Loader { active: OverlayState.settingsMounted;   source: "modules/overlay/settings/Settings.qml"     }
-    Loader { active: OverlayState.powerMounted;      source: "modules/overlay/power/Power.qml"           }
-    Loader { active: OverlayState.wallpapersMounted; source: "modules/overlay/wallpapers/Wallpapers.qml" }
 
     Variants
     {

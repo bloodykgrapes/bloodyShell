@@ -14,11 +14,11 @@ def run_checks():
     helpers = runpy.run_path(str(ROOT / "scripts/tests/run.py"))
     with tempfile.TemporaryDirectory(prefix="bloodyShell-helper-") as temporary:
         base = Path(temporary)
-        for folder in ("core", "services", "overlay/helper", "runtime", "cache"):
+        for folder in ("core", "services", "ui/overlay/helper", "runtime", "cache"):
             (base / folder).mkdir(parents=True, mode=0o700)
         for name in ("Config", "Enums", "Paths", "OverlayState"):
             shutil.copyfile(ROOT / f"modules/core/{name}.qml", base / f"core/{name}.qml")
-        shutil.copyfile(ROOT / "modules/overlay/helper/HelperStartup.qml", base / "overlay/helper/HelperStartup.qml")
+        shutil.copyfile(ROOT / "modules/ui/overlay/helper/HelperStartup.qml", base / "ui/overlay/helper/HelperStartup.qml")
         helpers["stub"](base, "core", "Registry", 'property var windows: ["helper", "settings"]')
         helpers["stub"](base, "core", "MenuState", 'function close() {}')
         helpers["stub"](base, "core", "Theme", 'property int animationDurationClose: 100')
@@ -29,7 +29,7 @@ def run_checks():
 import Quickshell
 import "core"
 import "services"
-import "overlay/helper"
+import "ui/overlay/helper"
 ShellRoot {
     HelperStartup {}
     property bool second: Quickshell.env("TEST_HELPER_SECOND") === "1"
@@ -37,7 +37,7 @@ ShellRoot {
     Timer {
         interval: 800; running: true
         onTriggered: {
-            if (Config.helperSeen !== parent.second || OverlayState.helperActive) {
+            if (Config.helperSeen !== parent.second || (OverlayState.current === "helper")) {
                 console.error("HELPER_FAILED persistence or lock guard"); Qt.quit(); return;
             }
             if (!parent.second) {
@@ -50,14 +50,14 @@ ShellRoot {
     Timer {
         id: verify; interval: 700
         onTriggered: {
-            if (OverlayState.helperActive) { console.error("HELPER_FAILED other overlay guard"); Qt.quit(); return; }
+            if ((OverlayState.current === "helper")) { console.error("HELPER_FAILED other overlay guard"); Qt.quit(); return; }
             OverlayState.hide("settings"); finish.start();
         }
     }
     Timer {
         id: finish; interval: 1100
         onTriggered: {
-            if (!Config.helperSeen || OverlayState.helperActive === parent.second) {
+            if (!Config.helperSeen || (OverlayState.current === "helper") === parent.second) {
                 console.error("HELPER_FAILED first-run behavior"); Qt.quit(); return;
             }
             OverlayState.hide("helper"); checkClosed.start();
@@ -66,7 +66,7 @@ ShellRoot {
     Timer {
         id: checkClosed; interval: 700
         onTriggered: {
-            if (OverlayState.helperActive) console.error("HELPER_FAILED reopened automatically");
+            if ((OverlayState.current === "helper")) console.error("HELPER_FAILED reopened automatically");
             else console.log("HELPER_PASSED first run, lock, other overlay, persistence");
             Qt.quit();
         }
