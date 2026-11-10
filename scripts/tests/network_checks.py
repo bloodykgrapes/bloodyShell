@@ -132,6 +132,7 @@ Singleton { property var devices: ({values:[]}); property bool wifiEnabled: true
 ''')
         (base / "shell.qml").write_text('''import QtQuick
 import QtQuick.Window
+import QtTest
 import Quickshell
 import Quickshell.Networking
 import Quickshell.Bluetooth
@@ -218,6 +219,7 @@ ShellRoot
         PageNetworks { id: page; anchors.fill: parent }
         MenuNetwork { id: menu; visible: false; width: 320; height: implicitHeight }
         MenuBluetooth { id: bluetoothMenu; visible: false; width: 320; height: implicitHeight }
+        TestCase { id: input; when: false; optional: true }
         function matching(item, predicate) {
             if (predicate(item)) return item;
             for (const child of item.children || []) { const found = matching(child, predicate); if (found) return found; }
@@ -261,12 +263,19 @@ ShellRoot
                     {
                         if (ServiceNetwork.refreshing) return;
                         window.check(ServiceNetwork.refreshError === "", "Successful refresh reported an error");
-                        TestNetworking.wifiEnabled = false;
+                        const radio = window.matching(menu, item => item.objectName === "networkRadio");
+                        menu.visible = true;
+                        radio.forceActiveFocus(); input.keyClick(Qt.Key_Space);
+                        window.check(!ServiceNetwork.enabledWiFi && !radio.checked, "Wi-Fi tile did not disable the radio from keyboard");
                         window.check(!ServiceNetwork.refreshNetworks(), "Refresh started while Wi-Fi was off");
-                        TestNetworking.wifiEnabled = true;
+                        radio.toggle();
+                        window.check(ServiceNetwork.enabledWiFi && radio.checked, "Wi-Fi tile did not enable the radio");
                         TestNetworking.wifiHardwareEnabled = false;
+                        window.check(!radio.available, "Blocked radio retained available controls");
+                        window.check(!window.matching(menu, item => item.visible && item.text === "Personal" && item.hasActions !== undefined), "Blocked radio retained stale networks");
                         window.check(!ServiceNetwork.refreshNetworks(), "Refresh started while hardware was blocked");
                         TestNetworking.wifiHardwareEnabled = true;
+                        menu.visible = false;
                         ServiceNetwork.refreshNetworks();
                         step++; return;
                     }
@@ -327,6 +336,10 @@ ShellRoot
                         if (step === 9)
                         {
                             window.check(!row("Headphones") && !row("Speaker"), "Devices remained after Bluetooth was disabled");
+                            const radio = window.matching(bluetoothMenu, item => item.objectName === "bluetoothRadio");
+                            window.check(!radio.checked && radio.available, "Bluetooth tile state is incorrect");
+                            radio.forceActiveFocus(); input.keyClick(Qt.Key_Space);
+                            window.check(adapter.enabled && radio.checked, "Bluetooth tile did not enable the radio from keyboard");
                             console.log("NETWORK_UI_PASSED credentials, manual refresh, Ethernet states, Bluetooth discovery, battery and pairing updates");
                             TestNetworking.devices = {values:[]};
                             TestBluetooth.adapter = null;

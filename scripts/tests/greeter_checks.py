@@ -32,7 +32,7 @@ def checks():
         for name in ("runtime", "cache", "state", "sessions"):
             (base / name).mkdir(mode=0o700)
         shutil.copytree(ROOT / "greeter", base / "greeter")
-        export = runpy.run_path(str(ROOT / "greeter/export-settings"))["export"]
+        export = runpy.run_path(str(ROOT / "scripts/runtime/greeter-settings"))["export"]
         wallpaper = base / "wallpaper with spaces.png"
         wallpaper.write_bytes(b"test")
         source = base / "source.json"

@@ -22,12 +22,13 @@ Singleton
     property int  themeStyle: 1
     property int  themeAnimations: 1
     property bool themeAccent: false
-    property int frameThickness: 8
     property bool themeBorder: false
     property real themeScale: 1.0
 
+    property int frameThickness: 8
+
     property string wallpaperCurrent: ""
-    property string wallpaperDirectory: Paths.shellDir + "/assets/wallpapers"
+    property string wallpaperDirectory: Paths.home + "/Pictures/Wallpapers"
 
     property int equalizerStyle: 0
     property bool desktopEqualizer: true
@@ -81,10 +82,6 @@ Singleton
     property int screenshotMode: 0
     property bool screenshotSave: false
 
-    property bool launcherEnabled: true
-    property int  launcherRows: 8
-
-    property bool lockMediaPlayer: true
     property bool lockNotifications: true
     property bool lockNotificationsContent: true
 

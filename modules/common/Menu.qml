@@ -7,6 +7,7 @@ Item
     id: menu
 
     default property alias content: col.data
+    property alias spacing: col.spacing
     readonly property bool active: activity.active
     property bool presented: true
     property bool centerOnWidget: false

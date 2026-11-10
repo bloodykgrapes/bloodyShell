@@ -11,28 +11,35 @@ Item
     id: lock
 
     property real intro: Config.animationsEnabled ? 0 : 1
-    function phase(from, length) { return Math.max(0, Math.min(1, (intro - from) / length)) }
-    readonly property real introBack: phase(0.0, 0.7)
-    readonly property real introTop:  phase(0.1, 0.55)
-    readonly property real introMain: phase(0.22, 0.55)
-    readonly property real introFoot: phase(0.38, 0.55)
-
-    readonly property real rise: Config.animationsFluid ? 26 : 12
+    readonly property real introBack: Config.animationsEnabled ? intro : 1
 
     NumberAnimation
     {
         id: introAnim
         target: lock; property: "intro"; from: 0; to: 1
-        duration: Config.animationsFluid ? 1100 : 700
+        duration: Config.animationsFluid ? 800 : 360
         easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized
     }
     Component.onCompleted: if (Config.animationsEnabled) introAnim.start()
 
     property real outro: ServiceLock.leaving ? 1 : 0
-    Behavior on outro { enabled: Config.animationsEnabled; NumberAnimation { duration: 420; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingAccelerate } }
-    readonly property real shown: 1 - outro
+    Behavior on outro { enabled: Config.animationsEnabled; NumberAnimation { duration: ServiceLock.unlockDuration; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingAccelerate } }
+    readonly property real leave: Config.animationsEnabled ? outro : ServiceLock.leaving ? 1 : 0
 
-    LockBackdrop { anchors.fill: parent; appear: lock.introBack; leave: lock.outro }
+    LockBackdrop { anchors.fill: parent; appear: lock.introBack; leave: lock.leave }
+
+    Connections
+    {
+        target: Config
+        function onAnimationsEnabledChanged()
+        {
+            if (Config.animationsEnabled) return;
+            introAnim.stop();
+            lock.intro = 1;
+            shake.stop();
+            unlockShift.x = 0;
+        }
+    }
 
     MouseArea { anchors.fill: parent; onClicked: field.focusInput() }
 
@@ -40,6 +47,7 @@ Item
     {
         id: contentArea
         anchors { left: parent.left; right: parent.right; top: parent.top; bottom: footer.top; margins: 28 }
+        enabled: !ServiceLock.leaving && !ServiceLock.preparingForSleep
 
         Column
         {
@@ -50,12 +58,10 @@ Item
             spacing: 28
             scale: Math.max(0.1, Math.min(1, contentArea.width / width, contentArea.height / implicitHeight))
 
-            LockClock
+            LockReveal
             {
-                id: clock
-                width: parent.width
-                opacity: lock.introTop * lock.shown
-                transform: Translate { y: (1 - lock.introTop) * -lock.rise - lock.outro * 20 }
+                objectName: "lockClockReveal"
+                LockClock { width: parent.width }
             }
 
             Column
@@ -66,17 +72,13 @@ Item
                 width: parent.width
                 spacing: 14
 
-                opacity: lock.introMain * lock.shown
-                scale: 1 - 0.04 * lock.outro
-                transform: Translate { id: unlockShift; y: (1 - lock.introMain) * lock.rise }
-
                 SequentialAnimation
                 {
                     id: shake
-                    NumberAnimation { target: unlockShift; property: "x"; to: -6; duration: 50; easing.type: Easing.InOutQuad }
-                    NumberAnimation { target: unlockShift; property: "x"; to: 5;  duration: 50 }
-                    NumberAnimation { target: unlockShift; property: "x"; to: -3; duration: 40 }
-                    NumberAnimation { target: unlockShift; property: "x"; to: 0;  duration: 40 }
+                    NumberAnimation { target: unlockShift; property: "x"; to: -6; duration: Config.animationsFluid ? 75 : 50; easing.type: Easing.InOutQuad }
+                    NumberAnimation { target: unlockShift; property: "x"; to: 5;  duration: Config.animationsFluid ? 70 : 50 }
+                    NumberAnimation { target: unlockShift; property: "x"; to: -3; duration: Config.animationsFluid ? 60 : 40 }
+                    NumberAnimation { target: unlockShift; property: "x"; to: 0;  duration: Config.animationsFluid ? 65 : 40 }
                 }
                 Connections
                 {
@@ -90,94 +92,123 @@ Item
                     }
                 }
 
-                Item
+                LockReveal
                 {
-                    width: parent.width
-                    height: avatar.height
+                    order: 1
+                    spacing: 14
 
-                    LockShadow { target: avatar }
-
-                    ClippingRectangle
+                    Item
                     {
-                        id: avatar
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width: Math.round(88 * Config.themeScale)
-                        height: width
-                        radius: width / 2
-                        color: "transparent"
-                        border.width: 1
-                        border.color: Theme.lockSurfaceEdge
+                        width: parent.width
+                        height: avatar.height
 
-                        LockSurface { anchors.fill: parent; radius: avatar.radius; edge: false }
-                        Image
+                        LockShadow { target: avatar }
+
+                        ClippingRectangle
                         {
-                            anchors.centerIn: parent
-                            visible: face.status !== Image.Ready
-                            source: Icon.user
-                            width: Math.round(avatar.width * 0.42)
+                            id: avatar
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: Math.round(88 * Config.themeScale)
                             height: width
-                            sourceSize: Qt.size(width * 2, height * 2)
+                            radius: width / 2
+                            color: "transparent"
+                            border.width: 1
+                            border.color: Theme.lockSurfaceEdge
+
+                            LockSurface { anchors.fill: parent; radius: avatar.radius; edge: false }
+                            Image
+                            {
+                                anchors.centerIn: parent
+                                visible: face.status !== Image.Ready
+                                source: Icon.user
+                                width: Math.round(avatar.width * 0.42)
+                                height: width
+                                sourceSize: Qt.size(width * 2, height * 2)
+                            }
+                            Image
+                            {
+                                id: face
+                                anchors.fill: parent
+                                source: ServiceUser.avatar !== "" ? "file://" + ServiceUser.avatar : ""
+                                sourceSize: Qt.size(208, 208)
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                cache: false
+                            }
                         }
-                        Image
-                        {
-                            id: face
-                            anchors.fill: parent
-                            source: ServiceUser.avatar !== "" ? "file://" + ServiceUser.avatar : ""
-                            sourceSize: Qt.size(208, 208)
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                            cache: false
-                        }
+                    }
+
+                    ShellText
+                    {
+                        width: parent.width
+                        horizontalAlignment: Text.AlignHCenter
+                        label: ServiceUser.fullName !== "" ? ServiceUser.fullName : ServiceUser.user
+                        size: 20
+                        color: Theme.lockText1
+                        font.weight: Font.DemiBold
+                        layer.enabled: true
+                        layer.effect: LockTextShadow {}
                     }
                 }
 
-                ShellText
+                LockReveal
                 {
-                    width: parent.width
-                    horizontalAlignment: Text.AlignHCenter
-                    label: ServiceUser.fullName !== "" ? ServiceUser.fullName : ServiceUser.user
-                    size: 20
-                    color: Theme.lockText1
-                    font.weight: Font.DemiBold
-                    layer.enabled: true
-                    layer.effect: LockTextShadow {}
-                }
+                    objectName: "lockPasswordReveal"
+                    order: 2
 
-                LockPasswordField
-                {
-                    id: field
-                    width: parent.width
-                    busy: ServiceLock.checking
-                    failed: ServiceLock.failed
-                    closed: ServiceLock.leaving
-                    onSubmitted: password => ServiceLock.submit(password)
-                    onEdited: ServiceLock.failed = false
+                    LockPasswordField
+                    {
+                        id: field
+                        transform: Translate { id: unlockShift }
+                        width: parent.width
+                        busy: ServiceLock.checking
+                        failed: ServiceLock.failed
+                        closed: ServiceLock.leaving || ServiceLock.preparingForSleep
+                        onSubmitted: password => ServiceLock.submit(password)
+                        onEdited: ServiceLock.failed = false
+                    }
                 }
 
                 Column
                 {
                     width: parent.width
                     spacing: 12
-                    visible: (Config.lockMediaPlayer && ServiceMedia.available) || (Config.lockNotifications && ServiceNotifications.count > 0)
+                    visible: ServiceMedia.available || (Config.lockNotifications && ServiceNotifications.count > 0)
 
-                    LockMedia { visible: Config.lockMediaPlayer && ServiceMedia.available; width: parent.width }
-                    LockNotifications { visible: Config.lockNotifications && count > 0; width: parent.width }
+                    LockReveal
+                    {
+                        order: 3
+                        visible: ServiceMedia.available
+                        LockMedia { width: parent.width }
+                    }
+                    LockReveal
+                    {
+                        order: 4
+                        visible: Config.lockNotifications && notifications.count > 0
+                        LockNotifications { id: notifications; width: parent.width }
+                    }
                 }
             }
         }
     }
 
-    Row
+    LockReveal
     {
         id: footer
         objectName: "lockFooter"
         anchors { right: parent.right; bottom: parent.bottom; margins: Math.round(28 * Config.themeScale) }
-        spacing: 8
-        opacity: lock.introFoot * lock.shown
-        transform: Translate { y: (1 - lock.introFoot) * lock.rise + lock.outro * 16 }
+        width: actions.implicitWidth
+        order: 5
+        enabled: !ServiceLock.leaving && !ServiceLock.preparingForSleep
 
-        LockButton { icon: Icon.computerSleep;    label: Tr.tr("power.sleep"); onClicked: ServicePower.run("suspend") }
-        LockButton { icon: Icon.computerReboot;   label: Tr.tr("power.restart"); onClicked: ServicePower.run("reboot") }
-        LockButton { icon: Icon.computerPowerOff; label: Tr.tr("power.shutDown"); onClicked: ServicePower.run("poweroff") }
+        Row
+        {
+            id: actions
+            spacing: 8
+
+            LockButton { icon: Icon.computerSleep;    label: Tr.tr("power.sleep"); onClicked: ServicePower.run("suspend") }
+            LockButton { icon: Icon.computerReboot;   label: Tr.tr("power.restart"); onClicked: ServicePower.run("reboot") }
+            LockButton { icon: Icon.computerPowerOff; label: Tr.tr("power.shutDown"); onClicked: ServicePower.run("poweroff") }
+        }
     }
 }

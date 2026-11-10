@@ -139,9 +139,7 @@ Singleton
     readonly property string settingsDesktop:      path + "desktop.svg"
     readonly property string settingsBar:          path + "bar.svg"
     readonly property string settingsDock:         path + "dock.svg"
-    readonly property string settingsLauncher:     path + "search.svg"
     readonly property string settingsOSD:          path + "osd.svg"
-    readonly property string settingsLock:         path + "lock.svg"
 
     readonly property string settingsAbout:        path + "info.svg"
 }

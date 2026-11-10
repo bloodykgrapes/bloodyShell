@@ -26,7 +26,33 @@ Item
     width: implicitWidth
     height: 34
     opacity: enabled ? 1 : 0.4
+    activeFocusOnTab: enabled
     onEnabledChanged: if (!enabled) open = false
+    onVisibleChanged: if (!visible) open = false
+    onOptionsChanged: if (options.length === 0) open = false
+
+    function toggle()
+    {
+        if (!enabled || options.length === 0) return;
+        open = !open;
+    }
+
+    Keys.onSpacePressed: event => { if (!event.isAutoRepeat) toggle(); event.accepted = true }
+    Keys.onReturnPressed: event => { if (!event.isAutoRepeat) toggle(); event.accepted = true }
+    Keys.onEnterPressed: event => { if (!event.isAutoRepeat) toggle(); event.accepted = true }
+    Keys.onDownPressed: event => { if (!open) toggle(); event.accepted = true }
+    Keys.onUpPressed: event => { if (!open) toggle(); event.accepted = true }
+
+    Accessible.role: Accessible.ComboBox
+    Accessible.name: currentIndex >= 0 ? labelOf(options[currentIndex]) : placeholderText
+    Accessible.onPressAction: toggle()
+
+    RenderActivity
+    {
+        id: activity
+        target: settingsCombo
+        onActiveChanged: if (!active) settingsCombo.open = false
+    }
 
     function popupHost()
     {
@@ -40,22 +66,34 @@ Item
     onOpenChanged:
     {
         OverlayState.settingsPopup = open;
-        if (!open) return;
+        if (!open)
+        {
+            if (list.activeFocus && enabled && activity.active) forceActiveFocus(Qt.PopupFocusReason);
+            return;
+        }
         const host = popupHost();
         drop.parent = host || settingsCombo;
+        placePopup();
+        Qt.callLater(placePopup);
+        list.currentIndex = Math.max(0, currentIndex);
+        list.positionViewAtIndex(list.currentIndex, ListView.Center);
+        list.forceActiveFocus(Qt.PopupFocusReason);
+    }
+
+    function placePopup()
+    {
+        if (!open) return;
         const p = settingsCombo.mapToItem(drop.parent, 0, 0);
         panel.x = Math.max(8, Math.min(p.x, drop.width - panel.width - 8));
 
         const below = p.y + height + 6, above = p.y - 6 - panel.height;
         panel.upward = !(below + panel.height <= drop.height - 8 || above < 8);
-        panel.y = panel.upward ? above : below;
-        list.currentIndex = currentIndex;
-        list.positionViewAtIndex(Math.max(0, currentIndex), ListView.Center);
-        list.forceActiveFocus();
+        panel.y = Math.max(8, Math.min(panel.upward ? above : below, drop.height - panel.height - 8));
     }
 
     function choose(index)
     {
+        if (!open) return;
         open = false;
         if (index >= 0 && index < options.length && index !== currentIndex) selected(valueOf(options[index]));
     }
@@ -64,9 +102,9 @@ Item
     {
         anchors.fill: parent
         radius: Theme.radiusMedium
-        color: field.pressed ? Theme.colorPressed : field.containsMouse || settingsCombo.open ? Theme.colorHoverStrong : Theme.colorField
+        color: field.pressed ? Theme.colorPressed : field.containsMouse || settingsCombo.open || settingsCombo.activeFocus ? Theme.colorHoverStrong : Theme.colorField
         border.width: 1
-        border.color: settingsCombo.open ? Theme.colorAccent : "transparent"
+        border.color: settingsCombo.open || settingsCombo.activeFocus ? Theme.colorAccent : "transparent"
         Tint on color {}
         Tint on border.color {}
     }
@@ -97,7 +135,7 @@ Item
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: settingsCombo.open = !settingsCombo.open
+        onClicked: settingsCombo.toggle()
     }
 
     Item
@@ -107,6 +145,8 @@ Item
         width: parent ? parent.width : 0
         height: parent ? parent.height : 0
         visible: panel.shown > 0.01
+        onWidthChanged: settingsCombo.placePopup()
+        onHeightChanged: settingsCombo.placePopup()
 
         MouseArea
         {
@@ -122,12 +162,13 @@ Item
         {
             id: panel
 
-            readonly property real full:       Math.min(list.contentHeight + 10, 320)
-            readonly property bool scrollable: list.contentHeight + 10 > 320
+            readonly property real full: Math.min(list.contentHeight + 10, 320, Math.max(0, drop.height - 16))
+            readonly property bool scrollable: list.contentHeight + 10 > full
             property bool upward: false
 
-            property real shown: settingsCombo.open ? 1 : 0
-            Behavior on shown
+            property real progress: settingsCombo.open ? 1 : 0
+            readonly property real shown: Config.animationsEnabled ? progress : settingsCombo.open ? 1 : 0
+            Behavior on progress
             {
                 enabled: Config.animationsEnabled
                 NumberAnimation
@@ -138,8 +179,11 @@ Item
                 }
             }
 
-            width: Math.max(settingsCombo.width, 200)
+            width: Math.min(Math.max(settingsCombo.width, 200), Math.max(0, drop.width - 16))
             height: full
+            enabled: settingsCombo.open
+            onWidthChanged: settingsCombo.placePopup()
+            onHeightChanged: settingsCombo.placePopup()
             opacity: Math.min(1, shown * 1.5)
             transform: [
                 Scale { origin.y: panel.upward ? panel.height : 0; yScale: 0.92 + 0.08 * panel.shown; xScale: 0.98 + 0.02 * panel.shown; origin.x: panel.width / 2 },

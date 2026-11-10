@@ -15,14 +15,20 @@ Singleton
 
     property string colorScheme: "default"
     property string gtkTheme: ""
+    property string qtTheme: "Fusion"
     property string iconTheme: ""
     property string cursorTheme: ""
     property int    cursorSize: 24
     property string fontFamily: ""
     property real   fontSize: 10
     property bool   qt6ct: false
+    property bool   qtActive: false
+    property bool   qtConfigured: false
 
     property var gtkThemes: []
+    property var qtThemes: []
+    property var portalBackends: []
+    property var portalPreferences: ({})
     property var iconThemes: []
     property var cursorThemes: []
     property var fonts: []
@@ -31,10 +37,12 @@ Singleton
     property string error: ""
 
     property var pending: ({})
+    readonly property bool busy: writer.busy || flush.running
 
     function refresh(includeLists = true)
     {
-        reader.running = true;
+        if (reader.running) reader.refreshPending = true;
+        else reader.running = true;
         if (includeLists) lister.running = true;
     }
 
@@ -53,6 +61,26 @@ Singleton
 
     function setColorScheme(v) { colorScheme = v; change("color-scheme", v)            }
     function setGtkTheme(v)    { gtkTheme = v;    change("gtk-theme", v)               }
+    function setQtTheme(v)
+    {
+        if (!qt6ct) return;
+        qtTheme = v;
+        qtConfigured = true;
+        change("qt-theme", v);
+    }
+    function portalValue(name)
+    {
+        const value = portalPreferences[name];
+        return typeof value === "string" ? value : "";
+    }
+
+    function setPortal(name, value)
+    {
+        const next = Object.assign(Object.create(null), portalPreferences);
+        next[name] = value;
+        portalPreferences = next;
+        change("portal:" + name, value);
+    }
     function setIconTheme(v)   { iconTheme = v;   change("icon-theme", v)              }
     function setCursorTheme(v) { cursorTheme = v; change("cursor-theme", v)            }
     function setCursorSize(v)  { cursorSize = v;  change("cursor-size", String(v))     }
@@ -61,7 +89,7 @@ Singleton
 
     function reapply()
     {
-        if (writer.busy) return;
+        if (busy) return;
         error = "";
         writer.run([script, "apply"]);
     }
@@ -78,6 +106,7 @@ Singleton
 
             const command = [serviceAppearance.script, "set"].concat(keys.map(k => k + "=" + serviceAppearance.pending[k]));
             serviceAppearance.pending = {};
+            writer.refreshPortals = keys.some(key => key.startsWith("portal:"));
             writer.run(command);
         }
     }
@@ -85,10 +114,17 @@ Singleton
     CommandProcess
     {
         id: writer
+        property bool refreshPortals: false
 
         onCompleted: code =>
         {
-            if (code === 0) return;
+            const refresh = refreshPortals;
+            refreshPortals = false;
+            if (code === 0)
+            {
+                if (refresh) serviceAppearance.refresh(false);
+                return;
+            }
             serviceAppearance.error = writer.errorMessage(Tr.tr("service.appearance.applyFailed"));
             serviceAppearance.refresh(false);
         }
@@ -97,6 +133,7 @@ Singleton
     Process
     {
         id: reader
+        property bool refreshPending: false
 
         command: [serviceAppearance.script, "read"]
         stdout: StdioCollector
@@ -111,10 +148,29 @@ Singleton
                 }
                 serviceAppearance.colorScheme = values["color-scheme"] || "default";
                 serviceAppearance.gtkTheme = values["gtk-theme"] || "";
+                serviceAppearance.qtTheme = values["qt-theme"] || "Fusion";
+                if (values["portal-data"])
+                {
+                    try
+                    {
+                        const portals = JSON.parse(values["portal-data"]);
+                        const sameList = (a, b) => a.length === b.length && a.every((value, index) => value === b[index]);
+                        const previous = serviceAppearance.portalBackends;
+                        if (previous.length !== portals.backends.length || portals.backends.some((backend, index) => backend.id !== previous[index].id
+                            || !sameList(backend.interfaces, previous[index].interfaces))) serviceAppearance.portalBackends = portals.backends;
+                        const keys = Object.keys(portals.preferences);
+                        if (keys.length !== Object.keys(serviceAppearance.portalPreferences).length
+                            || keys.some(key => !Object.prototype.hasOwnProperty.call(serviceAppearance.portalPreferences, key)
+                                || portals.preferences[key] !== serviceAppearance.portalValue(key))) serviceAppearance.portalPreferences = portals.preferences;
+                    }
+                    catch (error) { serviceAppearance.error = String(error) }
+                }
                 serviceAppearance.iconTheme = values["icon-theme"] || "";
                 serviceAppearance.cursorTheme = values["cursor-theme"] || "";
                 serviceAppearance.cursorSize = parseInt(values["cursor-size"], 10) || 24;
                 serviceAppearance.qt6ct = values["qt6ct"] === "yes";
+                serviceAppearance.qtActive = values["qt-active"] === "yes";
+                serviceAppearance.qtConfigured = values["qt-configured"] === "yes";
 
                 const font = String(values["font"] || "").trim();
                 const match = /^(.*\S)\s+(\d+(?:\.\d+)?)$/.exec(font);
@@ -126,6 +182,12 @@ Singleton
             }
         }
         stderr: StdioCollector { onStreamFinished: if (text.trim() !== "") serviceAppearance.error = text.trim() }
+        onExited:
+        {
+            if (!refreshPending) return;
+            refreshPending = false;
+            Qt.callLater(() => reader.running = true);
+        }
     }
 
     Process
@@ -137,7 +199,7 @@ Singleton
         {
             onStreamFinished:
             {
-                const lists = { gtk: [], icon: [], cursor: [], font: [] };
+                const lists = { gtk: [], qt: [], icon: [], cursor: [], font: [] };
                 for (const line of text.split("\n"))
                 {
                     const tab = line.indexOf("\t");
@@ -145,6 +207,7 @@ Singleton
                 }
                 const byName = (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" });
                 serviceAppearance.gtkThemes = Array.from(new Set(lists.gtk)).sort(byName);
+                serviceAppearance.qtThemes = Array.from(new Set(lists.qt)).sort(byName);
                 serviceAppearance.iconThemes = Array.from(new Set(lists.icon)).sort(byName);
                 serviceAppearance.cursorThemes = Array.from(new Set(lists.cursor)).sort(byName);
                 serviceAppearance.fonts = Array.from(new Set(lists.font)).sort(byName);

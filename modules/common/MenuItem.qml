@@ -15,12 +15,20 @@ Item
     property int textSize: 12
     property real trailingInset: trailing !== "" ? trailingLabel.width + 10 : 0
     property bool actionPressed: false
-    readonly property bool hovered: hover.hovered
+    readonly property bool hovered: enabled && (hover.hovered || activeFocus)
 
     signal clicked()
 
     width: parent ? parent.width : 200
     height: 34
+    activeFocusOnTab: enabled
+    Keys.onSpacePressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
+    Keys.onReturnPressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
+    Keys.onEnterPressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
+
+    Accessible.role: Accessible.Button
+    Accessible.name: text
+    Accessible.onPressAction: if (enabled) clicked()
 
     scale: area.pressed || actionPressed ? 0.98 : hovered ? 1.025 : 1
 

@@ -307,6 +307,50 @@ SettingsPage
         }
         SettingsRow
         {
+            objectName: "qtThemeRow"
+            label: Tr.tr("settings.appearance.qtTheme")
+            Row
+            {
+                spacing: 8
+
+                SettingsCombo
+                {
+                    objectName: "qtThemeSelector"
+                    readonly property string selectedTheme: ServiceAppearance.qtThemes.find(name => name.toLowerCase() === ServiceAppearance.qtTheme.toLowerCase()) || ServiceAppearance.qtTheme
+                    width: enableQt.visible ? 160 : implicitWidth
+                    enabled: ServiceAppearance.qt6ct
+                    options: pageAppearance.withCurrent(ServiceAppearance.qtThemes, selectedTheme)
+                    current: selectedTheme
+                    onSelected: value => ServiceAppearance.setQtTheme(value)
+                }
+                SettingsButton
+                {
+                    id: enableQt
+                    objectName: "enableQtTheme"
+                    visible: ServiceAppearance.qt6ct && !ServiceAppearance.qtActive && !ServiceAppearance.qtConfigured
+                    text: Tr.tr("common.enable")
+                    onClicked: ServiceAppearance.setQtTheme(ServiceAppearance.qtTheme)
+                }
+            }
+        }
+        SettingsPortals { id: portals }
+        SettingsRow
+        {
+            objectName: "installedPortals"
+            label: Tr.tr("settings.portals.installed")
+            description: ServiceAppearance.portalBackends.length > 0
+                ? ServiceAppearance.portalBackends.map(backend => portals.backendLabel(backend.id)).join(", ")
+                : Tr.tr("settings.portals.empty")
+            SettingsButton
+            {
+                objectName: "refreshPortals"
+                text: Tr.tr("common.refresh")
+                enabled: !ServiceAppearance.busy
+                onClicked: ServiceAppearance.refresh(false)
+            }
+        }
+        SettingsRow
+        {
             label: Tr.tr("settings.appearance.iconTheme")
             SettingsCombo
             {
@@ -358,7 +402,7 @@ SettingsPage
         SettingsRow
         {
             label: Tr.tr("settings.appearance.appTheme")
-            SettingsButton { text: Tr.tr("settings.appearance.reapply"); icon: Icon.reload; onClicked: ServiceAppearance.reapply() }
+            SettingsButton { text: Tr.tr("settings.appearance.reapply"); icon: Icon.reload; enabled: !ServiceAppearance.busy; onClicked: ServiceAppearance.reapply() }
         }
     }
 }

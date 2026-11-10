@@ -32,11 +32,20 @@ Rectangle
     border.width: Theme.borderWidth
 
     property int index: 0
+    property bool active: true
+    onActiveChanged: if (!active) { const tile = current(); if (tile) tile.release(); }
 
     property bool keyboard: false
     readonly property bool lit: keyboard || panelHover.hovered
-    function select(i) { index = (i + items.length) % items.length }
-    function current() { return tiles.itemAt(index) }
+    function select(i)
+    {
+        const next = (i + items.length) % items.length;
+        if (next === index) return;
+        const tile = current();
+        if (tile) tile.release();
+        index = next;
+    }
+    function current() { return tiles ? tiles.itemAt(index) : null }
 
     HoverHandler { id: panelHover; onHoveredChanged: if (hovered) powerContent.keyboard = false }
 
@@ -119,7 +128,7 @@ Rectangle
                 hold: modelData.hold === true
                 order: index
                 current: powerContent.lit && powerContent.index === index
-                enabled: ServicePower.pendingAction === ""
+                enabled: powerContent.active && ServicePower.pendingAction === ""
 
                 onHovered: powerContent.select(index)
                 onTriggered:

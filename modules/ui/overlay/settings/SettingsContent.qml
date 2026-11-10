@@ -18,6 +18,20 @@ Rectangle
 
     function select(index) { OverlayState.settingsPage = Math.max(0, Math.min(tabs.length - 1, index)) }
 
+    function revealTab()
+    {
+        const entry = tabRepeater.itemAt(current);
+        if (!entry) return;
+        const top = tabColumn.y + entry.y + entry.tabY;
+        const bottom = top + 32;
+        if (top >= navigation.contentY && bottom <= navigation.contentY + navigation.height) return;
+        navigation.cancelFlick();
+        navigation.contentY = Math.max(0, Math.min(Math.max(0, navigation.contentHeight - navigation.height),
+            top < navigation.contentY ? top : bottom - navigation.height));
+    }
+    onCurrentChanged: Qt.callLater(revealTab)
+    onTabsChanged: Qt.callLater(revealTab)
+
     radius: Theme.settingsRadius
     color: Theme.settingsColorBackground
     border.color: Theme.colorHairline
@@ -28,7 +42,7 @@ Rectangle
     Component.onCompleted:
     {
         forceActiveFocus();
-        Qt.callLater(() => settingsContent.settled = true);
+        Qt.callLater(() => { settingsContent.settled = true; settingsContent.revealTab(); });
     }
 
     property bool settled: false
@@ -258,6 +272,7 @@ Rectangle
         height: 30
         icon: Icon.close
         iconSize: 14
+        text: Tr.tr("common.close")
         onClicked: OverlayState.hide("settings")
     }
 

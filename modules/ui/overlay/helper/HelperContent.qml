@@ -170,15 +170,9 @@ Rectangle
                 }
                 SettingsRow
                 {
-                    icon: Icon.settingsLauncher
-                    label: Tr.tr("common.launcher")
-                    Toggle { checked: Config.launcherEnabled; onToggled: value => Config.set("launcherEnabled", value) }
-                }
-                SettingsRow
-                {
                     icon: Icon.settingsOSD
-                    label: "OSD"
-                    Toggle { checked: Config.osdEnabled; onToggled: value => Config.set("osdEnabled", value) }
+                    label: Tr.tr("shell.dynamicIsland")
+                    Toggle { checked: Config.islandEnabled; onToggled: value => Config.set("islandEnabled", value) }
                 }
             }
 

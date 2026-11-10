@@ -13,7 +13,7 @@ Singleton
 
     function updateHistory()
     {
-        const next = {};
+        const next = Object.create(null);
         const windows = ServiceCompositor.windowList;
         for (const window of windows)
         {
@@ -22,7 +22,9 @@ Singleton
         }
         for (const window of windows)
             if (window.is_focused) next[AppIdentity.appKey(window)] = window.id;
-        lastFocused = next;
+        const keys = Object.keys(next);
+        if (keys.length !== Object.keys(lastFocused).length || keys.some(key => next[key] !== lastFocused[key]))
+            lastFocused = next;
     }
 
     function trayDesktopEntry(item)

@@ -20,8 +20,8 @@ Rectangle
     implicitWidth: 400
     implicitHeight: Math.max(64, labels.implicitHeight + 28)
     radius: Theme.radiusLarge + 2
-    color: area.pressed ? Theme.colorPressed
-        : area.containsMouse || (activeFocus && keyboardFocusHighlight) ? Theme.colorHoverStrong : Theme.colorField
+    color: Qt.tint(Theme.settingsColorCard, area.pressed ? Theme.colorPressed
+        : area.containsMouse || (activeFocus && keyboardFocusHighlight) ? Theme.colorHoverStrong : "transparent")
     activeFocusOnTab: true
     onActiveFocusChanged: keyboardFocusHighlight = activeFocus
 
@@ -115,9 +115,9 @@ Rectangle
         }
     }
 
-    Keys.onSpacePressed: event => { toggled(!expanded); event.accepted = true }
-    Keys.onReturnPressed: event => { toggled(!expanded); event.accepted = true }
-    Keys.onEnterPressed: event => { toggled(!expanded); event.accepted = true }
+    Keys.onSpacePressed: event => { if (!event.isAutoRepeat) toggled(!expanded); event.accepted = true }
+    Keys.onReturnPressed: event => { if (!event.isAutoRepeat) toggled(!expanded); event.accepted = true }
+    Keys.onEnterPressed: event => { if (!event.isAutoRepeat) toggled(!expanded); event.accepted = true }
     Keys.onRightPressed: event => { toggled(true); event.accepted = true }
     Keys.onLeftPressed: event => { toggled(false); event.accepted = true }
 
@@ -126,5 +126,5 @@ Rectangle
     Accessible.description: description
     Accessible.checkable: true
     Accessible.checked: expanded
-    Accessible.onPressAction: toggled(!expanded)
+    Accessible.onPressAction: if (enabled) toggled(!expanded)
 }

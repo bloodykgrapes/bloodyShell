@@ -22,6 +22,19 @@ def run_fixture(base):
     (base / "assets").symlink_to(ROOT / "assets", target_is_directory=True)
     (base / "translations").symlink_to(ROOT / "translations", target_is_directory=True)
     shutil.copytree(ROOT / "scripts", base / "scripts", ignore=shutil.ignore_patterns("tests", "tools", "__pycache__"))
+    (base / "scripts/runtime/resources").write_text('''import json, sys, time
+time.sleep(0.08)
+if sys.argv[1:] == ["status"]:
+    print(json.dumps(dict(source="repository",terminal=[],entries=[
+        dict(id="dots/fixture",kind="dots",name="fixture",destination="/tmp/fixture-config"),
+        dict(id="greeter",kind="greeter",name="greeter",destination="/tmp/fixture-greeter"),
+        dict(id="wallpapers",kind="wallpapers",name="wallpapers",destination="/tmp/fixture-wallpapers")
+    ])))
+elif sys.argv[1:] == ["import", "wallpapers"]:
+    print(json.dumps(dict(destination="/tmp/fixture-wallpapers",settings={})))
+else:
+    sys.exit(1)
+''')
     shutil.copy2(ROOT / "setup", base / "setup")
     shutil.copy2(ROOT / "version", base / "version")
     for name in ("config", "cache", "runtime", "bin"):
@@ -288,6 +301,8 @@ ShellRoot
         property real previewBarHeight: 0
         property int mediaChecks: 0
         property int sidebarChecks: 0
+        property int importChecks: 0
+        property int importWait: 0
         interval: 80; repeat: true; running: true
         onTriggered:
         {
@@ -759,6 +774,45 @@ ShellRoot
                         {
                             tests.ready("settings");
                             tests.check(tests.loadedPage(overlay.testPage.item, Registry.settings[step - 116].page) !== null, "Settings page failed to load after relocation: " + Registry.settings[step - 116].id);
+                            if (Registry.settings[step - 116].id === "updates")
+                            {
+                                const imports = tests.find(overlay.testPage.item, "resourceImports");
+                                tests.check(imports !== null, "Updates import section is missing");
+                                if (importChecks === 0)
+                                {
+                                    tests.check(!imports.expanded, "Import section is not collapsed by default");
+                                    imports.expanded = true; importChecks++; return;
+                                }
+                                if (importChecks === 1)
+                                {
+                                    if ((ServiceResources.busy || ServiceResources.entries.length === 0) && importWait++ < 20) return;
+                                    tests.check(ServiceResources.entries.length === 3 && ServiceResources.source === "repository", "Import catalog did not load");
+                                    tests.find(imports, "importResource-dots/fixture").clicked();
+                                    tests.check(ServiceResources.pending && ServiceResources.pending.id === "dots/fixture", "Per-app import did not request confirmation");
+                                    ServiceResources.apply();
+                                    tests.check(ServiceResources.pending && ServiceResources.error !== "" && !ServiceResources.busy, "Missing terminal did not preserve the confirmation");
+                                    ServiceResources.pending = null;
+                                    tests.find(imports, "importResource-greeter").clicked();
+                                    tests.check(ServiceResources.pending.kind === "greeter", "Greeter import is unavailable");
+                                    imports.expanded = false;
+                                    tests.check(ServiceResources.pending === null, "Closing imports left a pending replacement");
+                                    imports.expanded = true; importChecks++; return;
+                                }
+                                if (importChecks === 2)
+                                {
+                                    if (ServiceResources.busy) return;
+                                    tests.find(imports, "importResource-wallpapers").clicked();
+                                    tests.find(imports, "applyResourceImport").clicked();
+                                    tests.check(ServiceResources.busy && ServiceUpdate.resourcesBusy, "Import and updater can run concurrently");
+                                    importChecks++; return;
+                                }
+                                if (importChecks === 3)
+                                {
+                                    if (ServiceResources.busy) return;
+                                    tests.check(ServiceResources.error === "" && ServiceResources.message !== "" && !ServiceUpdate.resourcesBusy, "Wallpaper import did not finish cleanly");
+                                    imports.expanded = false; importChecks++;
+                                }
+                            }
                             if (Registry.settings[step - 116].id === "appearance")
                             {
                                 const wallpaperPreview = tests.find(overlay.testPage.item, "currentWallpaperPreview");

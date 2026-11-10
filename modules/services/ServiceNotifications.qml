@@ -39,20 +39,33 @@ Singleton
     readonly property int count: history.length
     readonly property int unread: Math.min(unreadCounter, count)
 
+    onHistoryChanged: pruneReceivedAt()
+
+    function pruneReceivedAt()
+    {
+        const live = new Set(history.map(notification => String(notification.id)));
+        const keys = Object.keys(receivedAt);
+        if (keys.every(key => live.has(key))) return;
+        const next = {};
+        for (const key of keys) if (live.has(key)) next[key] = receivedAt[key];
+        receivedAt = next;
+    }
+
     readonly property var groups:
     {
-        const order = [], byKey = {};
+        const result = [], byKey = new Map();
         for (const n of history)
         {
             const key = appKey(n);
-            if (!byKey[key])
+            if (!byKey.has(key))
             {
-                byKey[key] = { key: key, name: n.appName || key, items: [] };
-                order.push(key);
+                const group = { key: key, name: n.appName || key, items: [] };
+                byKey.set(key, group);
+                result.push(group);
             }
-            byKey[key].items.push(n);
+            byKey.get(key).items.push(n);
         }
-        return order.map(k => byKey[k]);
+        return result;
     }
     function appKey(n) { return String(n.desktopEntry || n.appName || "notifications").toLowerCase().replace(/\.desktop$/, "") }
 

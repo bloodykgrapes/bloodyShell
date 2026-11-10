@@ -38,6 +38,16 @@ Item
     }
 
     readonly property real cardWidth: Math.min(width, 296 * Config.themeScale)
+    readonly property real cardSpacing: 10 * Config.themeScale
+
+    function scroll(delta)
+    {
+        wheelRemainder += delta;
+        const steps = Math.trunc(wheelRemainder / 120);
+        if (steps === 0) return;
+        wheelRemainder -= steps * 120;
+        ServiceAltTab.cycle(-steps);
+    }
 
     Keys.onReleased: event =>
     {
@@ -64,60 +74,74 @@ Item
         event.accepted = true;
     }
 
-    Item
+    MouseArea
     {
         id: deck
         objectName: "altTabDeck"
         anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; bottom: parent.bottom; bottomMargin: 44; topMargin: 8 }
         width: parent.width
         clip: true
-
-        Repeater
+        acceptedButtons: Qt.NoButton
+        onWheel: wheel =>
         {
-            id: cards
-            objectName: "altTabCards"
-            model: ServiceAltTab.windows
+            content.scroll(wheel.angleDelta.y || wheel.angleDelta.x);
+            wheel.accepted = true;
+        }
 
-            delegate: Item
+        Item
+        {
+            id: rail
+            objectName: "altTabRail"
+            width: deck.width
+            height: deck.height
+            x: (deck.width - content.cardWidth) / 2 - ServiceAltTab.selected * (content.cardWidth + content.cardSpacing)
+            Glide on x { enabled: Config.animationsEnabled && ServiceAltTab.presented && content.positioned; duration: Theme.animationDurationControl }
+
+            Repeater
             {
-                id: card
-                required property var modelData
-                required property int index
-                readonly property bool selected: index === ServiceAltTab.selected
-                width: content.cardWidth
-                height: deck.height
-                x: (deck.width - width) / 2 + (index - ServiceAltTab.selected) * (width + 8)
-                Glide on x { enabled: ServiceAltTab.active && content.positioned && Config.animationsEnabled; duration: Theme.animationDurationControl }
-                scale: selected ? 1 : 0.94
-                Glide on scale { enabled: ServiceAltTab.active && content.positioned && Config.animationsEnabled; duration: Theme.animationDurationControl }
+                id: cards
+                objectName: "altTabCards"
+                model: ServiceAltTab.windows
 
-                AltTabCard
+                delegate: Item
                 {
-                    anchors { fill: parent; margins: 3 }
-                    windowData: card.modelData
-                }
+                    id: card
+                    required property var modelData
+                    required property int index
+                    readonly property bool selected: index === ServiceAltTab.selected
+                    width: content.cardWidth
+                    height: deck.height
+                    x: index * (width + content.cardSpacing)
+                    scale: selected ? 1 : 0.94
+                    Glide on scale { enabled: Config.animationsEnabled && ServiceAltTab.presented && content.positioned; duration: Theme.animationDurationControl }
 
-                MouseArea
-                {
-                    id: area
-                    anchors.fill: parent
-                    onClicked:
+                    AltTabCard
                     {
-                        if (card.selected) ServiceAltTab.confirm();
-                        else ServiceAltTab.select(card.index);
+                        anchors { fill: parent; margins: 3 }
+                        windowData: card.modelData
+                        selected: card.selected
+                        hovered: area.containsMouse
+                        pressed: area.pressed
                     }
-                    onWheel: wheel =>
+
+                    MouseArea
                     {
-                        const delta = wheel.angleDelta.y || wheel.angleDelta.x;
-                        content.wheelRemainder += delta;
-                        const steps = Math.trunc(content.wheelRemainder / 120);
-                        if (steps !== 0)
+                        id: area
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked:
                         {
-                            content.wheelRemainder -= steps * 120;
-                            ServiceAltTab.cycle(-steps);
+                            if (card.selected) ServiceAltTab.confirm();
+                            else ServiceAltTab.select(card.index);
                         }
-                        wheel.accepted = true;
+                        onWheel: wheel => wheel.accepted = false
                     }
+
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: modelData.title || modelData.app_id
+                    Accessible.selected: selected
+                    Accessible.onPressAction: ServiceAltTab.select(index)
                 }
             }
         }
@@ -126,18 +150,32 @@ Item
     Rectangle
     {
         anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom }
-        width: Math.min(parent.width, hint.implicitWidth + 32)
+        width: Math.min(parent.width, information.implicitWidth + 32)
         height: 30
         radius: 15
         color: Theme.colorSolid
-        ShellText
+        Row
         {
-            id: hint
+            id: information
             anchors.centerIn: parent
-            width: Math.min(implicitWidth, parent.width - 24)
-            label: Tr.tr("altTab.hint")
-            color: Theme.text2
-            size: 11
+            spacing: 12
+
+            ShellText
+            {
+                id: hint
+                width: Math.min(implicitWidth, Math.max(0, content.width - counter.width - 56))
+                label: Tr.tr("altTab.hint")
+                color: Theme.text2
+                size: 11
+            }
+            ShellText
+            {
+                id: counter
+                label: (ServiceAltTab.selected + 1) + " / " + ServiceAltTab.windows.length
+                color: Theme.text1
+                size: 11
+                font.family: Theme.fontMono
+            }
         }
     }
 }

@@ -7,16 +7,19 @@ Loader
     id: settingsPageSlot
 
     property real shift: 0
+    property bool presented: false
+    enabled: presented
 
     function enter(url, direction)
     {
         leaving.stop();
+        entering.stop();
+        presented = true;
         z = 1;
         source = url;
 
-        if (!Config.animationsEnabled) { opacity = 1; shift = 0; return; }
+        if (!Config.animationsEnabled || direction === 0) { opacity = 1; shift = 0; return; }
 
-        entering.stop();
         opacity = 0;
         shift = 36 * direction;
         entering.start();
@@ -24,6 +27,7 @@ Loader
     function leave(direction)
     {
         entering.stop();
+        presented = false;
         z = 0;
         if (!item) return;
 
@@ -35,16 +39,26 @@ Loader
 
     transform: Translate { y: settingsPageSlot.shift }
 
-    SequentialAnimation
+    Connections
+    {
+        target: Config
+        function onAnimationsEnabledChanged()
+        {
+            if (Config.animationsEnabled) return;
+            entering.stop();
+            leaving.stop();
+            settingsPageSlot.shift = 0;
+            settingsPageSlot.opacity = settingsPageSlot.presented ? 1 : 0;
+            if (!settingsPageSlot.presented) settingsPageSlot.source = "";
+        }
+    }
+
+    ParallelAnimation
     {
         id: entering
 
-        PauseAnimation { duration: 70 }
-        ParallelAnimation
-        {
-            NumberAnimation { target: settingsPageSlot; property: "opacity"; to: 1; duration: 260; easing.type: Easing.OutCubic }
-            NumberAnimation { target: settingsPageSlot; property: "shift"; to: 0; duration: Theme.animationDurationOpen; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized }
-        }
+        NumberAnimation { target: settingsPageSlot; property: "opacity"; to: 1; duration: Config.animationsFluid ? 220 : 160; easing.type: Easing.OutCubic }
+        NumberAnimation { target: settingsPageSlot; property: "shift"; to: 0; duration: Theme.animationDurationOpen; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized }
     }
 
     ParallelAnimation

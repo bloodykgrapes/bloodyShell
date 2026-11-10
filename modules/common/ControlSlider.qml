@@ -1,11 +1,9 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell.Widgets
 
-import "../../../animations"
-import "../../../common"
-import "../../../core"
+import "../animations"
+import "../core"
 
 Item
 {
@@ -13,6 +11,7 @@ Item
 
     property string text: ""
     property string icon: ""
+    property string appIcon: ""
     property real value: 0
     property bool muted: false
     property bool available: true
@@ -21,10 +20,20 @@ Item
     readonly property real shown: Math.max(0, Math.min(1, pointer.pressed ? pointer.dragValue : value))
     readonly property color fillColor: muted ? Theme.colorLine : Theme.colorAccent
     readonly property color fillText: Theme.lightForeground(fillPaint.color) ? "#ffffff" : "#000000"
+    readonly property real iconWidth: Math.max(36, appIcon !== "" ? Math.round(22 * Config.themeScale) + 16 : Math.round(18 * Config.themeScale) + 20)
     property real fraction: shown
 
     signal moved(real value)
     signal iconClicked()
+
+    TextMetrics
+    {
+        id: percentMetrics
+        font.family: Theme.fontText
+        font.pixelSize: Math.round(12 * Config.themeScale)
+        font.weight: Font.DemiBold
+        text: "100%"
+    }
 
     implicitWidth: 320
     implicitHeight: 36
@@ -54,7 +63,7 @@ Item
     }
     Keys.onSpacePressed: event => { if (iconAction && !event.isAutoRepeat) iconClicked(); event.accepted = true }
 
-    ClippingRectangle
+    Rectangle
     {
         id: surface
         anchors.fill: parent
@@ -73,7 +82,15 @@ Item
             width: parent.width * control.fraction
             height: parent.height
             clip: true
-            Rectangle { id: fillPaint; anchors.fill: parent; color: control.fillColor; Tint on color {} }
+            Rectangle
+            {
+                id: fillPaint
+                width: surface.width
+                height: surface.height
+                radius: surface.radius
+                color: control.fillColor
+                Tint on color {}
+            }
             Readout
             {
                 x: -fill.x; y: -fill.y
@@ -114,7 +131,7 @@ Item
         objectName: "controlSliderIcon"
         x: 4
         y: 0
-        width: 36; height: parent.height
+        width: control.iconWidth; height: parent.height
         enabled: control.iconAction
         cursorShape: Qt.PointingHandCursor
         onClicked: { control.forceActiveFocus(Qt.MouseFocusReason); control.iconClicked() }
@@ -137,15 +154,36 @@ Item
             x: 12
             y: (parent.height - height) / 2
             icon: control.icon
+            visible: control.appIcon === ""
             size: 18
             layer.enabled: true
             layer.effect: Monochrome { tint: readout.foreground }
         }
+        ShellIcon
+        {
+            x: 10
+            y: (parent.height - height) / 2
+            icon: control.appIcon
+            size: 22
+            opacity: control.muted ? 0.6 : 1
+            Smooth on opacity {}
+
+            Rectangle
+            {
+                anchors.centerIn: parent
+                visible: control.muted
+                width: parent.width
+                height: 2
+                radius: 1
+                rotation: -45
+                color: readout.foreground
+            }
+        }
         ShellText
         {
-            x: 42
+            x: control.iconWidth + 6
             y: (parent.height - height) / 2
-            width: Math.max(0, parent.width - x - 66)
+            width: Math.max(0, parent.width - x - percentMetrics.advanceWidth - 28)
             visible: control.width >= 220
             label: control.text
             size: 12

@@ -22,7 +22,6 @@ Singleton
     {
         if (inhibited) return;
         if (!windows.includes(name) && name !== "desktopMenu") return;
-        if (name === "launcher" && !Config.launcherEnabled) return;
         if (name === "helper") Config.set("helperSeen", true);
         MenuState.close();
         unmountTimer.stop();

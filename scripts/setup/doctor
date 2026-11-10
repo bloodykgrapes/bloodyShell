@@ -20,10 +20,11 @@ def checks():
     dependencies = runpy.run_path(str(ROOT / "scripts/runtime/dependencies"))
     for entry in dependencies["catalog"]():
         record(entry["tool"], dependencies["available"](entry["tool"]), entry["kind"] == "required", entry["feature"])
-    record("Greeter source", (ROOT / "greeter/shell.qml").is_file())
+    record("Greeter", (ROOT / "greeter/shell.qml").is_file() or Path("/usr/share/quickshell/bloodyShell-greeter/shell.qml").is_file(), False,
+           "Optional; import from Settings → Updates")
     for path in (ROOT / "assets/shaders").glob("*.frag"):
         record(path.name + " bundle", path.with_suffix(path.suffix + ".qsb").is_file())
-    if shutil.which("niri"):
+    if shutil.which("niri") and (ROOT / "dots/niri/config.kdl").is_file():
         result = subprocess.run(["niri", "validate", "-c", str(ROOT / "dots/niri/config.kdl")], capture_output=True, text=True, timeout=10)
         record("Bundled niri configuration", result.returncode == 0, detail=(result.stderr.strip() if result.returncode else "Validated"))
     if shutil.which("pkg-config"):

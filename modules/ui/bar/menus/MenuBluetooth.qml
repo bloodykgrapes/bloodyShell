@@ -14,6 +14,7 @@ Menu
     id: menuBluetooth
 
     implicitWidth: 320
+    spacing: 8
 
     property bool startedScan: false
     onActiveChanged: if (!active) stopScanning()
@@ -92,22 +93,20 @@ Menu
         shown: menuBluetooth.presented
         order: 0
 
-        MenuToggle
+        ControlToggle
         {
+            objectName: "bluetoothRadio"
+            width: parent.width
+            height: implicitHeight
             icon: ServiceBluetooth.enabled ? Icon.bluetoothON : Icon.bluetoothOFF
             text: Tr.tr("common.bluetooth")
-
-            enabled: ServiceBluetooth.available
+            subtitle: !ServiceBluetooth.available ? Tr.tr("common.noBluetoothAdapter")
+                : !checked ? Tr.tr("common.off")
+                : Tr.tr(ServiceBluetooth.connected ? "common.connected" : "common.enabled")
+            available: ServiceBluetooth.available
             checked: ServiceBluetooth.enabled
 
-            onToggle: value => ServiceBluetooth.setEnabled(value)
-        }
-
-        MenuLabel
-        {
-            hint: true
-            visible: !ServiceBluetooth.enabled
-            text: ServiceBluetooth.available ? Tr.tr("menu.bluetooth.off") : Tr.tr("common.noBluetoothAdapter")
+            onToggled: value => ServiceBluetooth.setEnabled(value)
         }
     }
 
@@ -115,16 +114,17 @@ Menu
     {
         shown: menuBluetooth.presented
         order: 1
+        visible: connectedModel.count > 0
+        spacing: 4
 
-        MenuSeparator { visible: ServiceBluetooth.enabled }
-
-        MenuLabel { visible: connectedModel.count > 0; text: Tr.tr("common.connected") }
+        MenuLabel { heading: true; text: Tr.tr("common.connected") }
 
         MenuList
         {
             model: connectedModel
-            maxHeight: Math.round(3 * 60 * Config.themeScale)
+            maxHeight: 2 * 72
             opening: menuBluetooth.opening
+            spacing: 4
 
             delegate: DeviceRow
             {
@@ -139,15 +139,18 @@ Menu
     {
         shown: menuBluetooth.presented
         order: 2
+        visible: ServiceBluetooth.enabled
+        spacing: 4
 
-        MenuLabel { visible: pairedModel.count > 0; text: Tr.tr("menu.bluetooth.devices") }
+        MenuLabel { visible: pairedModel.count > 0; heading: true; text: Tr.tr("menu.bluetooth.devices") }
         MenuLabel { hint: true; visible: ServiceBluetooth.enabled && connectedModel.count === 0 && pairedModel.count === 0; text: Tr.tr("menu.bluetooth.noPaired") }
 
         MenuList
         {
             model: pairedModel
-            maxHeight: Math.round(4 * 44 * Config.themeScale)
+            maxHeight: 3 * 48
             opening: menuBluetooth.opening
+            spacing: 4
 
             delegate: DeviceRow
             {
@@ -161,11 +164,12 @@ Menu
     {
         shown: menuBluetooth.presented
         order: 3
-
-        MenuSeparator { visible: ServiceBluetooth.enabled }
+        visible: ServiceBluetooth.enabled
+        spacing: 4
 
         MenuLabel
         {
+            heading: true
             visible: ServiceBluetooth.enabled
             text: Tr.tr("menu.bluetooth.nearby")
             actionText: ServiceBluetooth.discovering ? Tr.tr("common.cancel") : Tr.tr("common.search")
@@ -188,7 +192,8 @@ Menu
         {
             model: nearbyModel
             opening: menuBluetooth.opening
-            maxHeight: Math.round(4 * 44 * Config.themeScale)
+            maxHeight: 3 * 48
+            spacing: 4
 
             delegate: MenuRow
             {
@@ -198,6 +203,7 @@ Menu
                 required property bool   working
 
                 icon: Icon.bluetoothDevice(kind)
+                filled: true
                 text: name
                 subtitle: working ? Tr.tr("menu.bluetooth.pairing") : Tr.tr("menu.bluetooth.clickToPair")
                 busy: working
@@ -218,6 +224,7 @@ Menu
         required property real   battery
 
         icon: Icon.bluetoothDevice(kind)
+        filled: true
         text: name
         subtitle: working || battery < 0 ? statusKey !== "" ? Tr.tr(statusKey) : "" : Math.round(battery * 100) + "%"
         level: battery

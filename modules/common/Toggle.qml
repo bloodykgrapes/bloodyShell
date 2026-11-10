@@ -19,8 +19,8 @@ Item
     property color uncheckedThumbColor: "#ffffff"
     property color thumbBorderColor: Qt.rgba(0, 0, 0, 0.14)
 
-    readonly property bool pressed: area.pressed
-    readonly property bool hovered: area.containsMouse
+    readonly property bool pressed: enabled && area.pressed
+    readonly property bool hovered: enabled && (area.containsMouse || activeFocus)
     signal toggled(bool value)
 
     implicitWidth: 40
@@ -28,11 +28,12 @@ Item
     width: implicitWidth
     height: implicitHeight
     opacity: enabled ? 1 : disabledOpacity
-    activeFocusOnTab: true
-    Keys.onSpacePressed: toggled(!checked)
-    Keys.onReturnPressed: toggled(!checked)
+    activeFocusOnTab: enabled
+    Keys.onSpacePressed: event => { if (!event.isAutoRepeat) toggled(!checked); event.accepted = true }
+    Keys.onReturnPressed: event => { if (!event.isAutoRepeat) toggled(!checked); event.accepted = true }
+    Keys.onEnterPressed: event => { if (!event.isAutoRepeat) toggled(!checked); event.accepted = true }
 
-    scale: area.pressed ? pressScale : area.containsMouse ? hoverScale : 1
+    scale: pressed ? pressScale : hovered ? hoverScale : 1
     Spring on scale {}
 
     Rectangle
@@ -44,10 +45,12 @@ Item
 
         Rectangle
         {
-            property real position: toggle.checked ? 1 : 0
-            property real stretch: toggle.pressed ? toggle.thumbStretch : 0
-            Glide on position {}
-            Glide on stretch {}
+            property real slide: toggle.checked ? 1 : 0
+            property real extension: toggle.pressed ? toggle.thumbStretch : 0
+            readonly property real position: Config.animationsEnabled ? slide : toggle.checked ? 1 : 0
+            readonly property real stretch: Config.animationsEnabled ? extension : toggle.pressed ? toggle.thumbStretch : 0
+            Glide on slide {}
+            Glide on extension {}
 
             y: toggle.inset
             x: toggle.inset + position * (parent.width - toggle.inset * 2 - width)
@@ -73,5 +76,5 @@ Item
     Accessible.role: Accessible.CheckBox
     Accessible.checkable: true
     Accessible.checked: checked
-    Accessible.onToggleAction: toggled(!checked)
+    Accessible.onToggleAction: if (enabled) toggled(!checked)
 }

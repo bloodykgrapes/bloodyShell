@@ -106,11 +106,13 @@ ShellRoot
         check(equalizer.style === Enums.EqualizerWaves && ServiceMedia.visualizerUsers === 1, "Global Waves selection changed subscriptions");
         ServiceMedia.levels = [0.2, 0.8, 0.4];
         check(equalizer.levels.length === 7, "Waves ignored the requested sample count");
+        const samplePlan = equalizer.samplePlan;
         const waves = equalizer.children.find(item => item.item !== undefined).item;
         check(waves && waves.objectName === "equalizerWaves", "Waves renderer was not loaded");
         check(Math.max(...waves.target) < Math.max(...equalizer.levels), "Waves did not smooth neighboring frequency samples");
         const beforeRetarget = JSON.stringify(waves.values);
         ServiceMedia.levels = [0.8, 0.1, 0.9];
+        check(equalizer.samplePlan === samplePlan, "Audio frames recompute the resampling geometry");
         check(waves.settling && JSON.stringify(waves.values) === beforeRetarget, "New samples snapped the wave instead of retargeting its motion");
         const path = waves.curve([0.2, 0.8, 0.4]);
         check(path.startsWith("M 0 40 L 0 ") && path.endsWith("L 100 40 Z") && path.includes(" C "), "Waves are not a closed, curved fill");
@@ -120,6 +122,8 @@ ShellRoot
         check(equalizer.style === Enums.EqualizerBars && equalizer.barCount === 100, "Switching back changed Bars layout");
         equalizer.samples = [0.4, 0.7];
         check(ServiceMedia.visualizerUsers === 0 && equalizer.levels.length === 100, "Preview samples started a live visualizer");
+        for (let i = 0; i < 100; i++)
+            check(Math.abs(equalizer.levels[i] - (0.4 + 0.3 * i / 99)) < 1e-12, "Cached resampling changed the equalizer shape");
         equalizer.samples = null;
         equalizer.visible = false;
         check(ServiceMedia.visualizerUsers === 0, "hidden equalizer releases shared cava");

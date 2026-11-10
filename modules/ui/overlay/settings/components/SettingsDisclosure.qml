@@ -36,8 +36,9 @@ Item
         clip: true
         visible: disclosure.expanded || reveal > 0.001
 
-        property real reveal: disclosure.expanded ? 1 : 0
-        Ease on reveal { duration: Theme.animationDurationControl }
+        property real progress: disclosure.expanded ? 1 : 0
+        readonly property real reveal: Config.animationsEnabled ? progress : disclosure.expanded ? 1 : 0
+        Ease on progress { duration: Theme.animationDurationControl }
 
         Rectangle
         {

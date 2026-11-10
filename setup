@@ -13,7 +13,7 @@ readonly STATUS_FILE="${BLOODYSHELL_STATUS:-$STATE_DIR/update.status}"
 readonly STAMP="$(date +%Y-%m-%d_%H-%M-%S)-$$"
 readonly PACKAGE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-readonly INSTALL_EXCLUDE=("./.*" "./*.md" "./docs" "./scripts/tests" "./scripts/tools" "__pycache__" "*.pyc" "*.pyo")
+readonly INSTALL_EXCLUDE=("./.*" "./*.md" "./docs" "./dots" "./greeter" "./assets/wallpapers" "./scripts/tests" "./scripts/tools" "__pycache__" "*.pyc" "*.pyo")
 
 BACKED_UP=false
 
@@ -349,6 +349,12 @@ apply_shell()
         done
         [[ -f "$stage/scripts/bloodyShell" && -f "$stage/scripts/setup/install-command" ]] || { rm -rf "$stage"; die "Package has no command launcher"; }
 
+        if [[ -d "$TARGET/assets/wallpapers" && -f "$PACKAGE/scripts/runtime/resources" ]]; then
+            if ! python3 "$PACKAGE/scripts/runtime/resources" seed-wallpapers "$TARGET/assets/wallpapers" > /dev/null; then
+                rm -rf "$stage"
+                die "Could not preserve bundled wallpapers; the current installation was kept"
+            fi
+        fi
         if [[ -e "$TARGET" || -L "$TARGET" ]]; then
             backup "$TARGET" shell
             info "Previous version → $(hl "$BACKUP_ROOT/$STAMP/shell")"
@@ -366,14 +372,17 @@ apply_shell()
 apply_configs()
 {
     local source="$PACKAGE/dots"
-    [[ -d "$source" ]] || { warn "No dots/ in the package: app configs skipped"; return 0; }
 
     local programs=("$@")
     if [[ ${#programs[@]} -eq 0 ]]; then
-        local items=()
-        for dir in "$source"/*/; do
-            [[ -d "$dir" ]] || continue
-            local program; program="$(basename "$dir")"
+        local items=() available=() names program
+        if [[ -d "$source" ]]; then
+            for dir in "$source"/*/; do [[ ! -d "$dir" ]] || available+=("$(basename "$dir")"); done
+        else
+            names="$(python3 "$PACKAGE/scripts/runtime/resources" programs)" || return 1
+            [[ -z "$names" ]] || mapfile -t available <<< "$names"
+        fi
+        for program in "${available[@]}"; do
             if [[ -e "$CONFIG_HOME/$program" ]]; then items+=("$program|replaces $(pretty "$CONFIG_HOME/$program") (backed up)")
             else items+=("$program|new $(pretty "$CONFIG_HOME/$program")"); fi
         done
@@ -387,14 +396,29 @@ apply_configs()
     ask "Replace configs for ${programs[*]}?" y || { info "App configs skipped"; return 0; }
 
     for program in "${programs[@]}"; do
+        [[ "$program" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "Invalid config name: $program"
+        if [[ ! -d "$source" ]]; then
+            python3 "$PACKAGE/scripts/runtime/resources" import "dots/$program" --human || return 1
+            continue
+        fi
         [[ -d "$source/$program" ]] || { warn "No config for $program in the package"; continue; }
 
         local dest="$CONFIG_HOME/$program"
-        [[ -e "$dest" ]] && backup "$dest" "$program"
+        [[ -e "$dest" || -L "$dest" ]] && backup "$dest" "$program"
         mkdir -p "$CONFIG_HOME"
         cp -a "$source/$program" "$dest"
         ok "$program → $(hl "$dest")"
     done
+}
+
+apply_wallpapers()
+{
+    if [[ -d "$PACKAGE/assets/wallpapers" ]]; then
+        python3 "$PACKAGE/scripts/runtime/resources" seed-wallpapers "$PACKAGE/assets/wallpapers" > /dev/null || return 1
+    else
+        python3 "$PACKAGE/scripts/runtime/resources" import wallpapers --human || return 1
+    fi
+    ok "Wallpapers → $(hl "$HOME/Pictures/Wallpapers")"
 }
 
 readonly DEPENDENCIES=(
@@ -748,9 +772,14 @@ apply_keyring()
 
 apply_greeter()
 {
+    local resource="${BLOODYSHELL_RESOURCE_DIR:-$PACKAGE}"
+    if [[ ! -d "$resource/greeter" ]]; then
+        python3 "$PACKAGE/scripts/runtime/resources" import greeter --human
+        return
+    fi
     if ! interactive && ! sudo -n true 2> /dev/null; then warn "Needs sudo in a terminal: login screen skipped"; return 0; fi
 
-    [[ -s "$PACKAGE/greeter/shell.qml" && -s "$PACKAGE/greeter/Widgets.qml" && -s "$PACKAGE/greeter/Theme.qml" ]] || die "Greeter files are missing from this package"
+    [[ -s "$resource/greeter/shell.qml" && -s "$resource/greeter/Widgets.qml" && -s "$resource/greeter/Theme.qml" ]] || die "Greeter files are missing from this package"
     local family; family="$(distro_family)"
     local missing=()
     command -v python3 > /dev/null || missing+=($(dependency_packages "$family" "required|python3|Greeter|python|python3|python3"))
@@ -770,7 +799,7 @@ apply_greeter()
     sudo -v || { warn "No sudo: login screen skipped"; return 0; }
 
     local stage; stage="$(mktemp -d)"
-    cp -a "$PACKAGE/greeter/." "$stage/"
+    cp -a "$resource/greeter/." "$stage/"
     if [[ -e "$GREETER_SHELL" ]]; then
         local greeter_backup="$GREETER_SHELL.bak-$STAMP"
         [[ ! -e "$greeter_backup" ]] || greeter_backup="$greeter_backup-$RANDOM"
@@ -784,7 +813,7 @@ apply_greeter()
     ok "Shell for the login screen → $(hl "$GREETER_SHELL")"
 
     sudo install -d -m 2775 -o "$USER" -g greeter "$GREETER_STATE"
-    python3 "$PACKAGE/greeter/export-settings" "$CONFIG_HOME/$NAME/settings.json" "$GREETER_STATE"
+    python3 "$PACKAGE/scripts/runtime/greeter-settings" "$CONFIG_HOME/$NAME/settings.json" "$GREETER_STATE"
     ok "Greeter appearance exported → $(hl "$GREETER_STATE")"
 
     local scale; scale="$(display_scale)"
@@ -869,6 +898,7 @@ cmd_install()
     install_applications
 
     step "Installing the shell"
+    apply_wallpapers || warn "Wallpapers could not be imported; use Settings → Updates → Import files later"
     apply_shell
 
     step "App configs"

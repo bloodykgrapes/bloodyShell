@@ -26,6 +26,11 @@ def run_checks():
         (package / "scripts/runtime/screenshot").write_bytes((ROOT / "scripts/runtime/screenshot").read_bytes())
         (package / "scripts/runtime/screenshot").chmod(0o755)
         (package / "scripts/setup/greetd-keyring.awk").write_bytes((ROOT / "scripts/setup/greetd-keyring.awk").read_bytes())
+        for folder, name in (("assets/wallpapers", "new.png"), ("dots/kitty", "kitty.conf"), ("greeter", "shell.qml")):
+            (package / folder).mkdir(parents=True)
+            (package / folder / name).write_text("optional repository file")
+        for name in ("resources", "greeter-settings"):
+            (package / "scripts/runtime" / name).write_bytes((ROOT / "scripts/runtime" / name).read_bytes())
         (package / "scripts/tests/development-check.py").write_text("development test\n")
         (package / "scripts/tools/icons-dark").write_text("development tool\n")
         archive = base / "release.tar.gz"
@@ -43,14 +48,29 @@ def run_checks():
                    XDG_CONFIG_HOME=str(base / "config"), XDG_CACHE_HOME=str(base / "cache"),
                    BLOODYSHELL_STATUS=str(base / "status"), TEST_RELEASE=str(archive), PATH=str(binary) + os.pathsep + os.environ["PATH"])
         env.pop("WAYLAND_DISPLAY", None)
+        target = base / "config/quickshell/bloodyShell"
+        legacy = target / "assets/wallpapers"
+        legacy.mkdir(parents=True)
+        (legacy / "legacy.png").write_bytes(b"legacy selected wallpaper")
+        pictures = home / "Pictures/Wallpapers"
+        pictures.mkdir(parents=True)
+        (pictures / "legacy.png").write_bytes(b"personal wallpaper")
+        settings = base / "config/bloodyShell/settings.json"
+        settings.parent.mkdir(parents=True)
+        settings.write_text(json.dumps(dict(wallpaperDirectory=str(legacy), wallpaperCurrent=str(legacy / "legacy.png"))))
 
         def invoke(*args):
             return subprocess.run(["bash", str(ROOT / "setup"), *args], env=env, capture_output=True, text=True, timeout=10)
 
         result = invoke("update", "--tag", "v9.8.7")
         assert result.returncode == 0, result.stdout + result.stderr
-        target = base / "config/quickshell/bloodyShell"
         assert (target / "shell.qml").read_text() == "release shell\n"
+        assert not (target / "assets/wallpapers").exists() and not (target / "dots").exists() and not (target / "greeter").exists()
+        assert (pictures / "legacy.png").read_bytes() == b"personal wallpaper"
+        saved = json.loads(settings.read_text())
+        assert saved["wallpaperDirectory"] == str(pictures) and Path(saved["wallpaperCurrent"]).read_bytes() == b"legacy selected wallpaper"
+        assert not (pictures / "new.png").exists(), "Updates must not import newly bundled wallpapers"
+        untouched = {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in pictures.iterdir()}
         assert not (target / "__pycache__").exists() and not (target / ".private").exists()
         assert (base / "status").read_text().strip() == "done 9.8.7"
         command = base / "commands/bloodyShell"
@@ -65,6 +85,7 @@ def run_checks():
         assert invoke("update", "--tag", "v9.8.7").returncode == 0
         first_rc = (home / ".bashrc").read_text()
         assert invoke("update", "--tag", "v9.8.7", "--force").returncode == 0
+        assert untouched == {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in pictures.iterdir()}, "Later updates must leave personal wallpapers untouched"
         assert (home / ".bashrc").read_text() == first_rc, "PATH registration must be idempotent"
         info = subprocess.run([str(command), "path"], env=env, capture_output=True, text=True, timeout=5)
         assert info.returncode == 0 and info.stdout.strip() == str(target), info.stderr

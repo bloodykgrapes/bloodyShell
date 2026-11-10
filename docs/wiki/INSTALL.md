@@ -44,6 +44,9 @@ backed up. Reopen your terminal afterward, or use the command printed by setup
 to update the current terminal's `PATH`.
 
 Optional app configs replace selected directories after backing them up.
+Bundled wallpapers are imported into `~/Pictures/Wallpapers`. Existing files
+are kept; different images with the same name receive a new filename. This is
+also the default wallpaper folder in settings.
 The bundled niri config starts bloodyShell and awww. To retain your own niri
 config, add `spawn-at-startup "qs" "-c" "bloodyShell"` and
 `spawn-at-startup "awww-daemon"` instead of replacing it.
@@ -90,7 +93,7 @@ Existing greeter files and greetd/PAM configuration are backed up.
 GNOME Keyring PAM integration is configured when its module is installed.
 The login password and keyring password must match for automatic unlock.
 
-Preview without authenticating or changing the display manager:
+Preview from the source checkout without authenticating or changing the display manager:
 
 ```sh
 BLOODYSHELL_GREETER_PREVIEW=1 qs -p greeter/shell.qml
@@ -135,6 +138,20 @@ reapplied. Backups live under `~/bloodyShell.bak/<timestamp>/`.
 To roll back, stop the shell, restore the previous directory to
 `~/.config/quickshell/bloodyShell`, then start it again.
 Update the greeter explicitly with `./setup greetd`.
+
+Settings → Updates → **Import files** provides separate imports for each app
+configuration, the login screen, and wallpapers. The section is collapsed by
+default. Config imports back up the replaced directory; greeter setup opens in
+a terminal for administrator authorization. Wallpaper imports add images while
+keeping existing files. Source checkouts use their local resource files;
+installed copies download them from the repository's `main` branch.
+
+Installed shell files exclude `dots/`, `greeter/`, and `assets/wallpapers/`.
+The `configs` and `greetd` setup commands still work after installation by
+fetching the optional files when needed. Updates leave personal wallpapers and
+app configurations alone. Existing wallpapers stored inside an older shell
+installation are relocated once, including saved bundled wallpaper paths;
+custom wallpaper folders stay unchanged.
 
 ## Commands
 

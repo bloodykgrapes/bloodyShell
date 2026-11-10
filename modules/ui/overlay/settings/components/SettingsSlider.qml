@@ -11,17 +11,41 @@ Item
     property real value: 0
     property real from: 0
     property real to: 1
+    property real step: (to - from) / 20
 
     signal moved(real value)
 
     readonly property real shown: area.pressed ? area.dragValue : value
 
     function ratio(v) { return to > from ? Math.max(0, Math.min(1, (v - from) / (to - from))) : 0 }
+    function adjust(v)
+    {
+        if (!enabled || to <= from) return;
+        const next = Math.max(from, Math.min(to, v));
+        if (next !== value) moved(next);
+    }
 
     implicitWidth: 240
     width: implicitWidth
     height: 28
     opacity: enabled ? 1 : 0.4
+    activeFocusOnTab: enabled
+    Keys.onRightPressed: adjust(value + step)
+    Keys.onUpPressed: adjust(value + step)
+    Keys.onLeftPressed: adjust(value - step)
+    Keys.onDownPressed: adjust(value - step)
+    Keys.onPressed: event =>
+    {
+        if (event.key === Qt.Key_Home) adjust(from);
+        else if (event.key === Qt.Key_End) adjust(to);
+        else return;
+        event.accepted = true;
+    }
+
+    Accessible.role: Accessible.Slider
+    Accessible.description: Math.round(ratio(shown) * 100) + "%"
+    Accessible.onIncreaseAction: adjust(value + step)
+    Accessible.onDecreaseAction: adjust(value - step)
 
     Item
     {
@@ -66,6 +90,7 @@ Item
 
         function update(x)
         {
+            if (track.width <= 0 || settingsSlider.to <= settingsSlider.from) return;
             dragValue = settingsSlider.from + Math.max(0, Math.min(1, x / track.width)) * (settingsSlider.to - settingsSlider.from);
             settingsSlider.moved(dragValue);
         }
@@ -74,13 +99,15 @@ Item
         width: track.width
         height: parent.height
         cursorShape: Qt.PointingHandCursor
+        preventStealing: true
 
-        onPressed: mouse => update(mouse.x)
+        onPressed: mouse => { settingsSlider.forceActiveFocus(Qt.MouseFocusReason); update(mouse.x) }
         onPositionChanged: mouse => { if (pressed) update(mouse.x) }
         onWheel: wheel =>
         {
-            const step = (settingsSlider.to - settingsSlider.from) / 20;
-            settingsSlider.moved(Math.max(settingsSlider.from, Math.min(settingsSlider.to, settingsSlider.value + (wheel.angleDelta.y > 0 ? step : -step))));
+            const delta = wheel.pixelDelta.y || wheel.angleDelta.y;
+            if (delta === 0) { wheel.accepted = false; return; }
+            settingsSlider.adjust(settingsSlider.value + (delta > 0 ? settingsSlider.step : -settingsSlider.step));
         }
     }
 }

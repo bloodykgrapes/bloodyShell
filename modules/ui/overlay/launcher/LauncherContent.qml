@@ -10,7 +10,7 @@ Rectangle
 {
     id: launcherContent
 
-    readonly property int  maxRows: Math.max(3, Math.min(12, Config.launcherRows))
+    readonly property int  maxRows: 8
     readonly property real rowH: Theme.launcherRow
     readonly property real footerH: 30
     readonly property real chrome: Theme.launcherPadding * 2 + Theme.launcherSearch + Theme.launcherSpacing + footerH
@@ -325,8 +325,8 @@ Rectangle
             SequentialAnimation
             {
                 id: intro
-                PauseAnimation { duration: 60 + row.index * 28 }
-                NumberAnimation { target: row; property: "rise"; to: 1; duration: 320; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized }
+                PauseAnimation { duration: Math.max(0, row.index) * 16 }
+                NumberAnimation { target: row; property: "rise"; to: 1; duration: 240; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized }
             }
 
             IconImage
@@ -424,15 +424,17 @@ Rectangle
 
         ShellText
         {
-            anchors { left: parent.left; leftMargin: 6; verticalCenter: parent.verticalCenter; verticalCenterOffset: 2 }
-            label: input.text !== "" ? "↑ ↓  select    ↵  open    Esc  clear" : "↑ ↓  select    ↵  open    Esc  close"
+            anchors { left: parent.left; leftMargin: 6; right: resultCount.left; rightMargin: 12; verticalCenter: parent.verticalCenter; verticalCenterOffset: 2 }
+            label: Tr.tr(launcherContent.query !== "" ? "launcher.navigationSearch" : "launcher.navigation")
             size: 11
             color: Theme.text4
         }
         ShellText
         {
+            id: resultCount
             anchors { right: parent.right; rightMargin: 6; verticalCenter: parent.verticalCenter; verticalCenterOffset: 2 }
-            label: launcherContent.apps.length + (launcherContent.apps.length === 1 ? " app" : " apps")
+            width: Math.min(implicitWidth, parent.width * 0.3)
+            label: Tr.tr("launcher.count").arg(launcherContent.apps.length)
             size: 11
             color: Theme.text4
         }

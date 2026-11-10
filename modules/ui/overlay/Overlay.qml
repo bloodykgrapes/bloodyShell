@@ -20,6 +20,8 @@ PanelWindow
 
     property string output: ""
     property Item screenshotFocus: null
+    readonly property var preparationOrder: ["launcher", "settings", "power", "wallpapers", "helper", "desktopMenu"]
+    property var preparedComponents: []
     readonly property bool authenticating: authAgent.isActive
     readonly property bool switching: ServiceAltTab.active
     readonly property bool modal: authenticating || ServiceScreenshot.active || switching || OverlayState.active
@@ -67,6 +69,23 @@ PanelWindow
         const source = Registry.overlaySources[OverlayState.mounted];
         if (source) page.setSource(source, { host: overlay });
         else page.source = "";
+    }
+    function prepareNext()
+    {
+        const previous = preparedComponents[preparedComponents.length - 1];
+        if (previous && previous.status === Component.Loading) return;
+        const name = preparationOrder[preparedComponents.length];
+        const source = Registry.overlaySources[name];
+        if (!source) return;
+        preparedComponents = preparedComponents.concat([Qt.createComponent(source, Component.Asynchronous)]);
+    }
+
+    Timer
+    {
+        interval: 250
+        repeat: true
+        running: Config.initialized && !overlay.modal && !ServiceLock.locked && overlay.preparedComponents.length < overlay.preparationOrder.length
+        onTriggered: overlay.prepareNext()
     }
     function takeScreenshot(mode = -1)
     {
@@ -122,7 +141,7 @@ PanelWindow
             if (ServiceScreenshot.active) return;
             Qt.callLater(() =>
             {
-                if (overlay.authenticating || ServiceLock.locked) return;
+                if (overlay.authenticating || ServiceLock.locked || ServiceScreenshot.busy) return;
                 if (overlay.screenshotFocus && overlay.screenshotFocus.visible) overlay.screenshotFocus.forceActiveFocus();
                 else if (page.item && OverlayState.active) (page.item as Item).forceActiveFocus();
                 overlay.screenshotFocus = null;

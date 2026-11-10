@@ -13,7 +13,7 @@ SettingsPage
     title: Tr.tr("common.updates")
     subtitle: Tr.tr("settings.updates.description")
 
-    Component.onDestruction: ServiceDependencies.pending = null
+    Component.onDestruction: { ServiceDependencies.pending = null; ServiceResources.pending = null; }
 
     property double now: Date.now()
     Timer { interval: 30000; running: pageUpdates.active; repeat: true; onTriggered: pageUpdates.now = Date.now() }
@@ -278,6 +278,72 @@ SettingsPage
 
     SettingsDisclosure
     {
+        objectName: "resourceImports"
+        title: Tr.tr("settings.imports.title")
+        description: Tr.tr("settings.imports.description")
+        icon: Icon.add
+        onExpandedChanged:
+        {
+            if (expanded) ServiceResources.refresh();
+            else ServiceResources.pending = null;
+        }
+
+        SettingsRow
+        {
+            label: Tr.tr("settings.imports.source")
+            description: ServiceResources.source === "local" ? Tr.tr("settings.imports.localSource") : Tr.tr("settings.imports.repositorySource")
+            SettingsButton { text: ServiceResources.busy ? Tr.tr("common.working") : Tr.tr("common.refresh"); enabled: !ServiceResources.busy && !ServiceUpdate.busy; onClicked: ServiceResources.refresh() }
+        }
+        SettingsRow
+        {
+            visible: ServiceResources.error !== "" || ServiceResources.message !== ""
+            label: ServiceResources.error !== "" ? Tr.tr("common.error") : Tr.tr("settings.imports.finished")
+            description: ServiceResources.error || ServiceResources.message
+        }
+        SettingsRow
+        {
+            visible: ServiceResources.pending !== null
+            label: Tr.tr("settings.imports.confirm")
+            description: !ServiceResources.pending ? ""
+                : ServiceResources.pending.kind === "greeter" ? Tr.tr("settings.imports.confirmGreeter")
+                : ServiceResources.pending.kind === "wallpapers" ? Tr.tr("settings.imports.confirmWallpapers").arg(ServiceUpdate.pretty(ServiceResources.pending.destination))
+                : Tr.tr("settings.imports.confirmConfig").arg(ServiceUpdate.pretty(ServiceResources.pending.destination))
+            Row
+            {
+                spacing: 8
+                SettingsButton { text: Tr.tr("common.cancel"); onClicked: ServiceResources.pending = null }
+                SettingsButton
+                {
+                    objectName: "applyResourceImport"
+                    text: ServiceResources.pending && ServiceResources.pending.kind === "wallpapers" ? Tr.tr("settings.imports.import") : Tr.tr("settings.dependencies.continueInTerminal")
+                    enabled: !ServiceResources.busy && !ServiceUpdate.busy
+                    onClicked: ServiceResources.apply()
+                }
+            }
+        }
+        Repeater
+        {
+            model: ServiceResources.entries
+            SettingsRow
+            {
+                id: resourceRow
+                required property var modelData
+                label: resourceRow.modelData.kind === "dots" ? resourceRow.modelData.name : resourceRow.modelData.kind === "wallpapers" ? Tr.tr("common.wallpapers") : Tr.tr("settings.imports.greeter")
+                description: resourceRow.modelData.kind === "greeter" ? Tr.tr("settings.imports.greeterHint")
+                    : (resourceRow.modelData.kind === "wallpapers" ? Tr.tr("settings.imports.wallpapersHint") : Tr.tr("settings.imports.configHint")).arg(ServiceUpdate.pretty(resourceRow.modelData.destination))
+                SettingsButton
+                {
+                    objectName: "importResource-" + resourceRow.modelData.id
+                    text: ServiceResources.operation === resourceRow.modelData.id ? Tr.tr("common.working") : Tr.tr("settings.imports.import")
+                    enabled: !ServiceResources.busy && !ServiceUpdate.busy && ServiceResources.pending === null
+                    onClicked: ServiceResources.request(resourceRow.modelData.id)
+                }
+            }
+        }
+    }
+
+    SettingsDisclosure
+    {
         title: Tr.tr("settings.dependencies.title")
         icon: Icon.settingsApplications
         summary: ServiceDependencies.entries.length > 0
@@ -354,10 +420,8 @@ SettingsPage
             ReleaseNotes
             {
                 required property var modelData
-                required property int index
 
                 release: modelData
-                first: index === 0
             }
         }
     }
@@ -389,7 +453,6 @@ SettingsPage
         id: notesItem
 
         property var  release
-        property bool first: false
         property bool expanded: false
 
         readonly property real collapsedHeight: 180
@@ -398,14 +461,7 @@ SettingsPage
         width: parent ? parent.width : 400
         height: column.implicitHeight + 32
 
-        Rectangle
-        {
-            visible: !notesItem.first
-            x: 16
-            width: parent.width - 32
-            height: 1
-            color: Theme.settingsColorLine
-        }
+        SettingsTile { row: notesItem }
 
         Column
         {
@@ -491,8 +547,8 @@ SettingsPage
                     height: 48
                     gradient: Gradient
                     {
-                        GradientStop { position: 0; color: "transparent" }
-                        GradientStop { position: 1; color: Theme.settingsColorBackground }
+                        GradientStop { position: 0; color: Qt.rgba(Theme.settingsColorCard.r, Theme.settingsColorCard.g, Theme.settingsColorCard.b, 0) }
+                        GradientStop { position: 1; color: Theme.settingsColorCard }
                     }
                 }
             }

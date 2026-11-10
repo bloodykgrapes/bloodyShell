@@ -12,11 +12,13 @@ OverlayView
     Item
     {
         anchors.centerIn: parent
+        width: content.width
+        height: content.height
 
         opacity: power.reveal
-        scale: 1 - 0.06 * power.settle
+        scale: Math.min(1, Math.max(0.1, (power.width - 48) / width), Math.max(0.1, (power.height - 48) / height)) * (1 - 0.06 * power.settle)
         transform: Translate { y: power.lift }
 
-        Content.PowerContent { }
+        Content.PowerContent { id: content; active: power.active }
     }
 }

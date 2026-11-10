@@ -64,6 +64,7 @@ OverlayView
 
             Row
             {
+                width: parent.width
                 spacing: 12
 
                 Rectangle
@@ -78,10 +79,11 @@ OverlayView
                 Column
                 {
                     anchors.verticalCenter: parent.verticalCenter
+                    width: Math.max(0, parent.width - 52)
                     spacing: 2
 
-                    ShellText { label: Tr.tr("polkit.title"); size: 16; color: Theme.text1; font.bold: true }
-                    ShellText { label: Tr.tr("polkit.passwordPrompt").arg(Quickshell.env("USER") || Tr.tr("polkit.currentUser")); size: 11; color: Theme.text3 }
+                    ShellText { width: parent.width; label: Tr.tr("polkit.title"); size: 16; color: Theme.text1; font.bold: true }
+                    ShellText { width: parent.width; label: Tr.tr("polkit.passwordPrompt").arg(Quickshell.env("USER") || Tr.tr("polkit.currentUser")); size: 11; color: Theme.text3; wrapMode: Text.Wrap }
                 }
             }
 

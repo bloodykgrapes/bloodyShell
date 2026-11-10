@@ -116,6 +116,9 @@ Singleton
         keywords: (app.keywords || []).join(" ").toLocaleLowerCase()
     }))
 
+    property var searchMemo: ({ index: null, all: [], results: new Map() })
+    property var entryMemo: ({ catalog: null, entries: new Map() })
+
     function searchScore(entry, tokens)
     {
         let total = 0;
@@ -134,25 +137,54 @@ Singleton
     function search(query)
     {
         const entries = searchIndex;
-        const normalizedQuery = (query || "").trim().toLocaleLowerCase();
-        const tokens = normalizedQuery.length > 0 ? normalizedQuery.split(/\s+/) : [];
+        const memo = searchMemo;
+        if (memo.index !== entries)
+        {
+            memo.index = entries;
+            memo.all = entries.map(entry => entry.app);
+            memo.results.clear();
+        }
+        const normalizedQuery = (query || "").trim().toLocaleLowerCase().replace(/\s+/g, " ");
+        if (!normalizedQuery) return memo.all;
+        if (memo.results.has(normalizedQuery))
+        {
+            const result = memo.results.get(normalizedQuery);
+            memo.results.delete(normalizedQuery);
+            memo.results.set(normalizedQuery, result);
+            return result;
+        }
+        const tokens = normalizedQuery.split(" ");
 
         const matches = [];
         for (let i = 0; i < entries.length; i++)
         {
             const entry = entries[i];
-            const score = tokens.length > 0 ? searchScore(entry, tokens) : 1;
+            const score = searchScore(entry, tokens);
             if (score > 0) matches.push({ app: entry.app, score: score, order: entry.order });
         }
 
         matches.sort((a, b) => (b.score - a.score) || a.order - b.order);
-        return matches.map(item => item.app);
+        const result = matches.map(item => item.app);
+        memo.results.set(normalizedQuery, result);
+        if (memo.results.size > 16) memo.results.delete(memo.results.keys().next().value);
+        return result;
     }
 
     function findEntry(appId)
     {
         if (!appId) return null;
-        return DesktopEntries.byId(appId) || DesktopEntries.heuristicLookup(appId);
+        const catalog = applications;
+        const memo = entryMemo;
+        if (memo.catalog !== catalog)
+        {
+            memo.catalog = catalog;
+            memo.entries.clear();
+        }
+        if (memo.entries.has(appId)) return memo.entries.get(appId);
+        const entry = DesktopEntries.byId(appId) || DesktopEntries.heuristicLookup(appId);
+        memo.entries.set(appId, entry);
+        if (memo.entries.size > 128) memo.entries.delete(memo.entries.keys().next().value);
+        return entry;
     }
 
     function appName(appId, fallback)

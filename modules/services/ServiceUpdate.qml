@@ -53,7 +53,8 @@ Singleton
     property string updatedFrom: ""
     readonly property bool justUpdated: updatedFrom !== ""
 
-    readonly property bool busy: checking || installing
+    property bool resourcesBusy: false
+    readonly property bool busy: checking || installing || resourcesBusy
 
     readonly property string phase:
     {

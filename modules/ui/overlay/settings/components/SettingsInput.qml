@@ -22,6 +22,7 @@ Rectangle
     width: implicitWidth
     height: 32
     radius: Theme.radiusMedium
+    opacity: enabled ? 1 : 0.4
 
     color: Theme.colorField
     border.width: 1
@@ -43,7 +44,10 @@ Rectangle
         verticalAlignment: TextInput.AlignVCenter
         clip: true
         selectByMouse: true
+        activeFocusOnTab: true
         echoMode: settingsInput.password ? TextInput.Password : TextInput.Normal
+        inputMethodHints: settingsInput.password ? Qt.ImhSensitiveData | Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase : Qt.ImhNone
+        Accessible.name: settingsInput.placeholderText
 
         color: Theme.text1
         selectionColor: Theme.colorSelection

@@ -93,13 +93,92 @@ def instance_display(entry):
         return None
 
 
+def process_birth(entry):
+    pid = entry.get("pid")
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return None
+    try:
+        fields = Path("/proc", str(pid), "stat").read_text().rsplit(")", 1)[1].split()
+        return fields[19] if fields[0] != "Z" else None
+    except (OSError, IndexError):
+        return None
+
+
+def discovery_cache(current_display):
+    if current_display is None:
+        return None
+    import hashlib
+
+    directory = Path(os.environ.get("XDG_RUNTIME_DIR") or "/run/user/" + str(os.getuid()))
+    native = directory / "quickshell/by-id"
+    try:
+        known = sorted(path.name for path in native.iterdir() if path.is_dir())
+    except OSError:
+        return None
+    key = hashlib.sha256(json.dumps(current_display).encode()).hexdigest()[:24]
+    return directory / "bloodyShell-command" / (key + ".json"), native, known
+
+
+def cached_instance(cache, current_display):
+    if cache is None:
+        return None
+    path, native, known = cache
+    try:
+        stored = json.loads(path.read_text())
+        entry = stored["instance"]
+        if stored["known"] != known or entry["id"] not in known or entry.get("shell_id") != NAME:
+            return None
+        if not (native / entry["id"] / "ipc.sock").is_socket():
+            return None
+        birth = process_birth(entry)
+        if birth is None or stored["birth"] != birth or instance_display(entry) != current_display:
+            return None
+        return entry
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
+def remember_instance(cache, entry):
+    if cache is None or entry.get("shell_id") != NAME:
+        return
+    path, native, known = cache
+    birth = process_birth(entry)
+    if entry["id"] not in known or birth is None:
+        return
+    import tempfile
+
+    temporary = None
+    try:
+        if not (native / entry["id"] / "ipc.sock").is_socket():
+            return
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(dict(instance=entry, birth=birth, known=known), stream)
+        os.replace(temporary, path)
+    except OSError:
+        pass
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def active_instance(command):
     current_display = display(os.environ)
+    cache = discovery_cache(current_display)
+    cached = cached_instance(cache, current_display)
+    if cached is not None:
+        return cached
     running = [entry for entry in instances(command)
                if is_shell(entry) and (current_display is None or instance_display(entry) == current_display)]
     if not running:
         raise RuntimeError("No running bloodyShell instance in this session. Start it with bloodyShell start or ./scripts/bloodyShell run.")
-    return max(running, key=lambda entry: (str(entry.get("launch_time", "")), entry["id"]))
+    selected = max(running, key=lambda entry: (str(entry.get("launch_time", "")), entry["id"]))
+    remember_instance(cache, selected)
+    return selected
 
 
 def ipc(target, function, *args):

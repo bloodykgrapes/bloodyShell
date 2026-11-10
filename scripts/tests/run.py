@@ -267,7 +267,6 @@ def main():
         put(base, "src/AppIdentity.js", (ROOT / "modules/src/AppIdentity.js").read_text())
         stub(base, "core", "Config", '''
     property bool debug: false
-    property bool launcherEnabled: true
     property bool dockMerge: true
     property var dockPinned: []
     function set(key, value) { this[key] = value }
@@ -302,12 +301,14 @@ def main():
         run_storage(base / "storage")
         run_media(base / "media")
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/runtime_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/optimization_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/storage_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/installer_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/command_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/program_choices_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/dependency_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/update_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/resource_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/network_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/notifications_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/screenshot_checks.py")], check=True)
@@ -319,6 +320,10 @@ def main():
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/greeter_install_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/alt_tab_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/surface_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/controls_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/about_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/appearance_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/overlay_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/menu_geometry_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/island_checks.py")], check=True)
     print("Source checks and isolated QML regressions passed.")

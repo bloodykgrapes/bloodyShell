@@ -14,11 +14,13 @@ Singleton
     property alias model: dockModel
     ListModel { id: dockModel }
 
-    property var pinned: Config.dockPinned.slice()
+    property var pinned: []
     property var unpinned: []
     property var windowsCache: []
     property var seenAt: ({})
     property string focusedKey: ""
+    property var itemCache: new Map()
+    property var modelItems: []
 
     function itemKey(item)
     {
@@ -29,11 +31,11 @@ Singleton
     function update(runningWindows)
     {
         const list = Array.isArray(runningWindows) ? runningWindows : [];
-        windowsCache = list.slice();
+        windowsCache = list;
 
         const merge = Config.dockMerge !== false;
 
-        const byApp = {};
+        const byApp = new Map();
         const appOrder = [];
 
         for (let i = 0; i < list.length; i++)
@@ -41,8 +43,8 @@ Singleton
             const w = list[i];
             const k = AppIdentity.appKey(w);
 
-            if (!byApp[k]) { byApp[k] = []; appOrder.push(k); }
-            byApp[k].push(w);
+            if (!byApp.has(k)) { byApp.set(k, []); appOrder.push(k); }
+            byApp.get(k).push(w);
         }
 
         const focusedNow = (list.find(w => w.is_focused === true) || null);
@@ -56,15 +58,25 @@ Singleton
             focusedKey = newFocusedKey;
         }
 
-        for (const k of appOrder) byApp[k].sort((a, b) => Number(a.id) - Number(b.id));
+        for (const wins of byApp.values()) wins.sort((a, b) => Number(a.id) - Number(b.id));
 
+        const nextCache = new Map();
         const makeItem = (key, wins, pinned) =>
         {
+            const cacheKey = (pinned ? "pinned:" : "app:") + key;
+            const lastId = ServiceWindowActions.lastFocused[key];
+            const cached = itemCache.get(cacheKey);
+            if (cached && cached.lastId === lastId && cached.windows.length === wins.length
+                && wins.every((window, index) => window === cached.windows[index]))
+            {
+                nextCache.set(cacheKey, cached);
+                return cached.item;
+            }
             const focused = wins.find(w => w.is_focused === true);
-            const last = wins.find(w => w.id === ServiceWindowActions.lastFocused[key]);
+            const last = wins.find(w => w.id === lastId);
             const shown = focused || last || wins[0];
 
-            return {
+            const item = {
                 type: "app",
                 key: key,
                 id: shown ? String(shown.id) : "",
@@ -78,22 +90,25 @@ Singleton
                 windows: JSON.stringify(wins.map(w => ({ id: w.id, title: w.title || w.app_id || key, focused: w.is_focused === true, urgent: w.is_urgent === true }))),
                 focused_index: focused ? wins.indexOf(focused) : -1
             };
+            nextCache.set(cacheKey, { windows: wins, lastId: lastId, item: item });
+            return item;
         };
 
         const newItems = [];
 
         for (let i = 0; i < pinned.length; i++)
         {
-            const wins = byApp[pinned[i]] || [];
+            const wins = byApp.get(pinned[i]) || [];
             newItems.push(makeItem(pinned[i], merge ? wins : wins.slice(0, 1), true));
         }
 
         const groups = [];
+        const pinnedKeys = new Set(pinned);
 
         for (const k of appOrder)
         {
-            const wins = byApp[k];
-            const isPinned = pinned.includes(k);
+            const wins = byApp.get(k);
+            const isPinned = pinnedKeys.has(k);
 
             if (merge)
             {
@@ -104,12 +119,9 @@ Singleton
             for (const w of wins.slice(isPinned ? 1 : 0)) groups.push({ key: "win:" + w.id, wins: [w] });
         }
 
-        const orderOf = key =>
-        {
-            const idx = unpinned.indexOf(key);
-            return idx < 0 ? 1e9 + groups.findIndex(g => g.key === key) : idx;
-        };
-        groups.sort((a, b) => orderOf(a.key) - orderOf(b.key));
+        const ranks = new Map(unpinned.map((key, index) => [key, index]));
+        groups.forEach((group, index) => { if (!ranks.has(group.key)) ranks.set(group.key, unpinned.length + index); });
+        groups.sort((a, b) => ranks.get(a.key) - ranks.get(b.key));
 
         if (groups.length > 0)
         {
@@ -117,11 +129,31 @@ Singleton
             for (const g of groups) newItems.push(makeItem(g.key, g.wins, false));
         }
 
-        unpinned = groups.map(g => g.key);
+        const nextUnpinned = groups.map(g => g.key);
+        if (!sameOrder(unpinned, nextUnpinned)) unpinned = nextUnpinned;
+        itemCache = nextCache;
         sync(newItems);
     }
 
-    function sync(items) { ModelSync.sync(dockModel, items, itemKey) }
+    function sameOrder(a, b) { return a.length === b.length && a.every((value, index) => value === b[index]) }
+
+    function sync(items)
+    {
+        const previous = modelItems;
+        if (dockModel.count === items.length && previous.length === items.length
+            && items.every((item, index) => itemKey(item) === itemKey(previous[index])))
+        {
+            for (let i = 0; i < items.length; i++)
+            {
+                const item = items[i], old = previous[i];
+                if (item === old) continue;
+                for (const role in item)
+                    if (item[role] !== old[role]) dockModel.setProperty(i, role, item[role]);
+            }
+        }
+        else ModelSync.sync(dockModel, items, itemKey);
+        modelItems = items;
+    }
 
     function move(from, to)
     {
@@ -131,6 +163,7 @@ Singleton
         const fromGroup = groupOf(from), toGroup = groupOf(to);
         if (fromGroup < 0 || toGroup < 0 || fromGroup !== toGroup) return;
 
+        modelItems = [];
         dockModel.move(from, to, 1);
         const nextPinned = [], nextUnpinned = [];
         for (let i = 0; i < dockModel.count; i++)
@@ -179,6 +212,7 @@ Singleton
         if (!appId || appId.startsWith("id:") || appId.startsWith("win:")) return;
         const list = pinned.filter(k => k !== appId);
         list.splice(Math.max(0, Math.min(list.length, index)), 0, appId);
+        if (sameOrder(pinned, list)) return;
         pinned = list;
         Config.set("dockPinned", list);
         update(windowsCache);
@@ -235,10 +269,15 @@ Singleton
         function onDockMergeChanged() { serviceDock.update(serviceDock.windowsCache) }
         function onDockPinnedChanged()
         {
+            if (serviceDock.sameOrder(serviceDock.pinned, Config.dockPinned)) return;
             serviceDock.pinned = Config.dockPinned.slice();
             serviceDock.update(serviceDock.windowsCache);
         }
     }
 
-    Component.onCompleted: update(ServiceCompositor.windowList)
+    Component.onCompleted:
+    {
+        pinned = Config.dockPinned.slice();
+        update(ServiceCompositor.windowList);
+    }
 }

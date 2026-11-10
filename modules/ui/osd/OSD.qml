@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 
+import "../../animations"
 import "../../core"
 import "../bar/components"
 
@@ -48,7 +49,8 @@ Item
         widgets: ["island"]
         docked: false
         adaptive: true
-        thickness: Math.max(Theme.barThickness, zone.contentThickness + (zone.isHorizontal ? 12 : 6))
+        thickness: contentThickness > 0 ? Math.max(Theme.barThickness, contentThickness + (isHorizontal ? 12 : 6)) : 0
+        Glide on thickness { enabled: zone.animated }
         islandDepth: Theme.frameThickness
         cornerInset: Theme.frameThickness
         edgeMin: Theme.frameThickness + 12

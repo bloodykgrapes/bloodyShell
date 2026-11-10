@@ -20,6 +20,17 @@ Item
 
     function clear() { input.text = ""; reveal = false }
     function focusInput() { input.forceActiveFocus() }
+    onClosedChanged: if (closed) clear()
+
+    Connections
+    {
+        target: Config
+        function onAnimationsEnabledChanged()
+        {
+            if (Config.animationsEnabled) return;
+            for (let i = 0; i < dots.count; i++) dots.itemAt(i).show(true);
+        }
+    }
 
     height: 44
 
@@ -76,6 +87,7 @@ Item
     TextInput
     {
         id: input
+        objectName: "lockPasswordInput"
         anchors.fill: parent
         leftPadding: lockPasswordField.padding
         rightPadding: buttons.width + 16
@@ -114,6 +126,7 @@ Item
 
         Repeater
         {
+            id: dots
             model: lockPasswordField.dotsMax
 
             Item
@@ -129,13 +142,13 @@ Item
                 height: size
 
                 scale: 0
-                rotation: -120
+                rotation: Config.animationsFluid ? -70 : 0
                 opacity: 0
                 visible: scale > 0.01
                 function show(now)
                 {
                     appear.stop(); leave.stop();
-                    if (now || !Config.animationsEnabled) { scale = on ? 1 : 0; rotation = on ? 0 : -120; opacity = on ? 1 : 0; return; }
+                    if (now || !Config.animationsEnabled) { scale = on ? 1 : 0; rotation = !on && Config.animationsFluid ? -70 : 0; opacity = on ? 1 : 0; return; }
                     (on ? appear : leave).start();
                 }
                 onOnChanged: show(false)
@@ -143,16 +156,16 @@ Item
                 ParallelAnimation
                 {
                     id: appear
-                    NumberAnimation { target: dotItem; property: "scale"; to: 1; duration: 260; easing.type: Easing.OutBack; easing.overshoot: 2.2 }
-                    NumberAnimation { target: dotItem; property: "rotation"; to: 0; duration: 340; easing.type: Easing.OutCubic }
-                    NumberAnimation { target: dotItem; property: "opacity"; to: 1; duration: 90 }
+                    NumberAnimation { target: dotItem; property: "scale"; to: 1; duration: Config.animationsFluid ? 360 : 180; easing.type: Config.animationsFluid ? Easing.OutBack : Easing.OutCubic; easing.overshoot: 1.3 }
+                    NumberAnimation { target: dotItem; property: "rotation"; to: 0; duration: Config.animationsFluid ? 420 : 180; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: dotItem; property: "opacity"; to: 1; duration: Config.animationsFluid ? 120 : 90 }
                 }
                 ParallelAnimation
                 {
                     id: leave
-                    NumberAnimation { target: dotItem; property: "scale"; to: 0; duration: 150; easing.type: Easing.InBack }
-                    NumberAnimation { target: dotItem; property: "rotation"; to: -120; duration: 150; easing.type: Easing.InCubic }
-                    NumberAnimation { target: dotItem; property: "opacity"; to: 0; duration: 150 }
+                    NumberAnimation { target: dotItem; property: "scale"; to: 0; duration: Config.animationsFluid ? 180 : 120; easing.type: Easing.InCubic }
+                    NumberAnimation { target: dotItem; property: "rotation"; to: Config.animationsFluid ? -70 : 0; duration: Config.animationsFluid ? 180 : 120; easing.type: Easing.InCubic }
+                    NumberAnimation { target: dotItem; property: "opacity"; to: 0; duration: Config.animationsFluid ? 150 : 100 }
                 }
 
                 Rectangle
@@ -248,6 +261,7 @@ Item
                 id: eyeArea
                 anchors.fill: parent
                 hoverEnabled: true
+                enabled: !lockPasswordField.busy && !lockPasswordField.closed
                 cursorShape: Qt.PointingHandCursor
                 onClicked: { lockPasswordField.reveal = !lockPasswordField.reveal; input.forceActiveFocus() }
             }
@@ -271,7 +285,13 @@ Item
                 width: 14; height: 14
                 sourceSize: Qt.size(28, 28)
                 source: lockPasswordField.busy ? Icon.reload : submit.ready ? Qt.resolvedUrl("../../../../assets/icons/" + (Theme.lightForeground(Theme.lockHighlight) ? "light" : "dark") + "/chevron_right.svg") : Icon.chevronRight
-                RotationAnimation on rotation { running: lockPasswordField.visible && lockPasswordField.busy && Config.animationsEnabled; loops: Animation.Infinite; from: 0; to: 360; duration: 900 }
+                RotationAnimation on rotation
+                {
+                    running: lockPasswordField.visible && lockPasswordField.busy && Config.animationsEnabled
+                    onRunningChanged: if (!running) rotation = 0
+                    loops: Animation.Infinite
+                    from: 0; to: 360; duration: 900
+                }
                 onSourceChanged: rotation = 0
             }
             MouseArea
@@ -279,7 +299,7 @@ Item
                 id: submitArea
                 anchors.fill: parent
                 hoverEnabled: true
-                enabled: !lockPasswordField.busy
+                enabled: !lockPasswordField.busy && !lockPasswordField.closed
                 cursorShape: Qt.PointingHandCursor
                 onClicked: lockPasswordField.submitted(input.text)
             }

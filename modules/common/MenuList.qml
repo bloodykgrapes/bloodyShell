@@ -37,7 +37,7 @@ ListView
         SequentialAnimation
         {
             PropertyAction { property: "opacity"; value: 0 }
-            PauseAnimation { duration: menuList.opening ? Math.min(8, menuList.ViewTransition.index) * 35 : 0 }
+            PauseAnimation { duration: menuList.opening ? Math.max(0, Math.min(8, menuList.ViewTransition.index)) * 35 : 0 }
             ParallelAnimation
             {
                 NumberAnimation { property: "opacity"; to: 1; duration: 260; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized }

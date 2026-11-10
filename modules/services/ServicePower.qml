@@ -92,7 +92,10 @@ Singleton
         }
 
         else if (action === "suspend")
+        {
+            ServiceLock.lock();
             actionProcess.run(["systemctl", "suspend"]);
+        }
 
         else if (action === "reboot")
             actionProcess.run(["systemctl", "reboot"]);

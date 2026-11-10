@@ -21,8 +21,9 @@ binds {
     Alt+Tab       repeat=false { spawn "bloodyShell" "alt-tab" "next"; }
     Alt+Shift+Tab repeat=false { spawn "bloodyShell" "alt-tab" "previous"; }
 
-    Print      allow-inhibiting=false repeat=false { spawn "bloodyShell" "screenshot"; }
-    Ctrl+Print allow-inhibiting=false repeat=false { spawn "bloodyShell" "screenshot" "screen"; }
+    Mod+Shift+S allow-inhibiting=false repeat=false { spawn "bloodyShell" "screenshot"; }
+    Print       allow-inhibiting=false repeat=false { spawn "bloodyShell" "screenshot"; }
+    Ctrl+Print  allow-inhibiting=false repeat=false { spawn "bloodyShell" "screenshot" "screen"; }
 
     // Mod+Shift+P { power-off-monitors; }
 

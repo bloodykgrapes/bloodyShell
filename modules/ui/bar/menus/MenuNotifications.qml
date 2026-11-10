@@ -12,17 +12,29 @@ Menu
     objectName: "notificationsMenu"
 
     implicitWidth: 360
+    spacing: 8
 
     Component.onCompleted: ServiceNotifications.markRead()
+    Component.onDestruction: flushClear()
+
+    property var pendingClear: []
 
     function clearAll()
     {
+        if (pendingClear.length > 0 || ServiceNotifications.count === 0) return;
         if (!Config.animationsEnabled) { ServiceNotifications.dismissAll(); return; }
+        pendingClear = ServiceNotifications.history.slice();
         for (let i = 0; i < groups.count; i++) { const g = groups.itemAt(i); if (g) g.dismissAll(false); }
         clearLater.restart();
     }
+    function flushClear()
+    {
+        const pending = pendingClear;
+        pendingClear = [];
+        for (const notification of pending) ServiceNotifications.dismiss(notification);
+    }
 
-    Timer { id: clearLater; interval: Theme.animationDurationClose + 260; onTriggered: ServiceNotifications.dismissAll() }
+    Timer { id: clearLater; interval: Theme.animationDurationClose + 260; onTriggered: menuNotifications.flushClear() }
 
     property var expanded: ({})
     function toggle(key)
@@ -40,36 +52,48 @@ Menu
         shown: menuNotifications.presented
         order: 0
 
-        MenuToggle
+        ControlToggle
         {
+            objectName: "notificationsDnd"
+            width: parent.width
+            height: implicitHeight
             icon: Icon.notifications
             text: Tr.tr("common.doNotDisturb")
+            subtitle: Tr.tr(checked ? "common.enabled" : "common.off")
             checked: ServiceNotifications.dnd
-            onToggle: value => ServiceNotifications.dnd = value
+            onToggled: value => ServiceNotifications.dnd = value
         }
-
-        MenuSeparator {}
     }
 
     RevealSection
     {
         shown: menuNotifications.presented
         order: 1
+        visible: ServiceNotifications.count === 0
 
-        Item
+        Rectangle
         {
-            visible: ServiceNotifications.count === 0
             width: parent.width
-            height: 116
+            height: Math.max(148, empty.implicitHeight + 32)
+            radius: 18
+            color: Theme.colorField
 
             Column
             {
+                id: empty
                 anchors.centerIn: parent
-                spacing: 6
+                width: parent.width - 32
+                spacing: 8
 
-                ShellIcon { anchors.horizontalCenter: parent.horizontalCenter; icon: Icon.bellOFF; size: 26; opacity: 0.45 }
-                ShellText { anchors.horizontalCenter: parent.horizontalCenter; label: Tr.tr("menu.notifications.noNotifications"); size: 13; color: Theme.text2 }
-                ShellText { anchors.horizontalCenter: parent.horizontalCenter; label: Tr.tr("menu.notifications.emptyHint"); size: 11; color: Theme.text4 }
+                Rectangle
+                {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 44; height: 44; radius: 16
+                    color: Theme.colorHoverStrong
+                    ShellIcon { anchors.centerIn: parent; icon: Icon.bellOFF; size: 24 }
+                }
+                ShellText { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; label: Tr.tr("menu.notifications.noNotifications"); size: 13; color: Theme.text1; font.weight: Font.Medium }
+                ShellText { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; label: Tr.tr("menu.notifications.emptyHint"); size: 11; color: Theme.text3 }
             }
         }
     }
@@ -78,6 +102,18 @@ Menu
     {
         shown: menuNotifications.presented
         order: 2
+        visible: ServiceNotifications.count > 0
+        spacing: 4
+
+        MenuLabel
+        {
+            heading: true
+            text: Tr.tr("common.notifications")
+            actionText: Tr.tr("menu.notifications.clearAll")
+            actionIcon: Icon.trash
+            actionEnabled: menuNotifications.pendingClear.length === 0
+            onActionTriggered: menuNotifications.clearAll()
+        }
 
         Flickable
         {
@@ -88,7 +124,7 @@ Menu
             readonly property real overhang: 8
             x: -overhang
             width: parent.width + overhang * 2
-            height: Math.min(contentHeight, Math.round(480 * Config.themeScale))
+            height: Math.min(contentHeight, 440)
             contentHeight: list.implicitHeight + 4
             clip: true
             interactive: contentHeight > height
@@ -100,7 +136,7 @@ Menu
                 x: scroller.overhang
                 y: 2
                 width: scroller.width - scroller.overhang * 2
-                spacing: 8
+                spacing: 12
 
                 Repeater
                 {
@@ -124,19 +160,4 @@ Menu
         }
     }
 
-    RevealSection
-    {
-        shown: menuNotifications.presented
-        order: 3
-
-        MenuSeparator { visible: ServiceNotifications.count > 0 }
-
-        MenuItem
-        {
-            icon: Icon.trash
-            text: Tr.tr("menu.notifications.clearAll")
-            visible: ServiceNotifications.count > 0
-            onClicked: menuNotifications.clearAll()
-        }
-    }
 }

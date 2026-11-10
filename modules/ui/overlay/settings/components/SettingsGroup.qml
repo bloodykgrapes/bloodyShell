@@ -18,11 +18,25 @@ Column
     property real rise: 0
     transform: Translate { y: settingsGroup.rise }
 
-    Component.onCompleted: if (Config.animationsFluid) opacity = 0
+    Component.onCompleted: if (Config.animationsFluid) enter(0)
+
+    Connections
+    {
+        target: Config
+        function onAnimationsEnabledChanged()
+        {
+            if (Config.animationsEnabled) return;
+            entrance.stop();
+            settingsGroup.opacity = 1;
+            settingsGroup.rise = 0;
+        }
+    }
 
     function enter(order)
     {
-        entrance.delay = Math.min(6, order) * 45;
+        entrance.stop();
+        if (!Config.animationsFluid) { opacity = 1; rise = 0; return; }
+        entrance.delay = Math.max(0, Math.min(6, order)) * 45;
         entrance.start();
     }
 

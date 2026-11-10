@@ -90,7 +90,7 @@ ShellRoot
     {
         check(Paths.settingsDir === Quickshell.env("XDG_CONFIG_HOME") + "/bloodyShell", "settings honor XDG_CONFIG_HOME");
         check(Paths.stateDir === Quickshell.env("XDG_CACHE_HOME") + "/bloodyShell", "state honors XDG_CACHE_HOME");
-        check(Paths.shellDir + "/assets/wallpapers" === String(Quickshell.shellDir) + "/assets/wallpapers", "wallpapers follow checkout");
+        check(Paths.home + "/Pictures/Wallpapers" === Quickshell.env("HOME") + "/Pictures/Wallpapers", "wallpapers live outside the shell");
         check(Enums.EdgeRight === 3 && Enums.InFrame === 0 && Enums.OutFrame === 1, "frame styles and shared enum values are stable");
         checkDockAndWindows();
         ServiceApplications.launching = { earliest: Date.now() - 14900, later: Date.now() - 14500 };
@@ -120,8 +120,6 @@ ShellRoot
             OverlayState.show("power");
             OverlayState.show("unknown");
             OverlayState.hide("unknown");
-            Config.launcherEnabled = false;
-            OverlayState.show("launcher");
             reopenCheck.start();
         }
     }
@@ -132,7 +130,9 @@ ShellRoot
         onTriggered:
         {
             tests.check((OverlayState.current === "power") && (OverlayState.mounted === "power"), "reopened overlay survives pending cleanup");
-            tests.check(!(OverlayState.current === "launcher"), "disabled launcher stays closed");
+            OverlayState.show("launcher");
+            tests.check(OverlayState.current === "launcher", "launcher is always available");
+            OverlayState.hide("launcher");
             tests.overlaysDone = true;
             tests.finish();
         }

@@ -68,6 +68,7 @@ Item {
     module(base, "services")
     put(base, "shell.qml", '''import QtQuick
 import QtQuick.Window
+import QtTest
 import Quickshell
 import "core"
 import "services"
@@ -83,6 +84,7 @@ ShellRoot
         Rectangle { anchors.fill: parent; color: "#25252b" }
         AltTabKeyboard { id: keyboard }
         AltTabContent { id: cards; anchors.centerIn: parent; width: 1100; height: 500 }
+        TestCase { id: events; when: false; optional: true }
     }
     Timer
     {
@@ -128,6 +130,9 @@ ShellRoot
                 ServiceCompositor.windowList = ServiceCompositor.windowList.filter(w => w.id !== 3);
                 ServiceAltTab.confirm();
                 check(ServiceCompositor.calls[ServiceCompositor.calls.length - 1] !== 3, "closed window selected");
+                ServiceCompositor.focusedWindowId = 999;
+                check(!ServiceAltTab.history.includes(999), "stale compositor focus entered history");
+                ServiceCompositor.focusedWindowId = 1;
                 ServiceLock.locked = true;
                 ServiceAltTab.cycle(1);
                 check(!ServiceAltTab.active, "locked entry");
@@ -135,6 +140,16 @@ ShellRoot
                 ServiceAltTab.cycle(1);
                 OverlayState.show("settings");
                 check(!ServiceAltTab.active, "overlay conflict");
+                ServiceAltTab.cycle(1);
+                OverlayState.inhibited = true;
+                check(!ServiceAltTab.active, "inhibition left switcher active");
+                OverlayState.inhibited = false;
+                for (let tap = 0; tap < 20; tap++)
+                {
+                    ServiceAltTab.cycle(tap % 2 ? -1 : 1);
+                    ServiceAltTab.confirm();
+                    check(!ServiceAltTab.presented, "rapid taps flashed overlay");
+                }
                 ServiceAltTab.cycle(1);
                 finish.start();
             }
@@ -172,13 +187,22 @@ ShellRoot
             try
             {
                 const deck = cards.children.find(child => child.objectName === "altTabDeck");
-                const repeater = deck.children.find(child => child.objectName === "altTabCards");
+                const rail = deck.children.find(child => child.objectName === "altTabRail");
+                const repeater = rail.children.find(child => child.objectName === "altTabCards");
                 check(cards.positioned, "startup layout not prepared");
                 check(ServiceAltTab.presented, "held shortcut did not show overlay");
                 const card = repeater.itemAt(ServiceAltTab.selected);
-                check(Math.abs(card.x + card.width / 2 - deck.width / 2) < 1, "startup selection not centered");
+                check(Math.abs(rail.x + card.x + card.width / 2 - deck.width / 2) < 1, "startup selection not centered");
+                check(card.children[0].selected, "selected card lost its highlight");
                 if (phase === 0)
                 {
+                    const before = ServiceAltTab.selected;
+                    events.mouseWheel(deck, deck.width / 2, deck.height / 2, 0, 60, Qt.NoButton, Qt.NoModifier, 0);
+                    check(ServiceAltTab.selected === before, "partial wheel step changed selection");
+                    events.mouseWheel(deck, deck.width / 2, deck.height / 2, 0, 60, Qt.NoButton, Qt.NoModifier, 0);
+                    check(ServiceAltTab.selected === (before + ServiceAltTab.windows.length - 1) % ServiceAltTab.windows.length, "wheel did not switch exactly once");
+                    const moved = repeater.itemAt(ServiceAltTab.selected);
+                    check(Math.abs(rail.x + moved.x + moved.width / 2 - deck.width / 2) < 1, "disabled animation did not snap to selection");
                     Config.animationsEnabled = true;
                     ServiceAltTab.cancel();
                     ServiceAltTab.cycle(-1);

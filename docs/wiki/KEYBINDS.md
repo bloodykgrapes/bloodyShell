@@ -3,6 +3,11 @@
 These bindings come with the optional niri config. `Mod` is Super unless
 changed in niri.
 
+Settings → Shell → Shortcuts lists the bundled bindings in three groups:
+window management, overlays, and shell/application actions. It is a read-only
+reference, including workspace ranges, monitor controls, mouse gestures, and
+media keys.
+
 | Shortcut | Action |
 | --- | --- |
 | Super + D | Launcher |
@@ -31,7 +36,9 @@ does not generate or rewrite shortcut files.
 For configurations that still include the old generated `09-alt-tab.kdl`, remove
 its include from `~/.config/niri/config.kdl` before deleting that file. Alt+Tab
 and the native switcher disable setting are both in `06-binds.kdl`.
-Area selections can be moved and resized; Screen selects the whole monitor. Enter or Capture
+Area selections can be moved and resized with the mouse. Arrow keys move the area;
+Ctrl+Arrow resizes it, and Shift makes either adjustment ten times larger.
+Switching to Screen and back preserves the area. Screen selects the whole monitor. Enter or Capture
 performs the selected Copy/Save action, and Escape cancels. Save writes a PNG
 to the XDG Pictures directory's `Screenshots` folder.
 

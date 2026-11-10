@@ -45,18 +45,26 @@ Item
         target: equalizer
     }
 
-    readonly property var levels:
+    readonly property var sourceLevels: samples !== null ? samples : running ? ServiceMedia.levels : []
+    readonly property int sourceCount: sourceLevels.length
+    readonly property var samplePlan:
     {
-        if (!running && samples === null) return [];
-        const source = samples !== null ? samples : ServiceMedia.levels;
         const result = [];
-        const step = sampleCount > 1 ? Math.max(0, source.length - 1) / (sampleCount - 1) : 0;
+        const step = sampleCount > 1 ? Math.max(0, sourceCount - 1) / (sampleCount - 1) : 0;
         for (let i = 0; i < sampleCount; i++)
         {
             const sample = i * step, lower = Math.floor(sample), blend = sample - lower;
-            result.push((source[lower] || 0) * (1 - blend) + (source[lower + 1] || 0) * blend);
+            result.push({ lower: lower, blend: blend });
         }
         return result;
+    }
+
+    readonly property var levels:
+    {
+        if (!running && samples === null) return [];
+        const source = sourceLevels;
+        return samplePlan.map(sample => (source[sample.lower] || 0) * (1 - sample.blend)
+            + (source[sample.lower + 1] || 0) * sample.blend);
     }
 
     Gradient
@@ -142,6 +150,8 @@ Item
                 onTriggered:
                 {
                     const delta = Math.min(frameTime, 0.05);
+                    const attack = 1 - Math.exp(-delta / 0.10);
+                    const release = 1 - Math.exp(-delta / 0.22);
                     let moving = false;
                     const next = wave.target.map((target, index) =>
                     {
@@ -149,7 +159,7 @@ Item
                         const distance = target - current;
                         if (Math.abs(distance) < 0.0005) return target;
                         moving = true;
-                        const weight = 1 - Math.exp(-delta / (distance > 0 ? 0.10 : 0.22));
+                        const weight = distance > 0 ? attack : release;
                         return current + distance * weight;
                     });
                     wave.values = next;
@@ -161,14 +171,14 @@ Item
             {
                 if (width <= 0 || height <= 0 || levels.length < 2) return "";
                 const step = width / (levels.length - 1);
-                const y = value => height - Math.min(height, Math.max(0, equalizer.minimumHeight, height * value));
-                let result = "M 0 " + height + " L 0 " + y(levels[0]);
+                const points = levels.map(value => height - Math.min(height, Math.max(0, equalizer.minimumHeight, height * value)));
+                let result = "M 0 " + height + " L 0 " + points[0];
                 for (let i = 1; i < levels.length; i++)
                 {
-                    const start = y(levels[i - 1]), end = y(levels[i]);
+                    const start = points[i - 1], end = points[i];
                     const low = Math.min(start, end), high = Math.max(start, end);
-                    const first = Math.max(low, Math.min(high, start + (end - y(levels[Math.max(0, i - 2)])) / 6));
-                    const second = Math.max(low, Math.min(high, end - (y(levels[Math.min(levels.length - 1, i + 1)]) - start) / 6));
+                    const first = Math.max(low, Math.min(high, start + (end - points[Math.max(0, i - 2)]) / 6));
+                    const second = Math.max(low, Math.min(high, end - (points[Math.min(levels.length - 1, i + 1)] - start) / 6));
                     result += " C " + (i - 2 / 3) * step + " " + first + " " + (i - 1 / 3) * step + " " + second + " " + i * step + " " + end;
                 }
                 return result + " L " + width + " " + height + " Z";

@@ -29,7 +29,7 @@ Singleton
         onTriggered:
         {
             if (exporter.busy) { restart(); return; }
-            exporter.run(["python3", Paths.shellDir + "/greeter/export-settings", Config.file, "/var/lib/bloodyShell", "--if-configured"]);
+            exporter.run(["python3", Paths.runtimeScriptsDir + "/greeter-settings", Config.file, "/var/lib/bloodyShell", "--if-configured"]);
         }
     }
 

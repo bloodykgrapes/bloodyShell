@@ -14,10 +14,19 @@ Item
 
     signal clicked()
 
-    readonly property bool hovered: area.containsMouse
+    readonly property bool hovered: enabled && (area.containsMouse || activeFocus)
 
     width: parent ? parent.width : 200
     height: 32
+    activeFocusOnTab: enabled
+    Keys.onSpacePressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
+    Keys.onReturnPressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
+    Keys.onEnterPressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
+
+    Accessible.role: Accessible.PageTab
+    Accessible.name: title
+    Accessible.selected: selected
+    Accessible.onPressAction: if (enabled) clicked()
 
     scale: area.pressed ? 0.97 : area.containsMouse ? 1.03 : 1
     Spring on scale {}
@@ -28,18 +37,20 @@ Item
         radius: Theme.radiusLarge - 2
 
         color: Theme.colorHover
-        opacity: area.containsMouse && !settingsTab.selected ? 1 : 0
+        opacity: settingsTab.hovered && !settingsTab.selected ? 1 : 0
         Smooth on opacity { duration: 160 }
     }
 
     Row
     {
         x: 12
+        width: parent.width - 24
         anchors.verticalCenter: parent.verticalCenter
         spacing: 11
 
         ShellIcon
         {
+            id: glyph
             anchors.verticalCenter: parent.verticalCenter
             icon: settingsTab.icon
             size: 16
@@ -50,6 +61,7 @@ Item
         ShellText
         {
             anchors.verticalCenter: parent.verticalCenter
+            width: Math.max(0, parent.width - glyph.width - parent.spacing)
             label: settingsTab.title
             size: 13
             color: settingsTab.selected ? Theme.text1 : Theme.text2

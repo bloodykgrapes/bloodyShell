@@ -22,7 +22,7 @@ Item
 
     readonly property int  inset: 18
     readonly property real lead: icon !== "" ? 34 : 0
-    readonly property real sideWidth: stacked ? 0 : slot.width + (value.visible ? value.implicitWidth + 12 : 0)
+    readonly property real sideWidth: stacked ? 0 : slot.width + (value.visible ? value.width + (slot.width > 0 ? 12 : 0) : 0)
 
     width: parent ? parent.width : 400
     height: stacked
@@ -38,28 +38,32 @@ Item
 
         x: settingsRow.inset + settingsRow.lead
         y: settingsRow.stacked ? 14 : Math.round((settingsRow.height - implicitHeight) / 2)
-        width: Math.max(80, settingsRow.width - settingsRow.inset * 2 - settingsRow.lead - (settingsRow.sideWidth > 0 ? settingsRow.sideWidth + 20 : 0))
+        width: Math.max(0, settingsRow.width - settingsRow.inset * 2 - settingsRow.lead - (settingsRow.sideWidth > 0 ? settingsRow.sideWidth + 20 : 0))
         spacing: 3
 
         Row
         {
+            width: parent.width
             spacing: 8
 
             ShellText
             {
                 anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(0, parent.width - (badge.visible ? badge.width + parent.spacing : 0))
                 label: settingsRow.label
+                wrapMode: Text.Wrap
                 size: 13
                 color: Theme.text1
             }
 
             Rectangle
             {
+                id: badge
                 readonly property bool tinted: settingsRow.badgeColor.a > 0
 
                 visible: settingsRow.badge !== ""
                 anchors.verticalCenter: parent.verticalCenter
-                width: badgeText.implicitWidth + 12
+                width: Math.min(badgeText.implicitWidth + 12, parent.width * 0.45)
                 height: badgeText.implicitHeight + 4
                 radius: height / 2
                 color: tinted ? Qt.rgba(settingsRow.badgeColor.r, settingsRow.badgeColor.g, settingsRow.badgeColor.b, 0.16) : Theme.colorField
@@ -68,6 +72,7 @@ Item
                 {
                     id: badgeText
                     anchors.centerIn: parent
+                    width: Math.max(0, parent.width - 12)
                     label: settingsRow.badge
                     size: 9
                     color: parent.tinted ? settingsRow.badgeColor : Theme.text3
@@ -115,7 +120,7 @@ Item
 
         x: settingsRow.stacked ? settingsRow.inset : settingsRow.width - settingsRow.inset - width
         y: settingsRow.stacked ? header.y + header.implicitHeight + 10 : Math.round((settingsRow.height - height) / 2)
-        width: settingsRow.stacked ? settingsRow.width - settingsRow.inset * 2 : childrenRect.width
+        width: settingsRow.stacked ? Math.max(0, settingsRow.width - settingsRow.inset * 2) : childrenRect.width
         height: childrenRect.height
     }
 }

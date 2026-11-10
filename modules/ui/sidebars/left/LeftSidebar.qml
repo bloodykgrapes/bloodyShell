@@ -105,7 +105,6 @@ Sidebar
                 objectName: "sidebarLauncher"
                 icon: Icon.search
                 text: Tr.tr("common.launcher")
-                enabled: Config.launcherEnabled
                 onClicked: leftSidebar.open("launcher")
             }
             SidebarAction

@@ -1,8 +1,7 @@
 import QtQuick
 
-import "../../../animations"
-import "../../../common"
-import "../../../core"
+import "../animations"
+import "../core"
 
 Item
 {

@@ -14,6 +14,19 @@ Item
     property point start: Qt.point(0, 0)
     property rect before: Qt.rect(0, 0, 0, 0)
     property string operation: ""
+    readonly property bool dragging: pointer.pressed
+    property rect savedArea: Qt.rect(0, 0, 0, 0)
+
+    function nudge(dx, dy, resize)
+    {
+        if (mode !== Enums.ScreenshotArea || !valid || dragging) return;
+        if (resize)
+            region = Qt.rect(region.x, region.y, Math.max(1, Math.min(width - region.x, region.width + dx)),
+                Math.max(1, Math.min(height - region.y, region.height + dy)));
+        else
+            region = Qt.rect(Math.max(0, Math.min(width - region.width, region.x + dx)),
+                Math.max(0, Math.min(height - region.height, region.y + dy)), region.width, region.height);
+    }
 
     function bounds(left, top, right, bottom)
     {
@@ -23,8 +36,9 @@ Item
     }
     function reset()
     {
-        region = Qt.rect(0, 0, 0, 0);
-        if (mode === Enums.ScreenshotScreen) region = Qt.rect(0, 0, width, height);
+        const x = Math.min(savedArea.x, width), y = Math.min(savedArea.y, height);
+        region = mode === Enums.ScreenshotScreen ? Qt.rect(0, 0, width, height)
+            : Qt.rect(x, y, Math.min(savedArea.width, width - x), Math.min(savedArea.height, height - y));
     }
     function hit(x, y)
     {
@@ -44,8 +58,9 @@ Item
     }
 
     onModeChanged: reset()
-    onWidthChanged: if (mode === Enums.ScreenshotScreen) reset()
-    onHeightChanged: if (mode === Enums.ScreenshotScreen) reset()
+    onRegionChanged: if (mode === Enums.ScreenshotArea) savedArea = region
+    onWidthChanged: reset()
+    onHeightChanged: reset()
     Component.onCompleted: reset()
 
     MouseArea
@@ -65,6 +80,7 @@ Item
         }
         onPressed: mouse =>
         {
+            selection.forceActiveFocus();
             if (selection.mode !== Enums.ScreenshotArea) return;
             selection.start = Qt.point(mouse.x, mouse.y);
             selection.before = selection.region;
@@ -76,6 +92,7 @@ Item
             if (selection.mode === Enums.ScreenshotArea && pressed) selection.update(mouse.x, mouse.y);
         }
         onReleased: mouse => { if (selection.mode === Enums.ScreenshotArea) selection.update(mouse.x, mouse.y); }
+        onCanceled: selection.operation = ""
     }
 
     Rectangle { x: 0; y: 0; width: selection.width; height: selection.region.y; color: "#85000000" }
@@ -101,7 +118,7 @@ Item
                 required property var modelData
                 x: parent.width * modelData[0] - width / 2
                 y: parent.height * modelData[1] - height / 2
-                width: 7; height: 7; radius: 2
+                width: 8; height: 8; radius: 3
                 color: "#ffffff"
                 border.width: 1
                 border.color: "#000000"

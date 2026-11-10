@@ -117,13 +117,16 @@ def export(directory, save, x, y, width, height):
     image_width, image_height = png_size(directory / "screen.png")
     if x < 0 or y < 0 or width < 1 or height < 1 or x + width > image_width or y + height > image_height:
         raise ValueError("Invalid screenshot area")
-    if not shutil.which("ffmpeg"):
-        raise ValueError("Install ffmpeg to crop screenshots")
-    command = ["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", str(directory / "screen.png"),
-               "-filter_threads", "1", "-vf", f"crop={width}:{height}:{x}:{y}", "-frames:v", "1", "-threads", "1", str(directory / "result.png")]
-    result = subprocess.run(command, capture_output=True, text=True, timeout=15)
-    if result.returncode:
-        raise ValueError(result.stderr.strip() or "Screenshot cropping failed")
+    if (x, y, width, height) == (0, 0, image_width, image_height):
+        shutil.copyfile(directory / "screen.png", directory / "result.png")
+    else:
+        if not shutil.which("ffmpeg"):
+            raise ValueError("Install ffmpeg to crop screenshots")
+        command = ["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", str(directory / "screen.png"),
+                   "-filter_threads", "1", "-vf", f"crop={width}:{height}:{x}:{y}", "-frames:v", "1", "-threads", "1", str(directory / "result.png")]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+        if result.returncode:
+            raise ValueError(result.stderr.strip() or "Screenshot cropping failed")
     return publish(directory, save)
 
 

@@ -17,6 +17,7 @@ Item
     signal triggered()
 
     readonly property bool pressed: area.pressed
+    onEnabledChanged: if (!enabled) release()
 
     width: 104
     height: 104
@@ -33,7 +34,7 @@ Item
     }
     function release()
     {
-        if (!hold || progress >= 1) return;
+        if (!hold || progress >= 1 || !fill || !drain) return;
         fill.stop();
         drain.restart();
     }
@@ -75,13 +76,17 @@ Item
         Item
         {
             anchors.horizontalCenter: parent.horizontalCenter
-            width: Math.max(name.implicitWidth, hint.implicitWidth)
-            height: name.implicitHeight
+            width: Math.max(0, powerTile.width - 12)
+            height: Math.max(name.implicitHeight, hint.implicitHeight)
 
             ShellText
             {
                 id: name
                 anchors.centerIn: parent
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                maximumLineCount: 2
                 label: powerTile.title
                 size: 12
                 color: powerTile.current ? Theme.text1 : Theme.text2
@@ -93,6 +98,10 @@ Item
             {
                 id: hint
                 anchors.centerIn: parent
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                maximumLineCount: 2
                 label: Tr.tr("power.hold")
                 size: 12
                 color: Theme.text1

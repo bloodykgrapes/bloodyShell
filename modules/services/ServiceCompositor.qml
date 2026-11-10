@@ -65,6 +65,7 @@ Singleton
     function onOutput(output, args)
     {
         const target = output && output !== focusedOutput ? output : "";
+        if (!target) { action(args); return; }
         Quickshell.execDetached(["sh", "-c", "[ -z \"$1\" ] || niri msg action focus-monitor \"$1\"; shift; exec niri msg action \"$@\"", "sh", target].concat(args));
     }
     function focusWorkspace(output, index)        { if (index >= 1) onOutput(output, ["focus-workspace", String(index)]) }
@@ -114,27 +115,47 @@ Singleton
         next[index] = Object.assign({}, next[index], { [key]: value });
         windowList = next;
     }
+    function sameWindow(a, b)
+    {
+        return a.id === b.id && a.app_id === b.app_id && a.title === b.title
+            && a.workspace_id === b.workspace_id && a.is_focused === b.is_focused && a.is_urgent === b.is_urgent;
+    }
     function windowsApply(list)
     {
-        windowList = list.map(windowRecord);
+        const previous = new Map(windowList.map(window => [window.id, window]));
+        let focused = null;
+        const next = list.map(window =>
+        {
+            const entry = windowRecord(window);
+            if (entry.is_focused)
+            {
+                if (focused === null) focused = entry.id;
+                else entry.is_focused = false;
+            }
+            const old = previous.get(entry.id);
+            return old && sameWindow(old, entry) ? old : entry;
+        });
+        if (next.length !== windowList.length || next.some((window, index) => window !== windowList[index])) windowList = next;
         if (lastWindowId !== null && !windowList.some(w => w.id === lastWindowId)) lastWindowId = null;
-        const focused = windowList.find(w => w.is_focused);
-        windowFocus(focused ? focused.id : null);
+        windowFocus(focused);
     }
     function windowUpsert(w)
     {
         const entry = windowRecord(w);
+        const i = windowList.findIndex(x => x.id === entry.id);
+        if (i >= 0 && sameWindow(windowList[i], entry)) return;
         const list = windowList.slice();
-        const i = list.findIndex(x => x.id === entry.id);
-        if (i >= 0 && JSON.stringify(list[i]) === JSON.stringify(entry)) return;
         if (i >= 0) list[i] = entry; else list.push(entry);
         windowList = list;
         if (entry.is_focused) windowFocus(entry.id);
     }
     function windowRemove(id)
     {
-        if (!windowList.some(w => w.id === id)) return;
-        windowList = windowList.filter(w => w.id !== id);
+        const index = windowList.findIndex(w => w.id === id);
+        if (index < 0) return;
+        const next = windowList.slice();
+        next.splice(index, 1);
+        windowList = next;
         if (focusedWindowId === id) focusedWindowId = null;
         if (lastWindowId === id) lastWindowId = null;
     }
@@ -142,15 +163,16 @@ Singleton
     {
         focusedWindowId = id === undefined ? null : id;
         if (focusedWindowId !== null) lastWindowId = focusedWindowId;
-        let changed = false;
-        const next = windowList.map(w =>
+        let next = null;
+        for (let i = 0; i < windowList.length; i++)
         {
+            const w = windowList[i];
             const focused = w.id === focusedWindowId;
-            if (w.is_focused === focused) return w;
-            changed = true;
-            return Object.assign({}, w, { is_focused: focused });
-        });
-        if (changed) windowList = next;
+            if (w.is_focused === focused) continue;
+            if (next === null) next = windowList.slice();
+            next[i] = Object.assign({}, w, { is_focused: focused });
+        }
+        if (next !== null) windowList = next;
     }
 
     function workspacesApply(list)

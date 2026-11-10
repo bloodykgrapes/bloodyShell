@@ -36,9 +36,9 @@ Item
     width: 150
     height: preview.height + 22
     activeFocusOnTab: true
-    Keys.onSpacePressed: clicked()
-    Keys.onReturnPressed: clicked()
-    Keys.onEnterPressed: clicked()
+    Keys.onSpacePressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
+    Keys.onReturnPressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
+    Keys.onEnterPressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
 
     scale: area.pressed ? 0.96 : area.containsMouse ? 1.03 : 1
     Spring on scale {}
@@ -316,5 +316,5 @@ Item
     Accessible.role: Accessible.RadioButton
     Accessible.name: settingsStyleCard.label
     Accessible.checked: settingsStyleCard.current
-    Accessible.onPressAction: clicked()
+    Accessible.onPressAction: if (enabled) clicked()
 }

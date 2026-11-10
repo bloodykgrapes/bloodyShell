@@ -19,7 +19,7 @@ Item
     property bool docked: true
     property bool adaptive: false
     property bool detached: false
-    readonly property real contentThickness: isHorizontal ? row.height : row.width
+    readonly property real contentThickness: row.slots.reduce((thickness, slot) => Math.max(thickness, slot && slot.shown ? slot.crossSize : 0), 0)
     property real thickness: Theme.barThickness
     property real band: thickness
     property real stripDepth: 0
@@ -76,7 +76,7 @@ Item
 
     readonly property real rowCenter: docked ? band - thickness / 2 : islandDepth + thickness / 2
 
-    readonly property real islandAlong: hasWidgets ? rowAlong + pad * 2 : 0
+    readonly property real islandAlong: hasWidgets ? rowAlong + pad * 2 * (adaptive ? Math.min(1, thickness / Theme.barThickness) : 1) : 0
     readonly property real islandThick: thickness
     readonly property real islandA0: align === "start" ? cornerInset
                                    : align === "end" ? total - cornerInset - islandAlong

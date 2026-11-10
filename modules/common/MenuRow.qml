@@ -15,6 +15,7 @@ Item
     property bool   selected: false
     property bool   busy: false
     property bool   prominent: false
+    property bool   filled: false
     property bool   interactive: true
     property real   level: -1
 
@@ -27,25 +28,41 @@ Item
     RenderActivity { id: activity; target: menuRow }
 
     signal clicked()
+    activeFocusOnTab: enabled && interactive && !busy
+    Keys.onSpacePressed: event => { if (!event.isAutoRepeat && interactive && !busy) clicked(); event.accepted = true }
+    Keys.onReturnPressed: event => { if (!event.isAutoRepeat && interactive && !busy) clicked(); event.accepted = true }
+    Keys.onEnterPressed: event => { if (!event.isAutoRepeat && interactive && !busy) clicked(); event.accepted = true }
 
     Accessible.role: interactive ? Accessible.Button : Accessible.StaticText
     Accessible.name: text + (subtitle !== "" ? ", " + subtitle : "")
     Accessible.onPressAction: if (enabled && interactive && !busy) clicked()
 
     width: view ? view.rowWidth : parent ? parent.width : 200
-    height: prominent ? 58 : subtitle !== "" || level >= 0 ? 42 : 34
+    height: prominent ? (filled ? 68 : 58) : filled ? (subtitle !== "" || level >= 0 ? 44 : 40) : subtitle !== "" || level >= 0 ? 42 : 34
 
-    scale: area.pressed ? 0.98 : interactive && menuRow.hovered ? 1.025 : 1
+    scale: area.pressed ? 0.98 : interactive && menuRow.hovered ? (filled ? Config.animationsFluid ? 1.01 : 1 : 1.025) : 1
     Spring on scale {}
 
     Rectangle
     {
         anchors.fill: parent
-        radius: menuRow.prominent ? Theme.radiusLarge : Theme.radiusMedium
-        color: menuRow.selected ? Theme.colorCurrent : menuRow.prominent ? Theme.colorField : Theme.menuColorHover
-        opacity: menuRow.prominent || menuRow.selected || menuRow.hovered ? 1 : 0
+        radius: menuRow.filled ? (menuRow.hovered && Config.animationsFluid ? (menuRow.prominent ? 14 : 12) : (menuRow.prominent ? 18 : 14)) : menuRow.prominent ? Theme.radiusLarge : Theme.radiusMedium
+        color: menuRow.selected ? Theme.colorCurrent : menuRow.prominent || menuRow.filled ? Theme.colorField : Theme.menuColorHover
+        opacity: menuRow.filled || menuRow.prominent || menuRow.selected || menuRow.hovered ? 1 : 0
 
         Smooth on opacity {}
+        Tint on color {}
+        Glide on radius { duration: Theme.animationDurationControl }
+
+        Rectangle
+        {
+            anchors.fill: parent
+            radius: parent.radius
+            color: area.pressed ? Theme.colorPressed : Theme.colorHoverStrong
+            opacity: menuRow.filled && menuRow.interactive && menuRow.hovered ? 1 : 0
+            Smooth on opacity {}
+            Tint on color {}
+        }
     }
 
     MouseArea
@@ -66,17 +83,18 @@ Item
         Rectangle
         {
             anchors.centerIn: glyph
-            width: 36
-            height: 36
-            radius: 18
-            visible: menuRow.prominent
+            width: menuRow.filled ? (menuRow.prominent ? 40 : 30) : 36
+            height: width
+            radius: menuRow.filled ? (menuRow.prominent ? 13 : 11) : 18
+            visible: menuRow.prominent || menuRow.filled
             color: menuRow.selected ? Theme.colorChosen : Theme.colorHoverStrong
+            Tint on color {}
         }
 
         ShellIcon
         {
             id: glyph
-            anchors { left: parent.left; leftMargin: menuRow.prominent ? 19 : 10; verticalCenter: parent.verticalCenter }
+            anchors { left: parent.left; leftMargin: menuRow.filled ? (menuRow.prominent ? 23 : 21) : menuRow.prominent ? 19 : 10; verticalCenter: parent.verticalCenter }
             icon: menuRow.icon
             size: menuRow.prominent ? 18 : 16
             opacity: menuRow.selected ? 1 : 0.8
@@ -88,7 +106,7 @@ Item
             anchors
             {
                 left: glyph.visible ? glyph.right : parent.left
-                leftMargin: menuRow.prominent ? 19 : 10
+                leftMargin: menuRow.filled ? (menuRow.prominent ? 23 : 19) : menuRow.prominent ? 19 : 10
                 right: tail.left
                 rightMargin: 8
                 verticalCenter: parent.verticalCenter
@@ -100,8 +118,9 @@ Item
                 width: parent.width
                 label: menuRow.text
                 size: menuRow.prominent ? 13 : 12
-                font.weight: menuRow.prominent ? Font.Medium : Font.Normal
-                color: menuRow.selected ? Theme.text1 : Theme.text2
+                font.weight: menuRow.prominent || menuRow.filled ? Font.Medium : Font.Normal
+                color: menuRow.selected || menuRow.filled ? Theme.text1 : Theme.text2
+                Tint on color {}
             }
 
             Row

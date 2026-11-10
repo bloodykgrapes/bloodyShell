@@ -123,6 +123,12 @@ def checks():
         result = subprocess.run(helper + ['capture', 'test', '800', '600'], env=env, capture_output=True, text=True, check=True)
         shot = json.loads(result.stdout)
         assert (shot['width'], shot['height']) == (800, 600)
+        with patch.dict(os.environ, env), patch('shutil.which', return_value=None), patch('subprocess.run') as command:
+            command.return_value.returncode = 0
+            command.return_value.stdout = str(base / 'pictures')
+            published = api['export'](shot['directory'], True, 0, 0, 800, 600)
+            assert Path(published['path']).read_bytes() == (base / 'fixture.png').read_bytes()
+            assert not any(call.args[0][0] == 'ffmpeg' for call in command.call_args_list), 'Full-screen export unnecessarily recoded the PNG'
         subprocess.run(helper + ['cleanup', shot['directory']], env=env, check=True)
         assert not Path(shot['directory']).exists()
         denied = subprocess.run(helper + ['cleanup', str(base / 'pictures')], env=env, capture_output=True)
@@ -201,6 +207,20 @@ ShellRoot
                         events.mouseMove(pointer, 340, 270, 0);
                         events.mouseRelease(pointer, 340, 270, Qt.LeftButton, Qt.NoModifier, 0);
                         tests.check(tests.shot().selectionItem.region.x === 120 && tests.shot().selectionItem.region.y === 130 && tests.shot().selectionItem.region.width === 220 && tests.shot().selectionItem.region.height === 140, "Area move or resize is incorrect");
+                        events.keyClick(Qt.Key_Right, Qt.ShiftModifier);
+                        events.keyClick(Qt.Key_Down, Qt.ControlModifier);
+                        tests.check(tests.shot().selectionItem.region.x === 130 && tests.shot().selectionItem.region.height === 141, "Keyboard move or resize failed after dragging");
+                        events.keyClick(Qt.Key_Left, Qt.ShiftModifier);
+                        events.keyClick(Qt.Key_Up, Qt.ControlModifier);
+                        modes.selected(Enums.ScreenshotScreen);
+                        modes.selected(Enums.ScreenshotArea);
+                        tests.check(tests.shot().selectionItem.region.x === 120 && tests.shot().selectionItem.region.width === 220 && tests.shot().selectionItem.region.height === 140, "Mode switch lost the selected area");
+                        const panel = tests.find(tests.shot(), "screenshotModePanel");
+                        events.mouseClick(panel, 2, 2, Qt.LeftButton, Qt.NoModifier, 0);
+                        tests.check(tests.shot().selectionItem.region.x === 120 && tests.shot().selectionItem.region.width === 220, "Toolbar padding changed selection");
+                        tests.shot().selectionItem.nudge(-1000, -1000, false);
+                        tests.check(tests.shot().selectionItem.region.x === 0 && tests.shot().selectionItem.region.y === 0, "Keyboard move escaped screen bounds");
+                        tests.shot().selectionItem.nudge(120, 130, false);
                         tests.shot().submit(); break;
                     case 3:
                         if (waitFor(ServiceScreenshot.phase === "idle")) return;

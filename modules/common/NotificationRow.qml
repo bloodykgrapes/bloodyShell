@@ -19,10 +19,29 @@ Item
 
     readonly property var  actions: n ? (n.actions || []).filter(a => a.identifier !== "default" && a.text !== "") : []
     readonly property bool critical: n ? n.urgency === NotificationUrgency.Critical : false
+    readonly property bool hovered: hover.hovered || activeFocus
     property bool leaving: false
 
     width: parent ? parent.width : 300
-    implicitHeight: content.implicitHeight + 20
+    implicitHeight: Math.max(56, content.implicitHeight + 24)
+    activeFocusOnTab: !leaving
+    enabled: !leaving
+    HoverHandler { id: hover }
+
+    function activate()
+    {
+        if (!n || leaving) return;
+        ServiceNotifications.activate(n);
+        activated();
+    }
+    Keys.onSpacePressed: event => { if (!event.isAutoRepeat) activate(); event.accepted = true }
+    Keys.onReturnPressed: event => { if (!event.isAutoRepeat) activate(); event.accepted = true }
+    Keys.onEnterPressed: event => { if (!event.isAutoRepeat) activate(); event.accepted = true }
+    Keys.onDeletePressed: dismiss(1)
+
+    Accessible.role: Accessible.Button
+    Accessible.name: n ? (n.summary || n.appName || "") : ""
+    Accessible.onPressAction: activate()
 
     property real collapse: 1
     height: implicitHeight * collapse
@@ -31,6 +50,7 @@ Item
     function dismiss(direction)
     {
         if (leaving) return;
+        entrance.stop();
         leaving = true;
         throwAway.to = (direction < 0 ? -1 : 1) * notificationRow.width;
         throwAway.restart();
@@ -93,7 +113,8 @@ Item
             if (Math.abs(card.x) > notificationRow.width * 0.3) notificationRow.dismiss(card.x);
             else card.x = 0;
         }
-        onClicked: if (!drag.active && Math.abs(card.x) < 2 && notificationRow.n) { ServiceNotifications.activate(notificationRow.n); notificationRow.activated() }
+        onCanceled: if (!notificationRow.leaving) card.x = 0
+        onClicked: if (!drag.active && Math.abs(card.x) < 2) notificationRow.activate()
     }
 
     Item
@@ -106,7 +127,7 @@ Item
         readonly property real fade: 1 - Math.min(1, Math.abs(x) / notificationRow.width) * 0.8
         transform: Translate { y: notificationRow.rise }
 
-        scale: area.drag.active ? 1 : area.pressed ? 0.98 : area.containsMouse ? 1.015 : 1
+        scale: area.drag.active ? 1 : area.pressed ? 0.98 : notificationRow.hovered && Config.animationsFluid ? 1.01 : 1
 
         Spring on x { enabled: Config.animationsEnabled && !area.drag.active && !notificationRow.leaving }
         Spring on scale {}
@@ -114,11 +135,21 @@ Item
         Rectangle
         {
             anchors.fill: parent
-            radius: Theme.radiusMedium
-            color: Theme.menuColorHover
-            opacity: (area.containsMouse || area.drag.active ? 1 : 0) * card.fade
+            radius: notificationRow.hovered && Config.animationsFluid ? 14 : 18
+            color: notificationRow.critical ? Qt.tint(Theme.colorField, Qt.rgba(Theme.colorCritical.r, Theme.colorCritical.g, Theme.colorCritical.b, 0.08)) : Theme.colorField
+            opacity: card.fade
+            Tint on color {}
+            Glide on radius { duration: Theme.animationDurationControl }
 
-            Smooth on opacity {}
+            Rectangle
+            {
+                anchors.fill: parent
+                radius: parent.radius
+                color: area.pressed ? Theme.colorPressed : Theme.colorHoverStrong
+                opacity: notificationRow.hovered || area.drag.active ? 1 : 0
+                Smooth on opacity {}
+                Tint on color {}
+            }
         }
 
         Rectangle
@@ -128,15 +159,16 @@ Item
             width: 3
             radius: 1.5
             color: Theme.colorCritical
+            opacity: card.fade
         }
 
         NotificationIcon
         {
             id: icon
             n: notificationRow.n
-            size: 34
+            size: 32
             opacity: card.fade
-            anchors { left: parent.left; leftMargin: 10; top: parent.top; topMargin: 10 }
+            anchors { left: parent.left; leftMargin: 12; top: parent.top; topMargin: 12 }
         }
 
         Column
@@ -146,8 +178,8 @@ Item
             anchors
             {
                 left: icon.right; leftMargin: 10
-                right: parent.right; rightMargin: 10
-                top: parent.top; topMargin: 10
+                right: parent.right; rightMargin: 12
+                top: parent.top; topMargin: 12
             }
             spacing: 2
             opacity: card.fade
@@ -155,14 +187,14 @@ Item
             Item
             {
                 width: parent.width
-                height: summary.implicitHeight
+                height: Math.max(24, summary.implicitHeight)
 
                 ShellText
                 {
                     id: summary
-                    anchors { left: parent.left; right: side.left; rightMargin: 8 }
+                    anchors { left: parent.left; right: side.left; rightMargin: 8; verticalCenter: parent.verticalCenter }
                     label: notificationRow.n ? (notificationRow.n.summary || notificationRow.n.appName || "") : ""
-                    size: 13
+                    size: 12
                     color: Theme.text1
                     font.weight: Font.Medium
                 }
@@ -171,8 +203,8 @@ Item
                 {
                     id: side
                     anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-                    width: Math.max(time.implicitWidth, 20)
-                    height: 20
+                    width: Math.max(time.implicitWidth, 24)
+                    height: 24
 
                     ShellText
                     {
@@ -181,33 +213,23 @@ Item
                         label: ServiceNotifications.age(notificationRow.n, notificationRow.now)
                         size: 10
                         color: Theme.text4
-                        opacity: area.containsMouse ? 0 : 1
+                        opacity: notificationRow.hovered || close.hovered ? 0 : 1
                         Smooth on opacity {}
                     }
 
-                    Rectangle
+                    ActionButton
                     {
+                        id: close
                         anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-                        width: 20
-                        height: 20
-                        radius: 10
-                        scale: closeArea.pressed ? 0.9 : closeArea.containsMouse ? 1.1 : 1
-                        Spring on scale {}
-                        color: closeArea.pressed ? Theme.colorPressed : closeArea.containsMouse ? Theme.colorHoverStrong : "transparent"
-                        opacity: area.containsMouse || closeArea.containsMouse ? 1 : 0
+                        width: 24
+                        height: 24
+                        text: Tr.tr("common.close")
+                        icon: Icon.close
+                        iconSize: 10
+                        iconOnly: true
+                        opacity: notificationRow.hovered || hovered ? 1 : 0
                         Smooth on opacity {}
-                        Tint on color {}
-
-                        ShellIcon { anchors.centerIn: parent; icon: Icon.close; size: 10 }
-
-                        MouseArea
-                        {
-                            id: closeArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: notificationRow.dismiss(1)
-                        }
+                        onClicked: notificationRow.dismiss(1)
                     }
                 }
             }
@@ -217,13 +239,14 @@ Item
                 width: parent.width
                 label: notificationRow.n ? (notificationRow.n.body || "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim() : ""
                 size: 11
-                color: Theme.text3
+                color: Theme.text2
                 wrapMode: Text.Wrap
-                maximumLineCount: 2
+                maximumLineCount: 3
             }
 
             Flow
             {
+                id: buttons
                 visible: notificationRow.actions.length > 0
                 width: parent.width
                 topPadding: 4
@@ -233,29 +256,14 @@ Item
                 {
                     model: notificationRow.actions
 
-                    Rectangle
+                    ActionButton
                     {
-                        id: chip
                         required property var modelData
-
-                        width: label.implicitWidth + 20
-                        height: 24
+                        maximumWidth: buttons.width
+                        text: modelData.text
+                        height: 28
                         radius: 12
-                        scale: chipArea.pressed ? 0.95 : chipArea.containsMouse ? 1.04 : 1
-                        Spring on scale {}
-                        color: chipArea.pressed ? Theme.colorPressed : chipArea.containsMouse ? Theme.colorHoverStrong : Theme.colorField
-                        Tint on color {}
-
-                        ShellText { id: label; anchors.centerIn: parent; label: chip.modelData.text; size: 11; color: Theme.text1 }
-
-                        MouseArea
-                        {
-                            id: chipArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: chip.modelData.invoke()
-                        }
+                        onClicked: modelData.invoke()
                     }
                 }
             }

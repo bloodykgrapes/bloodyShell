@@ -33,18 +33,24 @@ Singleton
     function remember()
     {
         const live = ServiceCompositor.windowList;
-        let next = history.filter(id => live.some(w => w.id === id));
-        if (pendingFocus !== null && !live.some(window => window.id === pendingFocus)) pendingFocus = null;
+        const byId = new Map(live.map(window => [window.id, window]));
+        let next = history.filter(id => byId.has(id));
+        if (pendingFocus !== null && !byId.has(pendingFocus)) pendingFocus = null;
         const focused = pendingFocus !== null ? pendingFocus : ServiceCompositor.focusedWindowId;
-        if (focused !== null) next = [focused].concat(next.filter(id => id !== focused));
-        if (!active) history = next;
-        if (!active) return;
+        if (byId.has(focused) && next[0] !== focused) next = [focused].concat(next.filter(id => id !== focused));
+        if (!active)
+        {
+            if (next.length !== history.length || next.some((id, index) => id !== history[index])) history = next;
+            return byId;
+        }
         const id = windows[selected]?.id;
-        windows = windows.map(w => live.find(item => item.id === w.id)).filter(w => w);
-        if (!windows.length) { cancel(); return; }
+        const updated = windows.map(w => byId.get(w.id)).filter(w => w);
+        if (updated.length !== windows.length || updated.some((window, index) => window !== windows[index])) windows = updated;
+        if (!windows.length) { cancel(); return byId; }
         const index = windows.findIndex(w => w.id === id);
         selected = index >= 0 ? index : Math.min(selected, windows.length - 1);
         focusSelection();
+        return byId;
     }
 
     function select(index)
@@ -60,10 +66,11 @@ Singleton
         if (ServiceLock.locked || OverlayState.inhibited || !Config.initialized) return;
         if (!active)
         {
-            remember();
+            const byId = remember();
             const live = ServiceCompositor.windowList;
-            windows = history.map(id => live.find(w => w.id === id)).filter(w => w)
-                .concat(live.filter(w => !history.includes(w.id)));
+            const known = new Set(history);
+            windows = history.map(id => byId.get(id)).filter(w => w)
+                .concat(live.filter(w => !known.has(w.id)));
             if (windows.length < 2) return;
             output = ServiceCompositor.focusedOutput;
             selected = step < 0 ? windows.length - 1 : Math.min(1, windows.length - 1);
@@ -119,6 +126,7 @@ Singleton
     {
         target: OverlayState
         function onCurrentChanged() { if (OverlayState.active) serviceAltTab.cancel() }
+        function onInhibitedChanged() { if (OverlayState.inhibited) serviceAltTab.cancel() }
     }
 
     Timer

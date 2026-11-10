@@ -12,6 +12,7 @@ Text
     color: Theme.text2
 
     text: label
+    textFormat: Text.PlainText
 
     font.pixelSize: Math.round(size * Config.themeScale)
     font.family: Theme.fontText

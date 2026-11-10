@@ -10,6 +10,7 @@ Item
 
     property string text: ""
     property bool   hint: false
+    property bool   heading: false
     property string actionText: ""
     property string actionIcon: ""
     property bool actionEnabled: true
@@ -17,7 +18,7 @@ Item
     signal actionTriggered()
 
     width: parent ? parent.width : 200
-    height: hint || actionText !== "" ? 36 : 24
+    height: hint || actionText !== "" ? 36 : heading ? 32 : 24
 
     ShellText
     {
@@ -33,10 +34,11 @@ Item
 
         width: Math.max(0, menuLabel.width - 20 - (action.active ? action.width + 8 : 0))
         horizontalAlignment: menuLabel.hint ? Text.AlignHCenter : Text.AlignLeft
-        label: menuLabel.hint ? menuLabel.text : menuLabel.text.toUpperCase()
-        size: menuLabel.hint ? 12 : 10
-        color: Theme.text3
-        font.letterSpacing: menuLabel.hint ? 0 : 0.8
+        label: menuLabel.hint || menuLabel.heading ? menuLabel.text : menuLabel.text.toUpperCase()
+        size: menuLabel.hint || menuLabel.heading ? 12 : 10
+        color: menuLabel.heading ? Theme.text2 : Theme.text3
+        font.weight: menuLabel.heading ? Font.Medium : Font.Normal
+        font.letterSpacing: menuLabel.hint || menuLabel.heading ? 0 : 0.8
     }
 
     Loader

@@ -1,19 +1,34 @@
 import QtQuick
-import Quickshell.Widgets
 
+import "../../../animations"
 import "../../../common"
 import "../../../core"
 import "../../../services"
 
-ClippingRectangle
+Rectangle
 {
     id: card
 
     required property var windowData
+    property bool selected: false
+    property bool hovered: false
+    property bool pressed: false
     radius: Math.max(0, Theme.radiusLarge - 3)
-    color: Theme.colorRaised
+    color: selected ? Theme.colorRaised : Theme.colorSolid
     border.width: 1
-    border.color: Theme.colorHairline
+    border.color: selected ? Theme.colorAccent : Theme.colorHairline
+    Tint on color {}
+    Tint on border.color {}
+
+    Rectangle
+    {
+        anchors { fill: parent; margins: 1 }
+        radius: Math.max(0, card.radius - 1)
+        color: card.pressed ? Theme.colorPressed : Theme.colorHoverStrong
+        opacity: card.pressed || card.hovered ? 1 : 0
+        Smooth on opacity {}
+        Tint on color {}
+    }
 
     ShellIcon
     {

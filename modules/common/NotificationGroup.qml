@@ -31,13 +31,17 @@ Item
 
     width: parent ? parent.width : 300
     property real collapse: 1
+    property bool settled: false
     implicitHeight: column.implicitHeight
     height: implicitHeight * collapse
-    clip: collapse < 1
+    clip: collapse < 1 || height + 0.5 < implicitHeight
+    enabled: !leaving.running
+    Glide on height { enabled: Config.animationsEnabled && notificationGroup.settled && !leaving.running; duration: Theme.animationDurationControl }
 
     function dismissAll(close)
     {
         if (leaving.running || !model) return;
+        entrance.stop();
         leaving.close = close !== false;
         leaving.restart();
     }
@@ -54,15 +58,19 @@ Item
     }
 
     property real rise: 0
-    Component.onCompleted: if (entering) entrance.start()
+    Component.onCompleted:
+    {
+        if (entering && Config.animationsEnabled) entrance.start();
+        Qt.callLater(() => settled = true);
+    }
 
     SequentialAnimation
     {
         id: entrance
 
         PropertyAction { target: column; property: "opacity"; value: 0 }
-        PropertyAction { target: notificationGroup; property: "rise"; value: 18 }
-        PauseAnimation { duration: 60 + Math.min(6, notificationGroup.order) * 45 }
+        PropertyAction { target: notificationGroup; property: "rise"; value: Config.animationsFluid ? 18 : 6 }
+        PauseAnimation { duration: (Config.animationsFluid ? 35 : 0) + Math.max(0, Math.min(6, notificationGroup.order)) * (Config.animationsFluid ? 30 : 12) }
         ParallelAnimation
         {
             NumberAnimation { target: column; property: "opacity"; to: 1; duration: 300; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized }
@@ -75,34 +83,33 @@ Item
         id: column
 
         width: parent.width
-        spacing: 2
+        spacing: 4
         transform: Translate { y: notificationGroup.rise }
 
         Item
         {
             width: parent.width
-            height: 24
-
-            HoverHandler { id: headerHover }
+            height: 32
 
             ShellText
             {
                 id: name
                 anchors { left: parent.left; leftMargin: 10; verticalCenter: parent.verticalCenter }
-                width: Math.min(implicitWidth, parent.width - 120)
+                width: Math.max(0, Math.min(implicitWidth, parent.width - controls.width - (notificationGroup.total > 1 ? counter.width + 6 : 0) - 28))
                 label: notificationGroup.model ? notificationGroup.model.name : ""
-                size: 11
-                color: Theme.text3
-                font.weight: Font.DemiBold
+                size: 12
+                color: Theme.text2
+                font.weight: Font.Medium
             }
 
             Rectangle
             {
+                id: counter
                 visible: notificationGroup.total > 1
                 anchors { left: name.right; leftMargin: 6; verticalCenter: parent.verticalCenter }
                 width: Math.max(18, countText.implicitWidth + 10)
-                height: 16
-                radius: 8
+                height: 18
+                radius: 9
                 color: Theme.colorField
 
                 Glide on width {}
@@ -112,20 +119,25 @@ Item
 
             Row
             {
+                id: controls
                 anchors { right: parent.right; rightMargin: 6; verticalCenter: parent.verticalCenter }
-                spacing: 2
+                spacing: 4
 
-                HeaderButton
+                ActionButton
                 {
                     visible: notificationGroup.total > 1
+                    text: Tr.tr(notificationGroup.expanded ? "notifications.collapse" : "notifications.expand")
                     icon: Icon.chevronDown
-                    iconRotation: notificationGroup.expanded ? 180 : 0
+                    iconOnly: true
+                    rotation: notificationGroup.expanded ? 180 : 0
+                    Ease on rotation { duration: Theme.animationDurationControl }
                     onClicked: notificationGroup.requestToggle()
                 }
-                HeaderButton
+                ActionButton
                 {
+                    text: Tr.tr("notifications.clearGroup").arg(notificationGroup.model ? notificationGroup.model.name : "")
                     icon: Icon.close
-                    shown: headerHover.hovered
+                    iconOnly: true
                     onClicked: notificationGroup.dismissAll()
                 }
             }
@@ -148,65 +160,14 @@ Item
             }
         }
 
-        Item
+        ActionButton
         {
             visible: !notificationGroup.expanded && notificationGroup.total > 1
             width: parent.width
-            height: 22
-
-            ShellText
-            {
-                anchors { left: parent.left; leftMargin: 54; verticalCenter: parent.verticalCenter }
-                label: Tr.tr("notifications.more").arg(notificationGroup.total - 1)
-                size: 11
-                color: moreArea.containsMouse ? Theme.text1 : Theme.text4
-                Tint on color {}
-            }
-            MouseArea
-            {
-                id: moreArea
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: notificationGroup.requestToggle()
-            }
-        }
-    }
-
-    component HeaderButton: Rectangle
-    {
-        id: button
-        property string icon: ""
-        property real   iconRotation: 0
-        property bool   shown: true
-        signal clicked()
-
-        width: 20
-        height: 20
-        radius: 10
-        color: buttonArea.pressed ? Theme.colorPressed : buttonArea.containsMouse ? Theme.colorHoverStrong : "transparent"
-        opacity: shown || buttonArea.containsMouse ? 1 : 0
-        scale: buttonArea.pressed ? 0.9 : buttonArea.containsMouse ? 1.1 : 1
-        Smooth on opacity {}
-        Spring on scale {}
-        Tint on color {}
-
-        ShellIcon
-        {
-            anchors.centerIn: parent
-            icon: button.icon
-            size: 10
-            rotation: button.iconRotation
-            Ease on rotation { duration: Theme.animationDurationControl }
-        }
-
-        MouseArea
-        {
-            id: buttonArea
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: button.clicked()
+            height: 28
+            text: Tr.tr("notifications.more").arg(notificationGroup.total - 1)
+            icon: Icon.chevronDown
+            onClicked: notificationGroup.requestToggle()
         }
     }
 }

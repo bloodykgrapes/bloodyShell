@@ -16,8 +16,9 @@ Rectangle
     property real hoverScale: iconOnly ? 1.08 : 1.03
     property real pressScale: iconOnly ? 0.92 : 0.96
     property real disabledOpacity: 0.4
+    property real maximumWidth: 0
     property bool repeated: false
-    readonly property bool hovered: enabled && area.containsMouse
+    readonly property bool hovered: enabled && (area.containsMouse || activeFocus)
     readonly property bool pressed: enabled && area.pressed
     signal clicked()
 
@@ -28,7 +29,7 @@ Rectangle
     radius: Theme.radiusMedium
     border.width: 0
     opacity: enabled ? 1 : disabledOpacity
-    activeFocusOnTab: true
+    activeFocusOnTab: enabled
     color: danger ? Qt.rgba(Theme.colorCritical.r, Theme.colorCritical.g, Theme.colorCritical.b, 0.12) : Theme.colorField
     Tint on color {}
 
@@ -66,6 +67,7 @@ Rectangle
 
         ShellIcon
         {
+            id: glyph
             anchors.verticalCenter: parent.verticalCenter
             icon: button.icon
             size: button.iconSize
@@ -74,6 +76,7 @@ Rectangle
         ShellText
         {
             anchors.verticalCenter: parent.verticalCenter
+            width: button.maximumWidth > 0 ? Math.min(implicitWidth, Math.max(0, button.maximumWidth - 30 - (glyph.visible ? glyph.width + content.spacing : 0))) : implicitWidth
             label: button.iconOnly ? "" : button.text
             color: button.danger ? Theme.colorCritical : Theme.text1
             Tint on color {}

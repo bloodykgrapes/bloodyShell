@@ -17,12 +17,26 @@ FocusScope
     readonly property bool ready: background.status === Image.Ready
     readonly property rect pixels: ServiceScreenshot.pixels(selection.region, width, height)
     property real progress: 0
+    readonly property real margin: Math.max(8, Math.min(24, height * 0.04))
 
     Glide on progress { duration: Theme.animationDurationOpen }
     Component.onCompleted: Qt.callLater(() => { progress = 1; forceActiveFocus(); })
     Keys.onEscapePressed: ServiceScreenshot.cancel()
     Keys.onReturnPressed: submit()
     Keys.onEnterPressed: submit()
+    Keys.onPressed: event =>
+    {
+        if (ServiceScreenshot.working || !ready) return;
+        const step = event.modifiers & Qt.ShiftModifier ? 10 : 1;
+        let dx = 0, dy = 0;
+        if (event.key === Qt.Key_Left) dx = -step;
+        else if (event.key === Qt.Key_Right) dx = step;
+        else if (event.key === Qt.Key_Up) dy = -step;
+        else if (event.key === Qt.Key_Down) dy = step;
+        else return;
+        selection.nudge(dx, dy, !!(event.modifiers & Qt.ControlModifier));
+        event.accepted = true;
+    }
 
     function submit()
     {
@@ -50,14 +64,19 @@ FocusScope
 
     Rectangle
     {
+        id: modePanel
+        objectName: "screenshotModePanel"
         anchors.horizontalCenter: parent.horizontalCenter
-        y: 24 - 12 * (1 - screenshot.progress)
+        y: screenshot.margin - 12 * (1 - screenshot.progress)
         width: modes.implicitWidth + 16
         height: modes.height + 12
         radius: 18
         color: Theme.colorSolid
+        border.width: 1
+        border.color: Theme.colorHairline
         opacity: screenshot.progress
 
+        MouseArea { anchors.fill: parent }
         SettingsChoices
         {
             id: modes
@@ -72,13 +91,16 @@ FocusScope
 
     Rectangle
     {
-        visible: selection.valid
+        objectName: "screenshotDimensions"
+        visible: selection.valid && selection.mode === Enums.ScreenshotArea
         x: Math.max(12, Math.min(screenshot.width - width - 12, selection.region.x))
-        y: Math.max(84, Math.min(screenshot.height - 140, selection.region.y - 32))
+        y: Math.max(modePanel.y + modePanel.height + 8, Math.min(controls.y - height - 8, selection.region.y - height - 8))
         width: Math.min(information.implicitWidth + 20, screenshot.width - 24)
         height: 26
         radius: 8
         color: Theme.colorSolid
+        border.width: 1
+        border.color: Theme.colorHairline
         ShellText
         {
             id: information
@@ -94,8 +116,9 @@ FocusScope
 
     Column
     {
+        id: controls
         anchors.horizontalCenter: parent.horizontalCenter
-        y: parent.height - height - 24 + 12 * (1 - screenshot.progress)
+        y: parent.height - height - screenshot.margin + 12 * (1 - screenshot.progress)
         spacing: 10
         opacity: screenshot.progress
 
@@ -106,6 +129,9 @@ FocusScope
             height: hint.implicitHeight + 14
             radius: 10
             color: Theme.colorSolid
+            border.width: 1
+            border.color: Theme.colorHairline
+            MouseArea { anchors.fill: parent }
             ShellText
             {
                 id: hint
@@ -125,6 +151,9 @@ FocusScope
             height: actions.height + 16
             radius: 18
             color: Theme.colorSolid
+            border.width: 1
+            border.color: Theme.colorHairline
+            MouseArea { anchors.fill: parent }
 
             Row
             {
@@ -146,6 +175,7 @@ FocusScope
                     objectName: "screenshotConfirm"
                     anchors.verticalCenter: parent.verticalCenter
                     text: Tr.tr("screenshot.capture")
+                    icon: Icon.check
                     enabled: screenshot.ready && selection.valid && !ServiceScreenshot.working
                     onClicked: screenshot.submit()
                 }

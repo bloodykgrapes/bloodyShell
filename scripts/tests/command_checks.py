@@ -6,7 +6,9 @@ from pathlib import Path
 import runpy
 import shutil
 import subprocess
+import sys
 import tempfile
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -41,7 +43,9 @@ def run_checks():
         assert (base / "backup/bashrc").read_text() == "export KEEP_ME=yes\n"
         repeated = installer(ROOT / "scripts/bloodyShell", binary, config, home, base / "backup", "/bin/bash", "/usr/bin:/bin")
         assert not repeated["changed"] and not repeated["backups"]
-        env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(config), PATH="/usr/bin:/bin")
+        runtime = base / "runtime"
+        runtime.mkdir(mode=0o700)
+        env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(config), XDG_RUNTIME_DIR=str(runtime), PATH="/usr/bin:/bin")
         checked = subprocess.run(["bash", "--noprofile", "--norc", "-c", '. "$HOME/.bashrc"; . "$HOME/.bashrc"; printf "%s" "$PATH"'], env=env, capture_output=True, text=True, timeout=5)
         assert checked.returncode == 0, checked.stderr
         assert checked.stdout == str(binary) + ":/usr/bin:/bin", checked.stdout
@@ -172,9 +176,62 @@ else:
         assert len(calls()) == before, "Reject invalid commands and unavailable sessions before touching running shells"
         assert invoke("start", overrides=dict(TEST_FAIL="7")).returncode == 7
         assert invoke("status", overrides=dict(TEST_INVALID="1")).returncode != 0
+        api = runpy.run_path(str(ROOT / "scripts/bloodyShell"))
+        native = runtime / "quickshell/by-id"
+        native.mkdir(parents=True)
+        (native / "cached-shell").mkdir()
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], env=env)
+        try:
+            entry = dict(id="cached-shell", shell_id="bloodyShell", pid=process.pid, launch_time="2026-11-09T10:00:00")
+            discovered.write_text(json.dumps([entry]))
+            with patch.dict(os.environ, env), patch("pathlib.Path.is_socket", return_value=True):
+                before = len(calls())
+                assert api["active_instance"](str(qs))["id"] == "cached-shell"
+                assert len(calls()) == before + 1, "Cold discovery queries Quickshell"
+                assert api["active_instance"](str(qs))["id"] == "cached-shell"
+                assert len(calls()) == before + 1, "Repeated actions must skip the discovery process"
+                cache = api["discovery_cache"](api["display"](os.environ))[0]
+                assert cache.stat().st_mode & 0o077 == 0, "Instance cache must be private"
+                (native / "newer-shell").mkdir()
+                newer = dict(entry, id="newer-shell", launch_time="2026-11-09T11:00:00")
+                discovered.write_text(json.dumps([entry, newer]))
+                assert api["active_instance"](str(qs))["id"] == "newer-shell"
+                assert len(calls()) == before + 2, "A new instance must invalidate cached routing"
+                stored = json.loads(cache.read_text())
+                stored["birth"] = "reused-pid"
+                cache.write_text(json.dumps(stored))
+                assert api["active_instance"](str(qs))["id"] == "newer-shell" and len(calls()) == before + 3
+                cache.write_text("broken json")
+                assert api["active_instance"](str(qs))["id"] == "newer-shell" and len(calls()) == before + 4
+                with patch("pathlib.Path.is_socket", return_value=False):
+                    assert api["active_instance"](str(qs))["id"] == "newer-shell" and len(calls()) == before + 5
+                cache.unlink()
+                with patch("os.replace", side_effect=OSError("Cache is unavailable")):
+                    assert api["active_instance"](str(qs))["id"] == "newer-shell"
+                assert not list(cache.parent.iterdir()), "Failed cache writes must remove temporary files"
+                with patch.dict(os.environ, WAYLAND_DISPLAY="another-session"):
+                    try:
+                        api["active_instance"](str(qs))
+                    except RuntimeError as error:
+                        assert "No running bloodyShell instance" in str(error)
+                    else:
+                        raise AssertionError("Cached routing crossed desktop sessions")
+                api["active_instance"](str(qs))
+                process.terminate()
+                process.wait(timeout=5)
+                try:
+                    api["active_instance"](str(qs))
+                except RuntimeError:
+                    pass
+                else:
+                    raise AssertionError("Cached routing accepted a dead process")
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                process.wait(timeout=5)
         source = subprocess.run([str(ROOT / "scripts/bloodyShell"), "path"], env=env, capture_output=True, text=True, timeout=5)
         assert source.stdout.strip() == str(ROOT), "Source checkout commands control the source checkout"
-    print("Active-instance discovery, session filtering, directory moves, command routing, scoped lifecycle, errors and command installation passed in isolation.")
+    print("Active-instance discovery/cache, session filtering, newer instances, PID reuse, directory moves, command routing, scoped lifecycle, errors and command installation passed in isolation.")
 
 
 if __name__ == "__main__":
