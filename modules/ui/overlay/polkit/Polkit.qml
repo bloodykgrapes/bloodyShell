@@ -42,8 +42,6 @@ OverlayView
         height: column.implicitHeight + 48
         radius: Theme.settingsRadius
         color: Theme.settingsColorBackground
-        border.color: Theme.colorLine
-        border.width: Theme.borderWidth
 
         opacity: polkit.reveal
         scale: 1 - 0.05 * polkit.settle

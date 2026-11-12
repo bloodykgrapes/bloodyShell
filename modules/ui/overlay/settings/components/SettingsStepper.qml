@@ -35,8 +35,8 @@ Row
 
     Rectangle
     {
-        width: Math.max(64, valueText.implicitWidth + 16)
-        height: 28
+        width: Math.max(72, valueText.implicitWidth + 20)
+        height: Theme.settingsControlHeight
         radius: Theme.radiusMedium
         color: Theme.colorField
 

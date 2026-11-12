@@ -49,7 +49,7 @@ Item
         widgets: ["island"]
         docked: false
         adaptive: true
-        thickness: contentThickness > 0 ? Math.max(Theme.barThickness, contentThickness + (isHorizontal ? 12 : 6)) : 0
+        thickness: visibleMenu ? 0 : contentThickness > 0 ? Math.max(Theme.barThickness, contentThickness + (isHorizontal ? 12 : 6)) : 0
         Glide on thickness { enabled: zone.animated }
         islandDepth: Theme.frameThickness
         cornerInset: Theme.frameThickness

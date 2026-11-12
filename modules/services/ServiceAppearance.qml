@@ -11,29 +11,20 @@ Singleton
 {
     id: serviceAppearance
 
-    readonly property string script: Paths.runtimeScriptsDir + "/appearance"
+    readonly property var script: Paths.commandFor("appearance")
 
     property string colorScheme: "default"
-    property string gtkTheme: ""
-    property string qtTheme: "Fusion"
     property string iconTheme: ""
     property string cursorTheme: ""
     property int    cursorSize: 24
     property string fontFamily: ""
     property real   fontSize: 10
-    property bool   qt6ct: false
-    property bool   qtActive: false
-    property bool   qtConfigured: false
-
-    property var gtkThemes: []
-    property var qtThemes: []
-    property var portalBackends: []
-    property var portalPreferences: ({})
     property var iconThemes: []
     property var cursorThemes: []
     property var fonts: []
 
     property bool   loaded: false
+    property bool   schemeSyncFailed: false
     property string error: ""
 
     property var pending: ({})
@@ -41,6 +32,7 @@ Singleton
 
     function refresh(includeLists = true)
     {
+        if (includeLists) schemeSyncFailed = false;
         if (reader.running) reader.refreshPending = true;
         else reader.running = true;
         if (includeLists) lister.running = true;
@@ -56,31 +48,10 @@ Singleton
     }
 
     readonly property string colorSchemeWanted: Config.themeStyle === Enums.ThemeLight ? "prefer-light" : "prefer-dark"
-    function syncColorScheme() { if (Config.initialized && loaded && colorScheme !== colorSchemeWanted) setColorScheme(colorSchemeWanted) }
-    onColorSchemeWantedChanged: syncColorScheme()
+    function syncColorScheme() { if (!schemeSyncFailed && Config.initialized && loaded && colorScheme !== colorSchemeWanted) setColorScheme(colorSchemeWanted) }
+    onColorSchemeWantedChanged: { schemeSyncFailed = false; syncColorScheme(); }
 
     function setColorScheme(v) { colorScheme = v; change("color-scheme", v)            }
-    function setGtkTheme(v)    { gtkTheme = v;    change("gtk-theme", v)               }
-    function setQtTheme(v)
-    {
-        if (!qt6ct) return;
-        qtTheme = v;
-        qtConfigured = true;
-        change("qt-theme", v);
-    }
-    function portalValue(name)
-    {
-        const value = portalPreferences[name];
-        return typeof value === "string" ? value : "";
-    }
-
-    function setPortal(name, value)
-    {
-        const next = Object.assign(Object.create(null), portalPreferences);
-        next[name] = value;
-        portalPreferences = next;
-        change("portal:" + name, value);
-    }
     function setIconTheme(v)   { iconTheme = v;   change("icon-theme", v)              }
     function setCursorTheme(v) { cursorTheme = v; change("cursor-theme", v)            }
     function setCursorSize(v)  { cursorSize = v;  change("cursor-size", String(v))     }
@@ -91,7 +62,7 @@ Singleton
     {
         if (busy) return;
         error = "";
-        writer.run([script, "apply"]);
+        writer.run(script.concat(["apply"]));
     }
 
     Timer
@@ -104,9 +75,9 @@ Singleton
             const keys = Object.keys(serviceAppearance.pending);
             if (keys.length === 0) return;
 
-            const command = [serviceAppearance.script, "set"].concat(keys.map(k => k + "=" + serviceAppearance.pending[k]));
+            const command = serviceAppearance.script.concat(["set"]).concat(keys.map(k => k + "=" + serviceAppearance.pending[k]));
+            writer.schemeChange = keys.includes("color-scheme");
             serviceAppearance.pending = {};
-            writer.refreshPortals = keys.some(key => key.startsWith("portal:"));
             writer.run(command);
         }
     }
@@ -114,17 +85,13 @@ Singleton
     CommandProcess
     {
         id: writer
-        property bool refreshPortals: false
+        property bool schemeChange: false
 
         onCompleted: code =>
         {
-            const refresh = refreshPortals;
-            refreshPortals = false;
-            if (code === 0)
-            {
-                if (refresh) serviceAppearance.refresh(false);
-                return;
-            }
+            if (code === 0) { schemeChange = false; return; }
+            if (schemeChange) serviceAppearance.schemeSyncFailed = true;
+            schemeChange = false;
             serviceAppearance.error = writer.errorMessage(Tr.tr("service.appearance.applyFailed"));
             serviceAppearance.refresh(false);
         }
@@ -135,7 +102,7 @@ Singleton
         id: reader
         property bool refreshPending: false
 
-        command: [serviceAppearance.script, "read"]
+        command: serviceAppearance.script.concat(["read"])
         stdout: StdioCollector
         {
             onStreamFinished:
@@ -147,30 +114,9 @@ Singleton
                     if (eq > 0) values[line.substring(0, eq)] = line.substring(eq + 1);
                 }
                 serviceAppearance.colorScheme = values["color-scheme"] || "default";
-                serviceAppearance.gtkTheme = values["gtk-theme"] || "";
-                serviceAppearance.qtTheme = values["qt-theme"] || "Fusion";
-                if (values["portal-data"])
-                {
-                    try
-                    {
-                        const portals = JSON.parse(values["portal-data"]);
-                        const sameList = (a, b) => a.length === b.length && a.every((value, index) => value === b[index]);
-                        const previous = serviceAppearance.portalBackends;
-                        if (previous.length !== portals.backends.length || portals.backends.some((backend, index) => backend.id !== previous[index].id
-                            || !sameList(backend.interfaces, previous[index].interfaces))) serviceAppearance.portalBackends = portals.backends;
-                        const keys = Object.keys(portals.preferences);
-                        if (keys.length !== Object.keys(serviceAppearance.portalPreferences).length
-                            || keys.some(key => !Object.prototype.hasOwnProperty.call(serviceAppearance.portalPreferences, key)
-                                || portals.preferences[key] !== serviceAppearance.portalValue(key))) serviceAppearance.portalPreferences = portals.preferences;
-                    }
-                    catch (error) { serviceAppearance.error = String(error) }
-                }
                 serviceAppearance.iconTheme = values["icon-theme"] || "";
                 serviceAppearance.cursorTheme = values["cursor-theme"] || "";
                 serviceAppearance.cursorSize = parseInt(values["cursor-size"], 10) || 24;
-                serviceAppearance.qt6ct = values["qt6ct"] === "yes";
-                serviceAppearance.qtActive = values["qt-active"] === "yes";
-                serviceAppearance.qtConfigured = values["qt-configured"] === "yes";
 
                 const font = String(values["font"] || "").trim();
                 const match = /^(.*\S)\s+(\d+(?:\.\d+)?)$/.exec(font);
@@ -194,20 +140,18 @@ Singleton
     {
         id: lister
 
-        command: [serviceAppearance.script, "list"]
+        command: serviceAppearance.script.concat(["list"])
         stdout: StdioCollector
         {
             onStreamFinished:
             {
-                const lists = { gtk: [], qt: [], icon: [], cursor: [], font: [] };
+                const lists = { icon: [], cursor: [], font: [] };
                 for (const line of text.split("\n"))
                 {
                     const tab = line.indexOf("\t");
                     if (tab > 0 && lists[line.substring(0, tab)]) lists[line.substring(0, tab)].push(line.substring(tab + 1));
                 }
                 const byName = (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" });
-                serviceAppearance.gtkThemes = Array.from(new Set(lists.gtk)).sort(byName);
-                serviceAppearance.qtThemes = Array.from(new Set(lists.qt)).sort(byName);
                 serviceAppearance.iconThemes = Array.from(new Set(lists.icon)).sort(byName);
                 serviceAppearance.cursorThemes = Array.from(new Set(lists.cursor)).sort(byName);
                 serviceAppearance.fonts = Array.from(new Set(lists.font)).sort(byName);
@@ -227,7 +171,7 @@ Singleton
     {
         if (iconTheme === "") return;
         iconsReader.running = false;
-        iconsReader.command = [script, "icons", iconTheme];
+        iconsReader.command = script.concat(["icons", iconTheme]);
         iconsReader.running = true;
     }
 
@@ -250,37 +194,134 @@ Singleton
         }
     }
 
-    readonly property string wallpaperCheckScript:
-        "[ -n \"$1\" ] && [ -f \"$1\" ] && { echo keep; exit; }; "
-        + "q=$(awww query 2>/dev/null | sed -n 's/.*image: //p' | head -n1); [ -n \"$q\" ] && [ -f \"$q\" ] && { echo \"set $q\"; exit; }; "
-        + "f=$(find \"$2\" -maxdepth 1 -type f \\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \\) 2>/dev/null | sort | head -n1); "
-        + "[ -n \"$f\" ] && echo \"apply $f\""
+    property string wallpaperError: ""
+    property string pendingWallpaper: ""
+    property string videoPath: ""
+    property string readyVideoPath: ""
+    onVideoPathChanged: readyVideoPath = ""
+    property string previousWallpaper: ""
+    property bool restoringWallpaper: false
+    property var videoComponent: null
+    readonly property bool wallpaperBusy: wallpaperWriter.busy || pendingWallpaper !== "" || restoringWallpaper
+    signal wallpaperApplied()
 
-    Process
+    function isVideo(path) { return /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(path); }
+    function fileUrl(path) { return path ? "file://" + String(path).replace(/^file:\/\//, "").split("/").map(encodeURIComponent).join("/") : ""; }
+    function prepareVideo()
     {
-        id: wallpaperCheck
-        stdout: StdioCollector
-        {
-            onStreamFinished:
-            {
-                const line = text.trim(), space = line.indexOf(" ");
-                const action = space > 0 ? line.substring(0, space) : line, path = line.substring(space + 1);
-                if (action === "keep") serviceAppearance.analyzeWallpaper(Config.wallpaperCurrent);
-                else if (action === "set") { Config.set("wallpaperCurrent", path); serviceAppearance.analyzeWallpaper(path); }
-                else if (action === "apply") serviceAppearance.applyWallpaper(path);
-            }
-        }
+        if (videoComponent && videoComponent.status === Component.Error) { videoComponent.destroy(); videoComponent = null; }
+        if (!videoComponent) videoComponent = Qt.createComponent(Qt.resolvedUrl("../ui/desktop/VideoWallpaper.qml"));
+        return videoComponent.status === Component.Ready;
     }
-
     function applyWallpaper(path)
     {
-        if (!path) return;
+        if (!path || wallpaperBusy) return false;
+        wallpaperError = "";
+        if (isVideo(path) && !prepareVideo())
+        {
+            wallpaperError = Tr.tr("wallpapers.videoDependency");
+            return false;
+        }
+        previousWallpaper = Config.wallpaperCurrent;
+        return wallpaperWriter.run(Paths.commandFor("wallpaper", ["apply", path, "--transition", Config.animationsEnabled ? Config.wallpaperTransition : "none"]));
+    }
+    function videoReady(path)
+    {
+        readyVideoPath = path;
+        if (pendingWallpaper !== path) return;
         Config.set("wallpaperCurrent", path);
-        Quickshell.execDetached(["awww", "img", path,
-            "--transition-type", "grow", "--transition-pos", "center",
-            "--transition-duration", "1.2", "--transition-fps", "120",
-            "--transition-bezier", Theme.easingEmphasized.slice(0, 4).join(",")]);
-        analyzeWallpaper(path);
+        pendingWallpaper = "";
+        videoTimeout.stop();
+        wallpaperApplied();
+    }
+    function videoFailed(path, message)
+    {
+        wallpaperError = message || Tr.tr("wallpapers.videoFailed");
+        if (pendingWallpaper !== path) return;
+        pendingWallpaper = "";
+        videoTimeout.stop();
+        videoPath = isVideo(previousWallpaper) ? previousWallpaper : "";
+        if (previousWallpaper)
+        {
+            restoringWallpaper = true;
+            wallpaperWriter.run(Paths.commandFor("wallpaper", ["apply", previousWallpaper, "--transition", "none"]));
+        }
+    }
+    Timer
+    {
+        id: videoTimeout
+        interval: 15000
+        onTriggered: if (serviceAppearance.pendingWallpaper) serviceAppearance.videoFailed(serviceAppearance.pendingWallpaper, Tr.tr("wallpapers.videoFailed"))
+    }
+    Connections
+    {
+        target: ServiceLock
+        function onLockedChanged()
+        {
+            if (ServiceLock.locked) videoTimeout.stop();
+            else if (serviceAppearance.pendingWallpaper) videoTimeout.restart();
+        }
+    }
+    CommandProcess
+    {
+        id: wallpaperWriter
+        stdout: StdioCollector { id: wallpaperResult }
+        onCompleted: code =>
+        {
+            if (serviceAppearance.restoringWallpaper)
+            {
+                serviceAppearance.restoringWallpaper = false;
+                if (code === 0)
+                {
+                    try { serviceAppearance.analyzeWallpaper(JSON.parse(wallpaperResult.text).preview); }
+                    catch (error) { }
+                }
+                return;
+            }
+            if (code !== 0) { serviceAppearance.wallpaperError = errorMessage(Tr.tr("wallpapers.applyFailed")); return; }
+            try
+            {
+                const data = JSON.parse(wallpaperResult.text);
+                serviceAppearance.analyzeWallpaper(data.preview);
+                if (data.video)
+                {
+                    if (serviceAppearance.readyVideoPath === data.path)
+                    {
+                        Config.set("wallpaperCurrent", data.path);
+                        serviceAppearance.wallpaperApplied();
+                        return;
+                    }
+                    serviceAppearance.pendingWallpaper = data.path;
+                    serviceAppearance.videoPath = data.path;
+                    if (serviceAppearance.pendingWallpaper) videoTimeout.restart();
+                }
+                else
+                {
+                    serviceAppearance.videoPath = "";
+                    Config.set("wallpaperCurrent", data.path);
+                    serviceAppearance.wallpaperApplied();
+                }
+            }
+            catch (error) { serviceAppearance.wallpaperError = String(error); }
+        }
+    }
+    CommandProcess
+    {
+        id: wallpaperCheck
+        stdout: StdioCollector { id: wallpaperCurrent }
+        onCompleted: code =>
+        {
+            if (code !== 0) return;
+            try
+            {
+                const data = JSON.parse(wallpaperCurrent.text);
+                if (!data.path) return;
+                Config.set("wallpaperCurrent", data.path);
+                serviceAppearance.analyzeWallpaper(data.preview);
+                if (data.video && serviceAppearance.prepareVideo()) serviceAppearance.videoPath = data.path;
+            }
+            catch (error) { serviceAppearance.wallpaperError = String(error); }
+        }
     }
 
     property string wallpaperAccent: ""
@@ -293,16 +334,15 @@ Singleton
         {
             if (!Config.initialized) return;
             serviceAppearance.refresh(false);
-            wallpaperCheck.command = ["sh", "-c", serviceAppearance.wallpaperCheckScript, "check", Config.wallpaperCurrent, Config.wallpaperDirectory];
-            wallpaperCheck.running = true;
+            wallpaperCheck.run(Paths.commandFor("wallpaper", ["inspect", Config.wallpaperCurrent]));
         }
     }
 
     function analyzeWallpaper(path)
     {
         if (!path) return;
-        sampler.command = ["sh", "-c", "ffmpeg -loglevel error -i \"$1\" -frames:v 1 -vf scale=24:24:flags=area -f rawvideo -pix_fmt rgb24 - | od -An -tu1 -v",
-                           "sampler", String(path).replace(/^file:\/\//, "")];
+        sampler.running = false;
+        sampler.command = Paths.commandFor("wallpaper", ["colors", String(path).replace(/^file:\/\//, "")]);
         sampler.running = true;
     }
 
@@ -354,9 +394,12 @@ Singleton
         {
             onStreamFinished:
             {
-                const values = text.trim().split(/\s+/).map(n => parseInt(n, 10)).filter(n => !isNaN(n));
-                if (values.length < 30) return;
-                serviceAppearance.wallpaperAccent = serviceAppearance.pickAccent(values);
+                try
+                {
+                    const values = JSON.parse(text);
+                    if (values.length >= 30) serviceAppearance.wallpaperAccent = serviceAppearance.pickAccent(values);
+                }
+                catch (error) { if (Config.debug) console.warn("Could not sample wallpaper colors"); }
             }
         }
     }

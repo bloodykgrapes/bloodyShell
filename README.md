@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.0.1-blue" alt="Version">
-  <img src="https://img.shields.io/badge/License-GPL--3.0-green" alt="License">
+  <img src="https://img.shields.io/github/v/release/bloodykgrapes/bloodyShell?style=flat-square&label=Version&color=blue" alt="Version">
+  <img src="https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square" alt="License">
 </p>
 
 <p align="center">
@@ -85,14 +85,27 @@ cd bloodyShell
 ./setup install
 ```
 
-Setup installs the `bloodyShell` command and configures your terminal's `PATH` environment variable.
+Setup installs the `bloodyShell` command. If its directory is outside `PATH`, setup
+prints the command to add it; your terminal startup files are preserved.
 
 ```bash
 bloodyShell             # launch the shell
 bloodyShell update      # check and install update
 bloodyShell doctor      # diagnostic
 bloodyShell restart     # reload shell
+bloodyShell footprint   # inspect owned data and integrations
+bloodyShell cleanup     # preview disposable data cleanup
+bloodyShell restore     # preview restoration of tracked settings
+bloodyShell uninstall   # preview removal of installed files
 ```
+
+Run `./setup uninstall --apply` (or `bloodyShell uninstall --apply`) to stop and
+remove the installed copy. Add `--restore` to restore unchanged tracked integrations
+first. Personal settings, backups, imported files and system packages are kept.
+
+The system color scheme follows the shell theme. Sharing images with the login
+screen is opt-in. See [data ownership and cleanup](docs/OWNERSHIP.md) for storage locations,
+restoration, migration limits, and commands that apply changes.
 
 See the [installation guide](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL) for details.
 

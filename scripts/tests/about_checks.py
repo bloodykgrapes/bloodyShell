@@ -123,7 +123,7 @@ ShellRoot
                         page.item.grabToImage(result => { result.saveToFile("/tmp/bloodyshell-about-dark.png"); page.active = false; step = 2; });
                         break;
                     case 2:
-                        Config.set("shellLanguage", "ru"); Config.set("themeStyle", 0); Config.set("themeScale", 1.5);
+                        Config.set("shellLanguage", "ru"); Config.set("themeStyle", 0);
                         window.width = 520; window.height = 760;
                         page.active = true; step = 3; break;
                     case 3:

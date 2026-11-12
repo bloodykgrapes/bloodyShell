@@ -22,7 +22,7 @@ Widget
             id: dot
 
             anchors.centerIn: parent
-            width: Math.round(8 * Config.themeScale)
+            width: 8
             height: width
             radius: width / 2
             color: Theme.colorAttention

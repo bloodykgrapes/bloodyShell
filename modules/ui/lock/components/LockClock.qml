@@ -21,7 +21,7 @@ Column
         text: { const date = lockClock.now.toLocaleDateString(Tr.locale, "dddd, d MMMM"); return date.charAt(0).toUpperCase() + date.slice(1) }
         color: "#e2e2e7"
         font.family: Theme.fontText
-        font.pixelSize: Math.round(16 * Config.themeScale)
+        font.pixelSize: 16
         font.weight: Font.Medium
         font.letterSpacing: 0.5
     }
@@ -32,7 +32,7 @@ Column
         text: Qt.formatTime(lockClock.now, Config.barWidgetClock24 ? "HH:mm" : "h:mm")
         color: "#ffffff"
         font.family: Theme.fontText
-        font.pixelSize: Math.round(104 * Config.themeScale)
+        font.pixelSize: 104
         font.weight: Font.DemiBold
         font.letterSpacing: -4
     }
@@ -43,7 +43,7 @@ Column
         text: Qt.formatTime(lockClock.now, "AP")
         color: "#e2e2e7"
         font.family: Theme.fontText
-        font.pixelSize: Math.round(12 * Config.themeScale)
+        font.pixelSize: 12
         font.letterSpacing: 2
     }
 }

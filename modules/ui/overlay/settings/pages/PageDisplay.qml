@@ -13,6 +13,7 @@ SettingsPage
     subtitle: Tr.tr("settings.display.description")
 
     Component.onCompleted: ServiceDisplay.refresh()
+    Component.onDestruction: if (ServiceDisplay.confirming) ServiceDisplay.revert()
 
     property string selected: ""
     readonly property var  output: ServiceDisplay.output(selected)
@@ -65,27 +66,25 @@ SettingsPage
         if (best) ServiceDisplay.change(selected, "mode", ServiceDisplay.modeString(best));
     }
 
+    SettingsConfirmation
+    {
+        objectName: "displayConfirmation"
+        host: pageDisplay
+        visible: pageDisplay.active && ServiceDisplay.confirming
+        title: Tr.tr("settings.display.confirmTitle")
+        description: Tr.tr("settings.display.revertCountdown").arg(ServiceDisplay.countdown) + "\n" + Tr.tr("settings.display.revertHint")
+        acceptText: Tr.tr("settings.display.keep")
+        cancelText: Tr.tr("settings.display.revert")
+        onAccepted: ServiceDisplay.keep()
+        onRejected: if (ServiceDisplay.confirming) ServiceDisplay.revert()
+    }
+
     SettingsGroup
     {
-        visible: ServiceDisplay.confirming || ServiceDisplay.error !== ""
-        title: ServiceDisplay.confirming ? Tr.tr("settings.display.confirmTitle") : Tr.tr("settings.display.displaySettings")
-
+        visible: ServiceDisplay.error !== ""
+        title: Tr.tr("settings.display.displaySettings")
         SettingsRow
         {
-            visible: ServiceDisplay.confirming
-            label: Tr.tr("settings.display.revertCountdown").arg(ServiceDisplay.countdown)
-            description: Tr.tr("settings.display.revertHint")
-
-            Row
-            {
-                spacing: 8
-                SettingsButton { text: Tr.tr("settings.display.revert"); onClicked: ServiceDisplay.revert() }
-                SettingsButton { text: Tr.tr("settings.display.keep"); icon: Icon.check; onClicked: ServiceDisplay.keep() }
-            }
-        }
-        SettingsRow
-        {
-            visible: !ServiceDisplay.confirming && ServiceDisplay.error !== ""
             label: Tr.tr("settings.display.saveFailed")
             badge: Tr.tr("common.error")
             badgeColor: Theme.colorCritical
@@ -134,7 +133,7 @@ SettingsPage
 
             SettingsCombo
             {
-                width: 300
+                preferredWidth: 300
                 options: pageDisplay.resolutions
                 current: pageDisplay.current ? pageDisplay.current.width + "x" + pageDisplay.current.height : ""
                 placeholderText: Tr.tr("settings.display.noAvailableModes")
@@ -147,7 +146,7 @@ SettingsPage
 
             SettingsCombo
             {
-                width: 300
+                preferredWidth: 300
                 options: pageDisplay.rates
                 current: pageDisplay.display ? pageDisplay.display.mode : ""
                 onSelected: value => ServiceDisplay.change(pageDisplay.selected, "mode", value)

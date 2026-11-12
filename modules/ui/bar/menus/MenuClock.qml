@@ -271,7 +271,7 @@ Menu
                 id: day
                 required property var modelData
                 width: grid.cell
-                height: Math.max(34, 28 * Config.themeScale)
+                height: Math.max(34, 28)
 
                 Rectangle
                 {

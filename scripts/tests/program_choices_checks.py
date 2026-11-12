@@ -39,7 +39,7 @@ install_applications
         log.write_text("")
         choices.write_text("")
         env = dict(os.environ, SCENARIO=scenario, TEST_INSTALL=str(log), TEST_CHOICES=str(choices),
-                   XDG_CONFIG_HOME=str(base / "config"), XDG_CACHE_HOME=str(base / "cache"))
+                   XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"))
         result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True, timeout=5)
         assert result.returncode == 0, result.stdout + result.stderr
         assert log.read_text() == ("arch\nmpv\n" if scenario == "select" else ""), scenario

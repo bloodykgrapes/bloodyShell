@@ -8,20 +8,22 @@ import subprocess
 import sys
 import time
 
+sys.dont_write_bytecode = True
+
 NAME = "bloodyShell"
 ACTIONS = {
-    **{name: ("toggle", ("show", "hide", "toggle")) for name in ("settings", "launcher", "wallpapers", "power", "helper")},
+    **{name: ("toggle", ("show", "hide", "toggle")) for name in ("settings", "launcher", "wallpapers", "power", "helper", "keyboard")},
     "screenshot": ("show", ("show", "screen", "hide")),
     "alt-tab": ("next", ("next", "previous")),
     "lock": ("", ())
 }
-MAINTENANCE = ("setup", "install", "update", "doctor", "configs", "greetd")
+MAINTENANCE = ("setup", "install", "uninstall", "update", "doctor", "configs", "sddm")
 LIFECYCLE = ("start", "run", "restart", "stop", "status")
 
 
 def runtime_path():
     source = Path(__file__).resolve().parents[1]
-    if (source / "shell.qml").is_file():
+    if (source / "shell.qml").is_file() or (source / "scripts/lib/backend.py").is_file():
         return source
     home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
     return home / "quickshell" / NAME
@@ -61,15 +63,7 @@ def instances(command, path=None):
 
 
 def is_shell(entry):
-    if entry.get("shell_id") == NAME:
-        return True
-    path = entry.get("config_path")
-    if not isinstance(path, str):
-        return False
-    try:
-        return "//@ pragma ShellId " + NAME in Path(path).read_text().splitlines()
-    except (OSError, UnicodeError):
-        return False
+    return entry.get("shell_id") == NAME
 
 
 def display(environment):
@@ -116,7 +110,7 @@ def discovery_cache(current_display):
     except OSError:
         return None
     key = hashlib.sha256(json.dumps(current_display).encode()).hexdigest()[:24]
-    return directory / "bloodyShell-command" / (key + ".json"), native, known
+    return directory / "bloodyShell/command" / (key + ".json"), native, known
 
 
 def cached_instance(cache, current_display):
@@ -247,10 +241,14 @@ Usage: bloodyShell [command] [options]
 
   setup                 Open the setup menu
   install               Install or repair using setup
+  uninstall [options]   Preview removal; --apply removes unchanged installed files
   update [options]      Update using setup
   doctor [--json]       Check the installation
   configs [names]       Apply optional app configurations
-  greetd                Configure the login screen
+  sddm                  Configure the login screen
+  footprint             List owned data and external integrations
+  cleanup [--apply]     Preview or remove disposable owned data
+  restore [--apply]     Preview or undo tracked external settings
   path                  Print the runtime directory
   version               Print the installed version
   help                  Show this help
@@ -300,6 +298,23 @@ def main():
             print(NAME + " " + (runtime() / "version").read_text().strip())
         else:
             print(runtime())
+    elif action == "internal":
+        if not args:
+            raise RuntimeError("Usage: bloodyShell internal DOMAIN [arguments]")
+        import runpy
+        backend = runtime_path() / "scripts/lib/backend.py"
+        api = runpy.run_path(str(backend))
+        return api["dispatch"](args, runtime_path())
+    elif action in ("footprint", "cleanup", "restore"):
+        if action in ("cleanup", "restore") and "--apply" in args:
+            command = shutil.which("qs") or shutil.which("quickshell")
+            if not command:
+                raise RuntimeError("Cannot verify the shell is stopped: Quickshell is unavailable.")
+            if any(is_shell(entry) for entry in instances(command)):
+                raise RuntimeError("Stop all bloodyShell instances before applying cleanup or restoration.")
+        import runpy
+        api = runpy.run_path(str(runtime() / "scripts/lib/ownership.py"))
+        return api["restore"](args) if action == "restore" else api["main"](action, args)
     elif action in ACTIONS:
         ipc(*action_request(action, args))
     elif action == "logs":
@@ -323,6 +338,6 @@ if __name__ == "__main__":
         sys.exit(main())
     except KeyboardInterrupt:
         sys.exit(130)
-    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"bloodyShell: {error}", file=sys.stderr)
         sys.exit(1)

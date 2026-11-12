@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def backend_checks():
-    api = runpy.run_path(str(ROOT / "scripts/runtime/network-auth"))
+    api = runpy.run_path(str(ROOT / "scripts/lib/network.py"))
     Gio, GLib, NM = api["libraries"]()
     build = api["connection_for"]
     request = dict(ssid="Enterprise '$(example)'", interface="wlan-test", username="user@example.org", password="literal password '$(not-a-command)'", domain="auth.example.org", method="peap", inner="mschapv2")
@@ -88,7 +88,7 @@ def ui_checks():
         shutil.copytree(ROOT / "modules", base / "modules")
         for name in ("assets", "translations"):
             (base / name).symlink_to(ROOT / name)
-        for name in ("runtime", "cache", "config/bloodyShell", "scripts/runtime", "bin"):
+        for name in ("runtime", "cache", "config/bloodyShell", "scripts/lib", "bin"):
             (base / name).mkdir(parents=True, mode=0o700)
         (base / "config/bloodyShell/settings.json").write_text(json.dumps(dict(helperSeen=True, themeAnimations=0, shellLanguage="en")))
         for name in ("niri", "awww"):
@@ -106,7 +106,9 @@ time.sleep(0.3)
 sys.exit(1 if len(calls.read_text().splitlines()) > 1 else 0)
 ''')
         nmcli.chmod(0o700)
-        helper = base / "scripts/runtime/network-auth"
+        shutil.copytree(ROOT / "scripts/lib", base / "scripts/lib", dirs_exist_ok=True)
+        shutil.copy2(ROOT / "scripts/bloodyShell", base / "scripts/bloodyShell")
+        helper = base / "scripts/lib/network.py"
         helper.write_text('''import json, sys
 from pathlib import Path
 request=json.loads(sys.stdin.readline())
@@ -399,7 +401,7 @@ ShellRoot
     }
 }
 ''')
-        env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", XDG_CONFIG_HOME=str(base / "config"), XDG_CACHE_HOME=str(base / "cache"), XDG_RUNTIME_DIR=str(base / "runtime"), PATH=str(base / "bin") + os.pathsep + os.environ["PATH"], DBUS_SESSION_BUS_ADDRESS="unix:path=/tmp/bloodyshell-test-no-bus", DBUS_SYSTEM_BUS_ADDRESS="unix:path=/tmp/bloodyshell-test-no-system-bus")
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"), XDG_RUNTIME_DIR=str(base / "runtime"), PATH=str(base / "bin") + os.pathsep + os.environ["PATH"], DBUS_SESSION_BUS_ADDRESS="unix:path=/tmp/bloodyshell-test-no-bus", DBUS_SYSTEM_BUS_ADDRESS="unix:path=/tmp/bloodyshell-test-no-system-bus")
         env.pop("WAYLAND_DISPLAY", None)
         result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=15)
         output = result.stdout + result.stderr

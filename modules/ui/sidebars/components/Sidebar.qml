@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 
+import "../../../common"
 import "../../../animations"
 import "../../../core"
 
@@ -27,9 +28,13 @@ FocusScope
     readonly property real barGap: Math.max(14, Theme.frameSmoothing)
     readonly property real leftInset: Theme.frameThickness + (barSide === Enums.EdgeLeft ? barThickness + barGap : edgeGap)
     readonly property real rightInset: Theme.frameThickness + (barSide === Enums.EdgeRight ? barThickness + barGap : edgeGap)
-    readonly property real topInset: Theme.frameThickness + (barSide === Enums.EdgeTop ? barThickness + barGap : 14)
-    readonly property real bottomInset: Theme.frameThickness + (barSide === Enums.EdgeBottom ? barThickness + barGap : 12)
+    readonly property real topInset: Theme.frameThickness + (barSide === Enums.EdgeTop ? barThickness + barGap : verticalBar ? edgeGap : 14)
+    readonly property real bottomInset: Theme.frameThickness + (barSide === Enums.EdgeBottom ? barThickness + barGap : verticalBar ? edgeGap : 12)
+    readonly property bool verticalBar: barSide === Enums.EdgeLeft || barSide === Enums.EdgeRight
+    readonly property bool atRight: verticalBar ? barSide === Enums.EdgeRight : side === "right"
+    readonly property bool atBottom: barSide === Enums.EdgeBottom || (verticalBar && side === "right")
     readonly property real panelWidth: Math.max(0, Math.min(Theme.sidebarWidth, width - leftInset - rightInset - 24))
+    readonly property real panelHeight: Math.max(0, Math.min(body.implicitHeight + 36, height - topInset - bottomInset))
     property real progress: opened ? 1 : 0
     Glide on progress {}
     visible: opened || progress > 0.001
@@ -42,10 +47,10 @@ FocusScope
     Item
     {
         id: card
-        width: sidebar.panelWidth * Math.max(0, Math.min(1, sidebar.progress))
-        height: Math.max(0, Math.min(body.implicitHeight + 36, sidebar.height - y - sidebar.bottomInset))
-        x: sidebar.side === "left" ? sidebar.leftInset : sidebar.width - sidebar.rightInset - width
-        y: sidebar.topInset
+        width: sidebar.panelWidth * (sidebar.verticalBar ? 1 : Math.max(0, Math.min(1, sidebar.progress)))
+        height: sidebar.panelHeight * (sidebar.verticalBar ? Math.max(0, Math.min(1, sidebar.progress)) : 1)
+        x: sidebar.atRight ? sidebar.width - sidebar.rightInset - width : sidebar.leftInset
+        y: sidebar.atBottom ? sidebar.height - sidebar.bottomInset - height : sidebar.topInset
         clip: true
 
         Rectangle
@@ -61,15 +66,17 @@ FocusScope
         Item
         {
             width: sidebar.panelWidth
-            height: parent.height
-            x: sidebar.side === "left" ? 0 : parent.width - width
+            height: sidebar.panelHeight
+            x: !sidebar.verticalBar && sidebar.atRight ? parent.width - width : 0
+            y: sidebar.verticalBar && sidebar.atBottom ? parent.height - height : 0
             opacity: sidebar.opened ? 1 : 0
             Appear on opacity {}
 
             property real expansion: sidebar.opened ? 1 : 0
             Spring on expansion {}
             scale: Config.animationsFluid ? 0.92 + 0.08 * expansion : 1
-            transformOrigin: sidebar.side === "left" ? Item.Left : Item.Right
+            transformOrigin: sidebar.atBottom ? (sidebar.atRight ? Item.BottomRight : Item.BottomLeft)
+                : (sidebar.atRight ? Item.TopRight : Item.TopLeft)
 
             Flickable
             {
@@ -80,6 +87,8 @@ FocusScope
                 boundsBehavior: Flickable.StopAtBounds
                 flickableDirection: Flickable.VerticalFlick
                 clip: true
+
+                SmoothScroll { view: viewport }
 
                 Column { id: body; x: 14; y: 14; width: viewport.width - 28; spacing: 14 }
             }

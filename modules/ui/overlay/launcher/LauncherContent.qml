@@ -30,6 +30,7 @@ Rectangle
         instant = true;
         mouseMode = false;
         selectedID = 0;
+        scroll.stop();
         list.contentY = 0;
         Qt.callLater(() => launcherContent.instant = false);
     }
@@ -41,8 +42,6 @@ Rectangle
 
     radius: Theme.launcherRadius
     color: Theme.colorSolid
-    border.color: Theme.colorHairline
-    border.width: Theme.borderWidth
     clip: true
 
     function hide() { OverlayState.hide("launcher") }
@@ -50,21 +49,12 @@ Rectangle
     function reveal(i)
     {
         const top = i * rowH;
-        const from = scroll.running ? scroll.to : list.contentY;
+        const from = scroll.running ? scroll.destination : list.contentY;
         let target = from;
         if (top < from) target = top;
         else if (top + rowH > from + list.height) target = top + rowH - list.height;
-        scrollTo(target);
+        scroll.scrollTo(target);
     }
-    function scrollTo(target)
-    {
-        target = Math.max(0, Math.min(Math.max(0, list.contentHeight - list.height), target));
-        scroll.stop();
-        if (!Config.animationsEnabled) { list.contentY = target; return; }
-        scroll.to = target;
-        scroll.start();
-    }
-
     function move(offset)
     {
         if (apps.length === 0) return;
@@ -123,16 +113,6 @@ Rectangle
         return escapeHtml(text.slice(0, at)) + "<b>" + escapeHtml(text.slice(at, at + query.length)) + "</b>" + escapeHtml(text.slice(at + query.length));
     }
 
-    NumberAnimation
-    {
-        id: scroll
-        target: list
-        property: "contentY"
-        duration: 260
-        easing.type: Easing.BezierSpline
-        easing.bezierCurve: Theme.easingEmphasized
-    }
-
     Rectangle
     {
         id: search
@@ -175,7 +155,7 @@ Rectangle
             selectionColor: Theme.colorSelection
             selectedTextColor: Theme.text1
             font.family: Theme.fontText
-            font.pixelSize: Math.round(16 * Config.themeScale)
+            font.pixelSize: 16
             selectByMouse: true
             clip: true
 
@@ -284,25 +264,14 @@ Rectangle
             Glide on y { enabled: Config.animationsEnabled && !launcherContent.instant && !launcherContent.mouseMode; duration: 240 }
         }
 
-        WheelHandler
+        SmoothScroll
         {
-            target: null
-            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-
-            onWheel: event =>
+            id: scroll
+            view: list
+            onScrolled:
             {
-                const delta = Config.scrollDelta(event.pixelDelta.y, event.angleDelta.y);
-                if (delta === 0) return;
-
                 launcherContent.mouseMode = true;
                 launcherContent.selectAtPointer();
-
-                const from = scroll.running ? scroll.to : list.contentY;
-                const target = Math.max(0, Math.min(Math.max(0, list.contentHeight - list.height), from - delta));
-                if (event.pixelDelta.y !== 0) { scroll.stop(); list.contentY = target; }
-                else launcherContent.scrollTo(target);
-
-                event.accepted = true;
             }
         }
 

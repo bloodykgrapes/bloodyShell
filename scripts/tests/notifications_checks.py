@@ -85,7 +85,7 @@ ShellRoot
 }
 ''')
         env = dict(os.environ, QT_QPA_PLATFORM="offscreen", XDG_CONFIG_HOME=str(base / "config"),
-                   XDG_CACHE_HOME=str(base / "cache"), XDG_RUNTIME_DIR=str(base / "runtime"),
+                   XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"), XDG_RUNTIME_DIR=str(base / "runtime"),
                    DBUS_SESSION_BUS_ADDRESS="unix:path=/tmp/bloodyshell-test-no-session-bus")
         env.pop("WAYLAND_DISPLAY", None)
         for stage, (remember, dnd) in enumerate(((True, True), (False, False), (True, False), (True, False))):

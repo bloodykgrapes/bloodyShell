@@ -42,7 +42,7 @@ SettingsPage
 
             SettingsCombo
             {
-                width: 300
+                preferredWidth: 300
                 enabled: ServiceAudio.sinks.length > 0
                 placeholderText: Tr.tr("settings.sound.noOutputDevices")
                 options: pageSound.nodeOptions(ServiceAudio.sinks)
@@ -57,7 +57,7 @@ SettingsPage
 
             SettingsSlider
             {
-                width: 300
+                preferredWidth: 300
                 value: ServiceAudio.volume
                 onMoved: value => ServiceAudio.setVolume(value)
             }
@@ -80,7 +80,7 @@ SettingsPage
 
             SettingsCombo
             {
-                width: 300
+                preferredWidth: 300
                 enabled: ServiceAudio.sources.length > 0
                 placeholderText: Tr.tr("settings.sound.noInputDevices")
                 options: pageSound.nodeOptions(ServiceAudio.sources)
@@ -95,7 +95,7 @@ SettingsPage
 
             SettingsSlider
             {
-                width: 300
+                preferredWidth: 300
                 value: ServiceAudio.micVolume
                 onMoved: value => ServiceAudio.setMicVolume(value)
             }
@@ -134,7 +134,7 @@ SettingsPage
                     SettingsSlider
                     {
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 240
+                        preferredWidth: 240
                         opacity: streamRow.audio && streamRow.audio.muted ? 0.45 : 1
                         value: streamRow.audio ? Math.min(1, streamRow.audio.volume) : 0
                         onMoved: value => { if (streamRow.audio) streamRow.audio.volume = value }

@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Services.SystemTray
 
 import "../../../animations"
@@ -15,26 +16,37 @@ Menu
     id: menuTray
     centerOnWidget: true
 
-    readonly property int cell: Math.round(36 * Config.themeScale)
-    readonly property int gap: Math.round(6 * Config.themeScale)
+    readonly property int cell: 36
+    readonly property int gap: 6
     readonly property int iconColumns: Math.max(1, Math.min(5, entries.length))
     readonly property real compactWidth: entries.length > 0
         ? iconColumns * cell + (iconColumns - 1) * gap + Theme.menuPadding * 2 + 12
-        : Math.max(180 * Config.themeScale, emptyLabel.implicitWidth + Theme.menuPadding * 2)
-    readonly property real maxListHeight: Math.round(288 * Config.themeScale)
+        : Math.max(180, emptyLabel.implicitWidth + Theme.menuPadding * 2)
+    readonly property real maxListHeight: 288
     readonly property var entries: Array.from(SystemTray.items.values).filter(item => item.status !== Status.Passive)
     readonly property var requestedItem: MenuState.trayContextItem
-    readonly property bool contextOpen: !!requestedItem && requestedItem.hasMenu
+    readonly property bool contextOpen: !!requestedItem
     property var contextItem: null
-    readonly property bool hasContext: !!contextItem && contextItem.hasMenu
+    readonly property bool needsMenuData: !!contextItem && !contextItem.hasMenu
+    property var menuData: []
+    property var menuAddress: null
+    property string menuError: ""
+    property int contextRevision: 0
+    readonly property string menuKey: contextItem ? JSON.stringify([contextRevision, contextItem.id, contextItem.title]) : ""
+    readonly property var actionEntries:
+    {
+        if (!needsMenuData) return opener.children;
+        let list = menuData;
+        for (const entry of stack) list = list.find(item => item.id === entry.id)?.children || [];
+        return list;
+    }
     readonly property var level:
     {
         const item = contextItem;
         if (!item || !item.hasMenu) return null;
         return stack.length > 0 ? stack[stack.length - 1] : item.menu;
     }
-    readonly property string contextTitle: titleOf(contextItem)
-    readonly property string levelTitle: !hasContext ? "" : stack.length > 0 && level ? level.text : contextTitle
+    readonly property string levelTitle: !contextItem ? "" : stack.length > 0 ? stack[stack.length - 1].text : titleOf(contextItem)
     property var stack: []
     property bool mounted: false
     property int entryRevision: 0
@@ -57,17 +69,27 @@ Menu
         releaseTimer.stop();
         contextItem = null;
         stack = [];
+        menuData = [];
+        menuAddress = null;
+        menuError = "";
+        menuRequest.stop();
+        if (menuReader.running) menuReader.running = false;
     }
 
     function syncContext()
     {
         if (!mounted) return;
+        contextRevision++;
         const next = requestedItem;
-        if (next && next.hasMenu)
+        if (next)
         {
             releaseTimer.stop();
             stack = [];
             contextItem = next;
+            menuData = [];
+            menuAddress = null;
+            menuError = "";
+            if (!next.hasMenu) menuRequest.restart();
             ctx.slide(1);
         }
         else if (Config.animationsEnabled) releaseTimer.restart();
@@ -76,15 +98,20 @@ Menu
 
     function activate(entry)
     {
-        if (!entry || !entry.enabled || entry.isSeparator) return;
+        if (!entry || !entry.enabled || entry.isSeparator || menuAction.busy) return;
         if (entry.hasChildren)
         {
             stack = stack.concat([entry]);
             ctx.slide(1);
             return;
         }
-        entry.triggered();
-        MenuState.close();
+        if (needsMenuData)
+        {
+            if (!menuAddress) return;
+            menuAction.key = menuKey;
+            menuAction.run(Paths.commandFor("tray-menu", ["activate", menuAddress.owner, menuAddress.path, String(entry.id)]));
+        }
+        else { entry.triggered(); MenuState.close(); }
     }
 
     function back()
@@ -95,8 +122,7 @@ Menu
     }
 
     onRequestedItemChanged: syncContext()
-    onContextOpenChanged: syncContext()
-    onLevelChanged: if (actions) actions.contentY = 0
+    onStackChanged: if (actions) actions.contentY = 0
     onEntriesChanged:
     {
         if (requestedItem && !entries.includes(requestedItem)) MenuState.trayContextItem = null;
@@ -117,6 +143,70 @@ Menu
     QsMenuOpener { id: opener; menu: menuTray.level }
     Timer
     {
+        id: menuRequest
+        interval: 0
+        onTriggered:
+        {
+            if (!menuTray.contextOpen || !menuTray.needsMenuData) return;
+            if (menuReader.busy) { menuReader.again = true; return; }
+            menuReader.again = false;
+            menuReader.key = menuTray.menuKey;
+            const address = menuTray.menuAddress;
+            menuReader.run(Paths.commandFor("tray-menu", address
+                ? ["read", address.owner, address.path]
+                : ["open", menuTray.contextItem.id, menuTray.contextItem.title]));
+        }
+    }
+    Timer
+    {
+        interval: 1500
+        repeat: true
+        running: menuTray.active && menuTray.presented && menuTray.contextOpen && menuTray.needsMenuData && menuTray.menuAddress !== null && !menuAction.busy
+        onTriggered: menuRequest.restart()
+    }
+    CommandProcess
+    {
+        id: menuReader
+        property string key: ""
+        property bool again: false
+        stdout: StdioCollector { id: menuResult }
+        onCompleted: code =>
+        {
+            if (menuTray.contextOpen && menuTray.needsMenuData && key === menuTray.menuKey)
+            {
+                if (code === 0)
+                {
+                    try
+                    {
+                        const data = JSON.parse(menuResult.text);
+                        menuTray.menuAddress = {owner: data.owner, path: data.path};
+                        if (JSON.stringify(menuTray.menuData) !== JSON.stringify(data.items)) menuTray.menuData = data.items;
+                        menuTray.menuError = "";
+                    }
+                    catch (error) { menuTray.menuError = String(error); }
+                }
+                else
+                {
+                    menuTray.menuAddress = null;
+                    menuTray.menuError = errorMessage(Tr.tr("menu.tray.noActions"));
+                }
+            }
+            if (again || key !== menuTray.menuKey) menuRequest.restart();
+        }
+    }
+    CommandProcess
+    {
+        id: menuAction
+        property string key: ""
+        onCompleted: code =>
+        {
+            if (!menuTray.contextOpen || key !== menuTray.menuKey) return;
+            if (code === 0) MenuState.close();
+            else menuTray.menuError = errorMessage(Tr.tr("menu.tray.noActions"));
+        }
+    }
+    Timer
+    {
         id: releaseTimer
         interval: menuTray.contextDuration + 40
         onTriggered: if (!menuTray.contextOpen) menuTray.releaseContext()
@@ -129,6 +219,7 @@ Menu
 
         Flickable
         {
+            id: trayApps
             objectName: "trayApps"
             width: parent.width
             height: Math.min(contentHeight, menuTray.cell * 3 + menuTray.gap * 2 + 12)
@@ -139,6 +230,8 @@ Menu
             boundsBehavior: Flickable.StopAtBounds
             flickableDirection: Flickable.VerticalFlick
             clip: true
+
+            SmoothScroll { view: trayApps }
 
             Grid
             {
@@ -158,7 +251,7 @@ Menu
                         width: menuTray.cell
                         height: menuTray.cell
                         radius: 12
-                        iconSize: Math.round(18 * Config.themeScale)
+                        iconSize: 18
                         trayItem: modelData
                         active: menuTray.requestedItem === modelData
                         backgroundColor: Qt.tint(Theme.frameColor, pressed ? Theme.colorPressed : active ? Theme.colorChosen
@@ -308,7 +401,8 @@ Menu
                         {
                             id: actions
                             objectName: "trayActions"
-                            model: opener.children
+                            model: menuTray.actionEntries
+                            enabled: !menuAction.busy
                             maxHeight: menuTray.maxListHeight
                             add: null
                             remove: null
@@ -329,8 +423,8 @@ Menu
                         MenuLabel
                         {
                             hint: true
-                            visible: opener.children.values.length === 0
-                            text: Tr.tr("menu.tray.noActions")
+                            visible: actions.count === 0 || menuTray.menuError !== ""
+                            text: menuTray.menuError || (menuTray.needsMenuData && menuReader.busy ? Tr.tr("common.loading") : Tr.tr("menu.tray.noActions"))
                         }
                     }
                 }

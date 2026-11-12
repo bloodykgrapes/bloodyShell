@@ -18,7 +18,7 @@ Rectangle
     signal toggled(bool expanded)
 
     implicitWidth: 400
-    implicitHeight: Math.max(64, labels.implicitHeight + 28)
+    implicitHeight: Math.max(Theme.settingsRowHeight, labels.implicitHeight + 32)
     radius: Theme.radiusLarge + 2
     color: Qt.tint(Theme.settingsColorCard, area.pressed ? Theme.colorPressed
         : area.containsMouse || (activeFocus && keyboardFocusHighlight) ? Theme.colorHoverStrong : "transparent")
@@ -32,7 +32,7 @@ Rectangle
     Rectangle
     {
         id: symbol
-        x: 14
+        x: Theme.settingsRowInset
         anchors.verticalCenter: parent.verticalCenter
         width: 34
         height: 34
@@ -47,7 +47,7 @@ Rectangle
     {
         id: labels
         anchors.verticalCenter: parent.verticalCenter
-        x: symbol.visible ? symbol.x + symbol.width + 12 : 16
+        x: symbol.visible ? symbol.x + symbol.width + 12 : Theme.settingsRowInset
         width: Math.max(0, trailing.x - x - 16)
         spacing: 4
 
@@ -55,6 +55,7 @@ Rectangle
         {
             width: parent.width
             label: header.title
+            wrapMode: Text.Wrap
             size: 13
             font.weight: Font.DemiBold
             color: Theme.text1
@@ -78,6 +79,7 @@ Rectangle
         ShellText
         {
             anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(implicitWidth, header.width * 0.28)
             label: header.summary
             size: 11
             color: Theme.text3

@@ -46,6 +46,8 @@ def checks():
         for name in ("ServiceApplications", "ServiceDock", "ServiceWindowActions", "ServiceAltTab", "ServiceCompositor", "ServiceNotifications"):
             path = Path(baseline) / f"modules/services/{name}.qml" if baseline else ROOT / f"modules/services/{name}.qml"
             source = path.read_text()
+            if 'import "../core"' not in source:
+                source = source.replace("import QtQuick", 'import QtQuick\nimport "../core"', 1)
             if name == "ServiceCompositor":
                 source = source[:source.index('    Process\n    {\n        id: stream')] + "}\n"
             source = source.replace("Quickshell.execDetached", "TestMetrics.execDetached")
@@ -230,7 +232,7 @@ ShellRoot
 }
 ''')
         env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", XDG_RUNTIME_DIR=str(base / "runtime"),
-                   XDG_CONFIG_HOME=str(base / "config"), XDG_CACHE_HOME=str(base / "cache"), XDG_DATA_HOME=str(base / "data"), XDG_DATA_DIRS=str(base / "data"))
+                   XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"), XDG_DATA_HOME=str(base / "data"), XDG_DATA_DIRS=str(base / "data"))
         env.pop("WAYLAND_DISPLAY", None)
         result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=20)
         output = result.stdout + result.stderr

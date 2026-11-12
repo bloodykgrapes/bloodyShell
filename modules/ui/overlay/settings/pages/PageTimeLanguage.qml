@@ -41,7 +41,7 @@ SettingsPage
 
             SettingsCombo
             {
-                width: 300
+                preferredWidth: 300
                 enabled: !ServiceRegion.busy
                 options: ServiceRegion.timezones.map(z => ({ label: z.replace(/_/g, " "), value: z }))
                 current: ServiceRegion.timezone
@@ -80,7 +80,7 @@ SettingsPage
 
             SettingsCombo
             {
-                width: 300
+                preferredWidth: 300
                 options: [{ label: Tr.tr("settings.timeLanguage.system").arg((Tr.languages.find(l => l.code === Tr.systemLanguage) || { name: "" }).name), value: "system" }]
                     .concat(Tr.languages.map(l => ({ label: l.name === l.english ? l.name : l.name + " — " + l.english, value: l.code })))
                 current: Config.shellLanguage
@@ -95,7 +95,7 @@ SettingsPage
 
             SettingsCombo
             {
-                width: 300
+                preferredWidth: 300
                 enabled: !ServiceRegion.busy
                 options: ServiceRegion.locales.map(l => ({ label: l, value: l }))
                 current: ServiceRegion.locale
@@ -157,21 +157,22 @@ SettingsPage
             label: Tr.tr("settings.timeLanguage.addLayout")
             stacked: true
 
-            Row
+            Flow
             {
+                width: parent.width
                 spacing: 8
 
                 SettingsCombo
                 {
-                    width: 260
-                    placeholderText: Tr.tr("settings.compositor.layout")
+                    preferredWidth: 260
+                    placeholderText: Tr.tr("common.keyboardLayout")
                     options: ServiceKeyboard.catalog.map(l => ({ label: l.name, value: l.code }))
                     current: pageTimeLanguage.newLayout
                     onSelected: value => { pageTimeLanguage.newLayout = value; pageTimeLanguage.newVariant = "" }
                 }
                 SettingsCombo
                 {
-                    width: 260
+                    preferredWidth: 260
                     enabled: pageTimeLanguage.newLayout !== "" && pageTimeLanguage.newVariants.length > 1
                     options: pageTimeLanguage.newVariants
                     current: pageTimeLanguage.newVariant
@@ -192,19 +193,8 @@ SettingsPage
 
             SettingsCombo
             {
-                width: 260
-                options:
-                [
-                    { label: Tr.tr("settings.timeLanguage.superSpace"), value: "grp:win_space_toggle" },
-                    { label: Tr.tr("settings.timeLanguage.altShift"),   value: "grp:alt_shift_toggle" },
-                    { label: Tr.tr("settings.timeLanguage.ctrlShift"),  value: "grp:ctrl_shift_toggle" },
-                    { label: Tr.tr("settings.timeLanguage.altSpace"),   value: "grp:alt_space_toggle" },
-                    { label: Tr.tr("settings.timeLanguage.ctrlSpace"),  value: "grp:ctrl_space_toggle" },
-                    { label: Tr.tr("settings.timeLanguage.capsLock"),     value: "grp:caps_toggle" },
-                    { label: Tr.tr("settings.timeLanguage.bothShifts"),   value: "grp:shifts_toggle" },
-                    { label: Tr.tr("settings.timeLanguage.rightAlt"),     value: "grp:toggle" },
-                    { label: Tr.tr("common.none"),          value: "" },
-                ]
+                preferredWidth: 260
+                options: Registry.layoutShortcutOptions
                 current: ServiceKeyboard.switchOption
                 onSelected: value => ServiceKeyboard.set("switchOption", value)
             }

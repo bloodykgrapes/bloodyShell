@@ -14,11 +14,10 @@ Singleton
     property var entries: []
     property var terminal: []
     property var pending: null
-    property string source: ""
     property string operation: ""
     property string error: ""
     property string message: ""
-    readonly property string helper: Paths.runtimeScriptsDir + "/resources"
+    readonly property var helper: Paths.commandFor("resources")
     readonly property bool busy: probe.busy || command.busy
 
     onBusyChanged:
@@ -32,7 +31,7 @@ Singleton
         if (busy || ServiceUpdate.busy) return;
         pending = null;
         error = "";
-        probe.run(["python3", helper, "status"]);
+        probe.run(helper.concat(["status"]));
     }
 
     function request(id)
@@ -57,7 +56,7 @@ Singleton
         pending = null;
         operation = entry.id;
         error = "";
-        const args = ["python3", helper, "import", entry.id];
+        const args = helper.concat(["import", entry.id]);
         command.run(entry.kind === "wallpapers" ? args : terminal.concat(args, ["--wait"]));
     }
 
@@ -73,7 +72,6 @@ Singleton
                 const data = JSON.parse(catalog.text);
                 serviceResources.entries = data.entries;
                 serviceResources.terminal = data.terminal;
-                serviceResources.source = data.source;
             }
             catch (error) { serviceResources.error = String(error); }
         }
@@ -81,7 +79,6 @@ Singleton
     CommandProcess
     {
         id: command
-        stdout: StdioCollector { id: result }
         onCompleted: code =>
         {
             const id = serviceResources.operation;
@@ -89,14 +86,6 @@ Singleton
             if (code !== 0) { serviceResources.error = errorMessage(Tr.tr("settings.imports.failed")); return; }
             const entry = serviceResources.entries.find(item => item.id === id);
             serviceResources.message = Tr.tr("settings.imports.completed").arg(entry ? entry.destination : id);
-            if (id !== "wallpapers") return;
-            try
-            {
-                const changes = JSON.parse(result.text).settings || {};
-                for (const key of ["wallpaperDirectory", "wallpaperCurrent"])
-                    if (typeof changes[key] === "string") Config.set(key, changes[key]);
-            }
-            catch (error) { serviceResources.error = String(error); }
         }
     }
 }

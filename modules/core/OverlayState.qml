@@ -3,6 +3,8 @@ pragma Singleton
 import QtQuick
 import Quickshell
 
+import "../src/Clients.js" as Clients
+
 Singleton
 {
     id: overlayState
@@ -14,9 +16,16 @@ Singleton
     property bool inhibited: false
 
     property int settingsPage: 0
-    property bool settingsPopup: false
+    property var popupClients: []
+    readonly property bool settingsPopup: popupClients.length > 0
+    property bool popupsSuspended: false
     property string screenName: ""
     property point origin: Qt.point(0, 0)
+
+    function setPopupActive(client, active)
+    {
+        popupClients = Clients.update(popupClients, client, active);
+    }
 
     function show(name)
     {

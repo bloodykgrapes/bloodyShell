@@ -196,7 +196,7 @@ ShellRoot
 }
 ''')
         env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software",
-                   XDG_RUNTIME_DIR=str(base / "runtime"), XDG_CACHE_HOME=str(base / "cache"),
+                   XDG_RUNTIME_DIR=str(base / "runtime"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"),
                    TEST_UPDATE_DIR=str(base), PATH=str(base / "bin") + os.pathsep + os.environ["PATH"])
         env.pop("WAYLAND_DISPLAY", None)
         result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=15)

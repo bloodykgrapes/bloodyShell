@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 
 import "../../animations"
+import "../../common"
 import "../../core"
 import "../../services"
 import "components"
@@ -62,22 +63,25 @@ Item
     function sidebarAt(point) { return (isHorizontal ? point.x < width / 2 : point.y < height / 2) ? "left" : "right" }
 
     readonly property bool menuHere: MenuState.menuActive && owns(MenuState.menuOwner)
+    readonly property bool fullscreen: screen !== null && ServiceCompositor.fullscreenOnOutput(screen.name)
+    readonly property bool autoHide: Config.barHideAuto || fullscreen
 
     readonly property bool hoveringBand: hover.hovered && overBand(hover.point.position)
     readonly property bool hoveringContent: hover.hovered && (overBand(hover.point.position) || overContent(hover.point.position))
-    readonly property bool revealWanted: !Config.barHideAuto || hoveringContent || triggerHover.hovered || menuHere || (screen && SidebarState.onOutput(screen.name))
-                                         || (Config.barHideSmart && ServiceCompositor.focusedWorkspaceEmpty)
-    property bool revealed: true
+    readonly property bool revealWanted: !fullscreen && (!autoHide || hoveringContent || triggerHover.hovered || menuHere || (screen && SidebarState.onOutput(screen.name))
+                                         || (Config.barHideSmart && screen !== null && ServiceCompositor.workspaceEmptyOnOutput(screen.name)))
+    enabled: !fullscreen
+    onFullscreenChanged: if (fullscreen) Qt.callLater(() => { if (bar.fullscreen && bar.menuHere) MenuState.close(); })
+    property alias revealed: visibility.revealed
     property real reveal: revealed ? 1 : 0
     Glide on reveal {}
 
-    onRevealWantedChanged:
+    PanelReveal
     {
-        if (revealWanted) { hideDelay.stop(); revealed = true }
-        else hideDelay.restart();
+        id: visibility
+        wanted: bar.revealWanted
+        delay: Theme.barHideDelay
     }
-    Component.onCompleted: if (!revealWanted) hideDelay.restart()
-    Timer { id: hideDelay; interval: Theme.barHideDelay; onTriggered: bar.revealed = bar.revealWanted }
 
     readonly property real slide: (1 - reveal) * (reserve + 4)
 
@@ -118,8 +122,8 @@ Item
         x: Math.round(Config.barSide === Enums.EdgeLeft ? -bar.slide : Config.barSide === Enums.EdgeRight ? bar.slide : 0)
         y: Math.round(Config.barSide === Enums.EdgeTop ? -bar.slide : Config.barSide === Enums.EdgeBottom ? bar.slide : 0)
 
-        readonly property bool fading: !bar.revealed && bar.reveal > 0 && bar.reveal < 1
-        opacity: fading ? Math.min(1, bar.reveal * 1.6) : 1
+        readonly property bool fading: bar.reveal > 0 && bar.reveal < 1
+        opacity: Math.min(1, bar.reveal * 1.6)
         visible: bar.reveal > 0
         layer.enabled: fading
 
@@ -180,7 +184,7 @@ Item
     {
         id: trigger
 
-        readonly property real size: Config.barHideAuto ? Theme.barReveal : 0
+        readonly property real size: bar.autoHide && !bar.fullscreen ? Theme.barReveal : 0
 
         x: Config.barSide === Enums.EdgeRight ? bar.width - width : 0
         y: Config.barSide === Enums.EdgeBottom ? bar.height - height : 0

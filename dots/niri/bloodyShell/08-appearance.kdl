@@ -1,5 +1,0 @@
-// Создаётся bloodyShell (Settings → Appearance): правки вручную перезапишутся.
-cursor {
-    xcursor-theme "Bibata Material Grey"
-    xcursor-size 24
-}

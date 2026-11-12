@@ -3,7 +3,9 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 
+import "../../animations"
 import "../../core"
+import "../../services"
 import "../bar"
 import "../dock"
 import "../osd"
@@ -15,6 +17,9 @@ FocusScope
     id: frame
 
     required property var screen
+    readonly property bool fullscreen: screen !== null && ServiceCompositor.fullscreenOnOutput(screen.name)
+    property real frameReveal: fullscreen ? 0 : 1
+    Glide on frameReveal {}
     readonly property var bar: barLoader.item
     readonly property var dock: dockLoader.item
     readonly property var island: islandLoader.item
@@ -26,11 +31,12 @@ FocusScope
     readonly property alias surface: surface
     readonly property alias leftSidebar: leftView
     readonly property alias rightSidebar: rightView
-    readonly property real thickness: Math.max(0, Math.min(Theme.frameThickness, Math.min(width, height) / 4))
-    readonly property bool reserveBar: regularBar && !Config.barHideAuto
-    readonly property bool reserveDock: dock !== null && !Config.dockHideAuto
+    readonly property real thickness: Math.max(0, Math.min(Theme.frameThickness, Math.min(width, height) / 4)) * frameReveal
+    readonly property bool reserveBar: bar !== null && !bar.autoHide
+    readonly property bool reserveDock: dock !== null && !dock.autoHide
     readonly property var reservations:
     {
+        if (fullscreen) return [0, 0, 0, 0];
         const edges = [thickness, thickness, thickness, thickness];
         if (reserveBar && bar) edges[Config.barSide] = Math.max(edges[Config.barSide], bar.reserve);
         if (reserveDock && dock && dock.container.visible)
@@ -86,7 +92,7 @@ FocusScope
     Region
     {
         id: inputMask
-        regions: [dismissInput, frame.bar ? frame.bar.inputRegion : null, frame.dock ? frame.dock.inputRegion : null, frame.island ? frame.island.inputRegion : null,
+        regions: [dismissInput, frame.bar && !frame.fullscreen ? frame.bar.inputRegion : null, frame.dock && !frame.fullscreen ? frame.dock.inputRegion : null, frame.island ? frame.island.inputRegion : null,
             leftView.inputRegion, rightView.inputRegion].filter(region => region !== null)
     }
     Region { id: dismissInput; item: dismiss.visible ? dismiss : null }

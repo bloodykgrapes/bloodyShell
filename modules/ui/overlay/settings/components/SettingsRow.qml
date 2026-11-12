@@ -14,32 +14,37 @@ Item
 
     property bool stacked: false
     property bool pending: false
+    property bool highlighted: false
 
     property string badge: pending ? Tr.tr("common.notConnected") : ""
     property color  badgeColor: "transparent"
 
     default property alias control: slot.data
 
-    readonly property int  inset: 18
+    readonly property int inset: Theme.settingsRowInset
     readonly property real lead: icon !== "" ? 34 : 0
-    readonly property real sideWidth: stacked ? 0 : slot.width + (value.visible ? value.width + (slot.width > 0 ? 12 : 0) : 0)
+    readonly property real controlAvailableWidth: Math.max(0, width - inset * 2)
+    readonly property real preferredControlWidth: slot.children.reduce((width, child) => child.visible ? Math.max(width, child.implicitWidth || child.width) : width, 0)
+    readonly property real valueWidth: valueText !== "" ? Math.min(value.implicitWidth, width * 0.4) : 0
+    readonly property bool vertical: stacked || (preferredControlWidth > 0 && controlAvailableWidth - lead - preferredControlWidth - valueWidth - (valueWidth > 0 ? 12 : 0) - Theme.settingsRowGap < Math.min(180, controlAvailableWidth * 0.45))
+    readonly property real sideWidth: vertical ? 0 : slot.width + (valueWidth > 0 ? valueWidth + (slot.width > 0 ? 12 : 0) : 0)
 
     width: parent ? parent.width : 400
-    height: stacked
-        ? 14 + header.implicitHeight + 10 + slot.height + 14
-        : Math.max(56, header.implicitHeight + 24, slot.height + 20)
+    height: vertical
+        ? 16 + header.implicitHeight + 12 + slot.height + 16
+        : Math.max(Theme.settingsRowHeight, header.implicitHeight + 28, slot.height + 24)
 
     HoverHandler { id: hover }
-    SettingsTile { row: settingsRow; hovered: hover.hovered && !OverlayState.settingsPopup }
+    SettingsTile { row: settingsRow; hovered: settingsRow.highlighted || (hover.hovered && !OverlayState.settingsPopup) }
 
     Column
     {
         id: header
 
         x: settingsRow.inset + settingsRow.lead
-        y: settingsRow.stacked ? 14 : Math.round((settingsRow.height - implicitHeight) / 2)
-        width: Math.max(0, settingsRow.width - settingsRow.inset * 2 - settingsRow.lead - (settingsRow.sideWidth > 0 ? settingsRow.sideWidth + 20 : 0))
-        spacing: 3
+        y: settingsRow.vertical ? 16 : Math.round((settingsRow.height - implicitHeight) / 2)
+        width: Math.max(0, settingsRow.controlAvailableWidth - settingsRow.lead - (settingsRow.sideWidth > 0 ? settingsRow.sideWidth + Theme.settingsRowGap : 0))
+        spacing: 4
 
         Row
         {
@@ -88,6 +93,15 @@ Item
             color: Theme.text3
             wrapMode: Text.Wrap
         }
+        ShellText
+        {
+            width: parent.width
+            visible: settingsRow.vertical && !settingsRow.stacked && settingsRow.valueText !== ""
+            label: settingsRow.valueText
+            size: 12
+            color: Theme.text2
+            wrapMode: Text.Wrap
+        }
     }
 
     ShellIcon
@@ -105,9 +119,9 @@ Item
 
         anchors.verticalCenter: slot.verticalCenter
         x: slot.x - (slot.width > 0 ? 12 : 0) - width
-        width: Math.min(implicitWidth, settingsRow.width * 0.45)
+        width: settingsRow.valueWidth
 
-        visible: !settingsRow.stacked && settingsRow.valueText !== ""
+        visible: !settingsRow.vertical && settingsRow.valueText !== ""
         label: settingsRow.valueText
         size: 12
         color: Theme.text2
@@ -118,9 +132,9 @@ Item
     {
         id: slot
 
-        x: settingsRow.stacked ? settingsRow.inset : settingsRow.width - settingsRow.inset - width
-        y: settingsRow.stacked ? header.y + header.implicitHeight + 10 : Math.round((settingsRow.height - height) / 2)
-        width: settingsRow.stacked ? Math.max(0, settingsRow.width - settingsRow.inset * 2) : childrenRect.width
+        x: settingsRow.vertical ? settingsRow.inset : settingsRow.width - settingsRow.inset - width
+        y: settingsRow.vertical ? header.y + header.implicitHeight + 12 : Math.round((settingsRow.height - height) / 2)
+        width: settingsRow.vertical ? settingsRow.controlAvailableWidth : childrenRect.width
         height: childrenRect.height
     }
 }

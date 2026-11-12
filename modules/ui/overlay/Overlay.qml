@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Window
+import QtQuick.Controls.Basic as Controls
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Polkit
@@ -108,6 +109,20 @@ PanelWindow
 
     PolkitAgent { id: authAgent }
     Binding { target: OverlayState; property: "inhibited"; value: overlay.authenticating || ServiceLock.locked || ServiceScreenshot.active }
+    Binding { target: OverlayState; property: "popupsSuspended"; value: overlay.authenticating || ServiceLock.locked || ServiceScreenshot.active || overlay.switching }
+    Item
+    {
+        id: popupGuard
+        readonly property Item controlsLayer: Controls.Overlay.overlay
+        Binding
+        {
+            target: popupGuard.controlsLayer
+            property: "visible"
+            when: OverlayState.popupsSuspended && popupGuard.controlsLayer !== null
+            value: false
+            restoreMode: Binding.RestoreBindingOrValue
+        }
+    }
     AltTabKeyboard { }
     ShortcutInhibitor { window: overlay; enabled: overlay.switching || overlay.authenticating || OverlayState.active || ServiceScreenshot.active }
 

@@ -20,7 +20,7 @@ Singleton
     readonly property bool active: capture !== null && phase !== "idle" && phase !== "capturing" && !cancelled
     readonly property bool busy: phase !== "idle"
     readonly property bool working: phase === "publishing"
-    readonly property string helper: Paths.runtimeScriptsDir + "/screenshot"
+    readonly property var helper: Paths.commandFor("screenshot")
     signal finished(bool saved, string path)
 
     function start(name = "", mode = -1)
@@ -35,10 +35,10 @@ Singleton
         phase = "capturing";
         const display = ServiceDisplay.output(screen.name);
         const scale = display && display.logical ? display.logical.scale : screen.devicePixelRatio || 1;
-        grabber.run(["python3", helper, "capture", output, String(screen.width), String(screen.height), String(scale)]);
+        grabber.run(helper.concat(["capture", output, String(screen.width), String(screen.height), String(scale)]));
     }
 
-    function cleanup(directory) { if (directory) Quickshell.execDetached(["python3", helper, "cleanup", directory]) }
+    function cleanup(directory) { if (directory) Quickshell.execDetached(helper.concat(["cleanup", directory])) }
     function reset()
     {
         const directory = capture ? capture.directory : "";
@@ -69,8 +69,8 @@ Singleton
         error = "";
         saving = Config.screenshotSave;
         phase = "publishing";
-        publisher.run(["python3", helper, "export", capture.directory, saving ? "save" : "copy",
-            String(region.x), String(region.y), String(region.width), String(region.height)]);
+        publisher.run(helper.concat(["export", capture.directory, saving ? "save" : "copy",
+            String(region.x), String(region.y), String(region.width), String(region.height)]));
     }
 
     CommandProcess

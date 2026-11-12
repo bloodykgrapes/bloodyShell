@@ -21,8 +21,8 @@ MouseArea
     property color backgroundColor: pressed || active ? Theme.colorPressed
         : containsMouse ? Theme.colorHover : "transparent"
 
-    property real iconSize: Math.round(16 * Config.themeScale)
-    property real padding: Math.round(7 * Config.themeScale)
+    property real iconSize: 16
+    property real padding: 7
     property real spacing: 4
 
     readonly property bool hasIcon: icon !== ""
@@ -97,7 +97,7 @@ MouseArea
 
             Tint on color {}
 
-            font.pixelSize: Math.round(12 * Config.themeScale)
+            font.pixelSize: 12
             font.family: Theme.fontText
 
             width: Math.max(implicitWidth, reserve.advanceWidth)

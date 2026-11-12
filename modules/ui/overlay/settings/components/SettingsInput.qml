@@ -18,9 +18,10 @@ Rectangle
     signal editingFinished()
     signal textEdited(string value)
 
-    implicitWidth: 260
-    width: implicitWidth
-    height: 32
+    property real preferredWidth: 260
+    implicitWidth: Math.round(preferredWidth)
+    width: Theme.controlWidth(settingsInput, implicitWidth)
+    height: Theme.settingsControlHeight
     radius: Theme.radiusMedium
     opacity: enabled ? 1 : 0.4
 
@@ -53,7 +54,7 @@ Rectangle
         selectionColor: Theme.colorSelection
         selectedTextColor: Theme.text1
         font.family: Theme.fontText
-        font.pixelSize: Math.round(12 * Config.themeScale)
+        font.pixelSize: 12
 
         onAccepted: settingsInput.accepted()
         onEditingFinished: settingsInput.editingFinished()

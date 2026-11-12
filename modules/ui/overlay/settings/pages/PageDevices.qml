@@ -39,6 +39,26 @@ SettingsPage
 
     SettingsGroup
     {
+        title: Tr.tr("keyboard.title")
+        SettingsRow
+        {
+            label: Tr.tr("keyboard.enable")
+            description: Tr.tr("keyboard.enableHint")
+            Toggle { checked: Config.virtualKeyboardEnabled; onToggled: value => Config.set("virtualKeyboardEnabled", value) }
+        }
+        SettingsRow
+        {
+            visible: Config.virtualKeyboardEnabled
+            label: Tr.tr("keyboard.title")
+            description: ServiceVirtualKeyboard.error
+            SettingsButton { text: Tr.tr("keyboard.show"); onClicked: ServiceVirtualKeyboard.show() }
+        }
+    }
+
+    SettingsMouse {}
+
+    SettingsGroup
+    {
         title: Tr.tr("common.bluetooth")
 
         SettingsRow

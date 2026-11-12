@@ -1,6 +1,5 @@
 import QtQuick
 
-import "../../../../animations"
 import "../../../../core"
 
 Rectangle
@@ -41,6 +40,14 @@ Rectangle
         bottomRightRadius: parent.bottomRightRadius
         color: Theme.colorHover
         opacity: settingsTile.hovered ? 1 : 0
-        Smooth on opacity {}
+        Behavior on opacity
+        {
+            enabled: Config.animationsEnabled
+            NumberAnimation
+            {
+                duration: 140
+                easing.type: Easing.InOutSine
+            }
+        }
     }
 }

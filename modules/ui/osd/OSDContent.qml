@@ -29,7 +29,14 @@ Widget
         return 300;
     }
     readonly property bool compact: !notification && (vertical || limit < 120)
+    readonly property real menuProgress:
+    {
+        for (let item = parent; item; item = item.parent)
+            if (item.isIsland) return item.progress;
+        return 0;
+    }
     implicitWidth: vertical && !notification ? 32 : hit.implicitWidth
+    implicitHeight: hit.implicitHeight
     active: menuOpen || presentation.kind !== ""
 
     function present(next)
@@ -89,14 +96,16 @@ Widget
     MouseArea
     {
         id: hit
+        objectName: "islandCompactContent"
+        visible: !island.menuOpen
         implicitWidth: island.notification
-            ? island.vertical ? Math.min(340 * Config.themeScale, Math.max(160, (QsWindow.window ? QsWindow.window.width : 400) - 64)) : island.limit
+            ? island.vertical ? Math.min(340, Math.max(160, (QsWindow.window ? QsWindow.window.width : 400) - 64)) : island.limit
             : island.vertical ? 32 : Math.min(island.limit, Math.max(130, textProbe.advanceWidth + 76))
         implicitHeight: island.notification ? Math.max(84, textColumn.implicitHeight + 24) : 32
         hoverEnabled: true
         acceptedButtons: island.shown.kind === "osd" ? Qt.NoButton : Qt.LeftButton | Qt.MiddleButton
         cursorShape: acceptedButtons !== Qt.NoButton ? Qt.PointingHandCursor : Qt.ArrowCursor
-        opacity: island.contentOpacity
+        opacity: island.contentOpacity * (1 - island.menuProgress)
         transform: Translate
         {
             x: island.vertical ? island.contentShift * (island.side === Enums.EdgeLeft ? 1 : -1) : 0
@@ -121,7 +130,7 @@ Widget
             else if (steps < 0) ServiceMedia.next();
         }
 
-        TextMetrics { id: textProbe; text: island.shown.title || ""; font.family: Theme.fontText; font.pixelSize: 12 * Config.themeScale }
+        TextMetrics { id: textProbe; text: island.shown.title || ""; font.family: Theme.fontText; font.pixelSize: 12 }
 
         ClippingRectangle
         {
@@ -137,7 +146,7 @@ Widget
             {
                 id: art
                 anchors.fill: parent
-                source: island.shown.kind === "media" ? island.shown.art || "" : ""
+                source: !island.menuOpen && island.shown.kind === "media" ? island.shown.art || "" : ""
                 sourceSize: Qt.size(64, 64)
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true

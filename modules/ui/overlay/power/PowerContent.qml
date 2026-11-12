@@ -28,8 +28,6 @@ Rectangle
     readonly property int tileWidth: 104
     radius: 30
     color: Theme.colorSolid
-    border.color: Theme.colorHairline
-    border.width: Theme.borderWidth
 
     property int index: 0
     property bool active: true

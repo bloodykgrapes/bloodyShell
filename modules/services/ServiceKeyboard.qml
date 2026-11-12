@@ -12,8 +12,8 @@ Singleton
 {
     id: serviceKeyboard
 
-    readonly property string file: Paths.niriDir + "/01-input.kdl"
-    readonly property string helper: Paths.niriHelper
+    readonly property string file: Paths.niriDir + "/06-user-input.kdl"
+    readonly property var helper: Paths.commandFor("niri-config")
 
     property var    layouts: []
     property string switchOption: ""
@@ -26,6 +26,7 @@ Singleton
 
     property bool   loaded: false
     property string error: ""
+    readonly property bool busy: flush.running || writer.busy
 
     property var catalog: []
     property var variants: ({})
@@ -92,21 +93,10 @@ Singleton
         return lines.join("\n");
     }
 
-    function rendered(text)
-    {
-        const input = Kdl.findBlock(text, "input", 0);
-        if (!input) return text.replace(/\s*$/, "") + "\n\ninput {\n" + renderBlock("    ") + "\n}\n";
-
-        const keyboard = Kdl.findBlock(text, "keyboard", input.open, input.close);
-        if (keyboard) return text.substring(0, keyboard.start) + renderBlock(keyboard.indent) + text.substring(keyboard.close + 1);
-
-        return text.substring(0, input.open + 1) + "\n" + renderBlock(input.indent + "    ") + text.substring(input.open + 1);
-    }
-
     function write()
     {
         if (writer.busy) { flush.restart(); return; }
-        writer.run([helper, "write", "01-input.kdl", rendered(store.loadedText).replace(/\s*$/, "")]);
+        writer.run(helper.concat(["keyboard", renderBlock("")]));
     }
 
     CommandProcess
@@ -121,17 +111,24 @@ Singleton
 
     function parse(text)
     {
+        text = Kdl.nodeLines(text);
         const input = Kdl.findBlock(text, "input", 0);
         const keyboard = input ? Kdl.findBlock(text, "keyboard", input.open, input.close) : null;
         const block = keyboard ? text.substring(keyboard.open, keyboard.close) : "";
-        const value = key => { const m = new RegExp("^\\s*" + key + "\\s+\"([^\"]*)\"", "m").exec(block); return m ? m[1] : null };
+        const xkb = keyboard ? Kdl.findBlock(text, "xkb", keyboard.open, keyboard.close) : null;
+        const xkbBlock = xkb ? text.substring(xkb.open, xkb.close) : "";
+        const value = (key, source = block) =>
+        {
+            const m = new RegExp('^\\s*' + key + '\\s+("(?:\\\\.|[^"\\\\])*")', "m").exec(source);
+            return m ? JSON.parse(m[1]) : null;
+        };
         const number = (key, fallback) => { const m = new RegExp("^\\s*" + key + "\\s+(\\d+)", "m").exec(block); return m ? parseInt(m[1], 10) : fallback };
 
-        const codes = (value("layout") || "us").split(",").map(s => s.trim());
-        const vars = (value("variant") || "").split(",").map(s => s.trim());
+        const codes = (value("layout", xkbBlock) || "us").split(",").map(s => s.trim());
+        const vars = (value("variant", xkbBlock) || "").split(",").map(s => s.trim());
         layouts = codes.filter(c => c !== "").map((c, i) => ({ layout: c, variant: vars[i] || "" }));
 
-        const options = (value("options") || "").split(",").map(s => s.trim()).filter(o => o !== "");
+        const options = (value("options", xkbBlock) || "").split(",").map(s => s.trim()).filter(o => o !== "");
         switchOption = options.find(o => o.startsWith("grp:")) || "";
         capsOption = options.find(o => o.startsWith("caps:") || o === "ctrl:nocaps" || o === "ctrl:swapcaps") || "";
         otherOptions = options.filter(o => o !== switchOption && o !== capsOption);
@@ -147,15 +144,13 @@ Singleton
     {
         id: store
 
-        property string loadedText: ""
-
         path: serviceKeyboard.file
         printErrors: false
 
         watchChanges: true
         onFileChanged: reload()
-        onLoaded: { loadedText = text(); serviceKeyboard.parse(loadedText) }
-        onLoadFailed: { loadedText = ""; serviceKeyboard.parse("") }
+        onLoaded: if (!flush.running && !writer.busy) serviceKeyboard.parse(text())
+        onLoadFailed: if (!flush.running && !writer.busy) serviceKeyboard.parse("")
     }
 
     Process

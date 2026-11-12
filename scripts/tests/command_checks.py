@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import json
+import io
+from contextlib import redirect_stdout
 import os
 from pathlib import Path
 import runpy
@@ -14,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def run_checks():
-    installer = runpy.run_path(str(ROOT / "scripts/setup/install-command"))["install"]
+    installer = runpy.run_path(str(ROOT / "scripts/lib/management.py"))["install"]
     with tempfile.TemporaryDirectory(prefix="bloodyShell-command-") as temporary:
         base = Path(temporary)
         home = base / "user's home $(touch unexpected)"
@@ -33,40 +35,49 @@ def run_checks():
         old = home / "old-command"
         old.write_text("previous executable")
         (binary / "bloodyShell").symlink_to(old)
-        result = installer(ROOT / "scripts/bloodyShell", binary, config, home, base / "backup", "/bin/bash", "/usr/bin:/bin")
+        result = installer(ROOT / "scripts/bloodyShell", binary, base / "backup")
         assert result["backups"]
         command = binary / "bloodyShell"
         assert command.is_file() and not command.is_symlink() and os.access(command, os.X_OK)
         assert old.read_text() == "previous executable", "Command replacement must not follow symlinks"
         assert (base / "backup/command").is_symlink()
         assert (home / ".bashrc").is_symlink(), "Preserve managed startup-file symlinks"
-        assert (base / "backup/bashrc").read_text() == "export KEEP_ME=yes\n"
-        repeated = installer(ROOT / "scripts/bloodyShell", binary, config, home, base / "backup", "/bin/bash", "/usr/bin:/bin")
+        assert original.read_text() == "export KEEP_ME=yes\n"
+        assert not (base / "backup/bashrc").exists()
+        repeated = installer(ROOT / "scripts/bloodyShell", binary, base / "backup")
         assert not repeated["changed"] and not repeated["backups"]
         runtime = base / "runtime"
         runtime.mkdir(mode=0o700)
         env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(config), XDG_RUNTIME_DIR=str(runtime), PATH="/usr/bin:/bin")
         checked = subprocess.run(["bash", "--noprofile", "--norc", "-c", '. "$HOME/.bashrc"; . "$HOME/.bashrc"; printf "%s" "$PATH"'], env=env, capture_output=True, text=True, timeout=5)
         assert checked.returncode == 0, checked.stderr
-        assert checked.stdout == str(binary) + ":/usr/bin:/bin", checked.stdout
+        assert checked.stdout == "/usr/bin:/bin", checked.stdout
         assert not (ROOT / "unexpected").exists() and not (home / "unexpected").exists()
 
-        for shell in ("zsh", "fish", "nu"):
-            root = base / shell
-            root.mkdir()
-            result = installer(ROOT / "scripts/bloodyShell", root / "bin", root / "config", root, root / "backup", shell, "/usr/bin:/bin")
-            if shell == "zsh":
-                assert (root / ".zshenv").is_file()
-            elif shell == "fish":
-                script = root / "config/fish/conf.d/bloodyShell.fish"
-                assert "set -gx PATH" in script.read_text()
-                if shutil.which("fish"):
-                    subprocess.run(["fish", "--no-execute", str(script)], check=True)
-            else:
-                assert result["manual"] and not (root / ".profile").exists()
-        root = base / "path-ready"
-        installer(ROOT / "scripts/bloodyShell", root / "bin", root / "config", root, root / "backup", "bash", str(root / "bin"))
-        assert not (root / ".bashrc").exists(), "No startup-file edits when the command is on PATH"
+        # Install through the privileged boundary into an isolated directory
+        # already on PATH, as terminals and niri inherit it.
+        system = base / "system bin/bloodyShell"
+        def sudo_install(args, **options):
+            assert args[:2] == ["sudo", "/usr/bin/install"] and options["check"]
+            assert args[-1] == str(system)
+            system.parent.mkdir(exist_ok=True)
+            shutil.copyfile(args[-2], system)
+            system.chmod(0o755)
+            return subprocess.CompletedProcess(args, 0)
+        with patch.dict(installer.__globals__, SYSTEM_COMMAND=system), patch("subprocess.run", side_effect=sudo_install) as privileged:
+            installer(ROOT / "scripts/bloodyShell", system.parent, base / "system backup")
+            assert privileged.call_count == 1
+            installer(ROOT / "scripts/bloodyShell", system.parent, base / "system backup")
+            assert privileged.call_count == 1, "Unchanged system commands must not request sudo again"
+        resolved = subprocess.run(["bash", "--noprofile", "--norc", "-c", "bloodyShell version"],
+                                  env=dict(env, PATH=str(system.parent) + ":/usr/bin:/bin"), capture_output=True, text=True, timeout=5)
+        assert resolved.returncode == 0 and resolved.stdout.strip() == "bloodyShell 1.2.3", resolved.stderr
+        default = base / "default-install-path"
+        default.write_text((ROOT / "setup").read_text().rsplit('main "$@"', 1)[0] + '\nprintf "%s" "$BIN_HOME"\n')
+        clean = dict(env)
+        clean.pop("XDG_BIN_HOME", None)
+        result = subprocess.run(["bash", str(default)], env=clean, capture_output=True, text=True, timeout=5)
+        assert result.returncode == 0 and result.stdout == str(home / ".local/bin"), result.stdout + result.stderr
 
         fake = base / "fake"
         fake.mkdir()
@@ -106,7 +117,7 @@ else:
         assert invoke("help").returncode == 0
         assert invoke("version").stdout.strip() == "bloodyShell 1.2.3"
         assert invoke("path").stdout.strip() == str(target)
-        for action in ("install", "update", "doctor", "configs", "greetd"):
+        for action in ("install", "update", "doctor", "configs", "sddm"):
             result = invoke(action, "--example")
             assert result.returncode == 0 and result.stdout == action + "\n--example\n", result.stderr
         assert invoke("setup").returncode == 0
@@ -128,12 +139,12 @@ else:
         discovered = base / "instances"
         discovered.write_text(json.dumps([
             dict(id="unrelated-shell", shell_id="other", config_path=str(base / "other/shell.qml"), launch_time="2026-11-08T23:59:00"),
-            dict(id="greeter", shell_id="bloodyShell-greeter", config_path=str(base / "greeter/shell.qml"), launch_time="2026-11-08T23:58:00"),
+            dict(id="greeter", shell_id="bloodyShell-greeter", config_path=str(base / "dots/sddm/Main.qml"), launch_time="2026-11-08T23:58:00"),
             dict(id="installed-shell", shell_id="bloodyShell", config_path=str(target / "shell.qml"), launch_time="2026-11-08T10:00:00"),
             dict(id="development-shell", shell_id="bloodyShell", config_path=str(development / "shell.qml"), launch_time="2026-11-08T11:00:00"),
             dict(id="other-display", shell_id="bloodyShell", pid=os.getpid(), launch_time="2026-11-08T23:57:00")
         ]))
-        for action in ("settings", "launcher", "wallpapers", "power", "helper"):
+        for action in ("settings", "launcher", "wallpapers", "power", "helper", "keyboard"):
             assert invoke(action).returncode == 0
             assert calls()[-1] == ["ipc", "--id", "development-shell", "call", "--", action, "toggle"]
             assert calls()[-2] == ["list", "--all", "--json", "--no-color"]
@@ -156,9 +167,7 @@ else:
         assert invoke("logs").returncode == 0 and calls()[-1][2] == "development-shell"
         (base / "installed payload temporarily absent").rename(target)
         (base / "moved again").rename(development)
-        discovered.write_text(json.dumps([dict(id="legacy-shell", shell_id="old-path-hash", config_path=str(development / "shell.qml"))]))
-        assert invoke("settings").returncode == 0 and calls()[-1][2] == "legacy-shell", "Recognize an existing instance before it reloads the stable shell identity"
-        discovered.write_text(json.dumps([dict(id="unrelated-shell", shell_id="other", config_path=str(target / "shell.qml"))]))
+        discovered.write_text(json.dumps([dict(id="unrelated-shell", shell_id="other", config_path=str(development / "shell.qml"))]))
         result = invoke("screenshot")
         assert result.returncode != 0 and "No running bloodyShell instance" in result.stderr
         assert calls()[-1] == ["list", "--all", "--json", "--no-color"], "Do not call unrelated shells or auto-start a shell"
@@ -234,5 +243,93 @@ else:
     print("Active-instance discovery/cache, session filtering, newer instances, PID reuse, directory moves, command routing, scoped lifecycle, errors and command installation passed in isolation.")
 
 
+def path_checks():
+    api = runpy.run_path(str(ROOT / "scripts/lib/management.py"))
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-PATH-") as temporary:
+        base = Path(temporary)
+        for shell in ("bash", "zsh", "fish"):
+            home = base / (shell + " user's home $(touch unexpected)")
+            home.mkdir()
+            config, binary = home / "config", home / "local bin"
+            target = config / "quickshell/bloodyShell"
+            (target / "scripts").mkdir(parents=True)
+            shutil.copy2(ROOT / "scripts/bloodyShell", target / "scripts/bloodyShell")
+            (target / "shell.qml").write_text("// test runtime\n")
+            (target / "version").write_text("1.2.3\n")
+            managed = home / "managed-bashrc"
+            original = b"export KEEP_ME=yes"
+            managed.write_bytes(original)
+            managed.chmod(0o640)
+            (home / ".bashrc").symlink_to(managed)
+            (home / ".bash_profile").write_text("export KEEP_LOGIN=yes\n")
+            zsh = home / "zsh configs"
+            zsh.mkdir()
+            tools = home / "tools"
+            tools.mkdir()
+            (tools / "qs").write_text("#!/bin/sh\nprintf '[]\\n'\n")
+            (tools / "qs").chmod(0o755)
+            env = dict(HOME=str(home), SHELL="/bin/" + shell, PATH=str(tools) + ":/usr/bin:/bin", ZDOTDIR=str(zsh),
+                       XDG_CONFIG_HOME=str(config), XDG_STATE_HOME=str(home / "state"), XDG_CACHE_HOME=str(home / "cache"))
+            arguments = ["install-command", str(target / "scripts/bloodyShell"), str(binary), str(home / "backup")]
+            with patch.dict(os.environ, env, clear=True), patch.object(sys, "argv", arguments), redirect_stdout(io.StringIO()):
+                api["install_main"]()
+                record = json.loads((home / "state/bloodyShell/install.json").read_text())
+                before = {name: (Path(name).read_bytes(), Path(name).stat().st_mtime_ns) for name in record["path_files"]}
+                api["install_main"]()
+                assert before == {name: (Path(name).read_bytes(), Path(name).stat().st_mtime_ns) for name in record["path_files"]}, "PATH installation must be idempotent"
+            assert (home / ".bashrc").is_symlink() and managed.stat().st_mode & 0o777 == 0o640
+            for profile in (home / ".profile", home / ".bashrc", home / ".bash_profile"):
+                sourced = subprocess.run(["bash", "--noprofile", "--norc", "-c", '. "$1"; . "$1"; command -v bloodyShell; bloodyShell version; printf "%s" "$PATH"', "test", str(profile)],
+                                         env=env, capture_output=True, text=True, timeout=5)
+                assert sourced.returncode == 0, sourced.stderr
+                lines = sourced.stdout.splitlines()
+                assert lines[:2] == [str(binary / "bloodyShell"), "bloodyShell 1.2.3"] and lines[2].split(":").count(str(binary)) == 1
+            if shell == "zsh":
+                assert (zsh / ".zprofile").exists() and (zsh / ".zshrc").exists()
+            if shell == "fish":
+                fish_file = config / "fish/conf.d/bloodyShell-path.fish"
+                assert fish_file.exists()
+                if shutil.which("fish"):
+                    sourced = subprocess.run(["fish", "--no-config", "-c", 'source "$argv[1]"; source "$argv[1]"; command -s bloodyShell', str(fish_file)], env=env, capture_output=True, text=True, timeout=5)
+                    assert sourced.returncode == 0 and sourced.stdout.strip() == str(binary / "bloodyShell"), sourced.stderr
+            generator = Path("/usr/lib/systemd/user-environment-generators/30-systemd-environment-d-generator")
+            if generator.is_file():
+                result = subprocess.run(["bash", "--noprofile", "--norc", "-c", 'eval "$("$1")"; printf "%s" "$PATH"', "test", str(generator)], env=env, capture_output=True, text=True, timeout=5)
+                assert result.returncode == 0 and result.stdout.split(":")[0] == str(binary), result.stdout + result.stderr
+            managed.write_bytes(managed.read_bytes() + b"# personal addition\n")
+            with patch.dict(os.environ, env, clear=True), patch.object(sys, "argv", ["uninstall", "--apply"]), redirect_stdout(io.StringIO()):
+                api["uninstall_main"]()
+            assert managed.read_bytes() == original + b"\n# personal addition\n" and (home / ".bashrc").is_symlink()
+            assert (home / ".bash_profile").read_text() == "export KEEP_LOGIN=yes\n"
+            assert not (home / ".profile").exists() and not (config / "environment.d/90-bloodyShell-path.conf").exists()
+            assert not (ROOT / "unexpected").exists() and not (home / "unexpected").exists()
+        # A failed registration rolls back only files written by that attempt.
+        home = base / "rollback home"
+        (home / "config/quickshell/bloodyShell/scripts").mkdir(parents=True)
+        target = home / "config/quickshell/bloodyShell"
+        shutil.copy2(ROOT / "scripts/bloodyShell", target / "scripts/bloodyShell")
+        (target / "shell.qml").write_text("// runtime")
+        (target / "version").write_text("1.2.3")
+        (home / ".bashrc").write_text("# original")
+        env = dict(HOME=str(home), SHELL="/bin/bash", PATH="/usr/bin:/bin", XDG_CONFIG_HOME=str(home / "config"), XDG_STATE_HOME=str(home / "state"))
+        ownership = runpy.run_path(str(ROOT / "scripts/lib/ownership.py"))
+        original_atomic = ownership["atomic"]
+        def failing_atomic(path, data, mode=0o600):
+            original_atomic(path, data, mode)
+            if path == home / ".profile":
+                raise OSError("simulated disk failure after the profile write")
+        with patch.dict(os.environ, env, clear=True), patch.object(sys, "argv", ["install-command", str(target / "scripts/bloodyShell"), str(home / ".local/bin"), str(home / "backup")]), patch("runpy.run_path", return_value=dict(ownership, atomic=failing_atomic)), redirect_stdout(io.StringIO()):
+            try:
+                api["install_main"]()
+            except OSError:
+                pass
+            else:
+                raise AssertionError("Partial PATH installation was accepted")
+        assert not (home / ".profile").exists() and not (home / ".local/bin/bloodyShell").exists()
+        assert (home / ".bashrc").read_text() == "# original" and not (home / "state/bloodyShell/install.json").exists()
+    print("Managed PATH blocks passed: Bash/login shells, ZDOTDIR, Fish, environment.d, literal paths, symlinks, permissions, idempotence and removal preserving user edits.")
+
+
 if __name__ == "__main__":
     run_checks()
+    path_checks()

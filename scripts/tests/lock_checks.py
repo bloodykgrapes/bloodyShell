@@ -380,14 +380,12 @@ ShellRoot
                     if (step >= 2 && step < 6)
                     {
                         window.width = sizes[step - 2].width; window.height = sizes[step - 2].height;
-                        Config.set("themeScale", step % 2 ? 1.5 : 1);
                     }
                     if (step === 6) lock.visible = false;
                     if (step === 7)
                     {
                         window.check(ServiceMedia.positionClients.length === 0, "Hidden lock screen kept polling media");
                         lock.visible = true;
-                        Config.set("themeScale", 1);
                         window.width = 1024; window.height = 768;
                     }
                     if (step === 8)
@@ -404,7 +402,7 @@ ShellRoot
 }
 ''')
         env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software",
-                   XDG_CONFIG_HOME=str(base / "config"), XDG_CACHE_HOME=str(base / "cache"), XDG_RUNTIME_DIR=str(base / "runtime"),
+                   XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"), XDG_RUNTIME_DIR=str(base / "runtime"),
                    DBUS_SESSION_BUS_ADDRESS="unix:path=/tmp/bloodyshell-test-no-bus", DBUS_SYSTEM_BUS_ADDRESS="unix:path=/tmp/bloodyshell-test-no-system-bus")
         env.pop("WAYLAND_DISPLAY", None)
         result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=15)

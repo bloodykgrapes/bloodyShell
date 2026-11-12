@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 
+import "../../animations"
 import "../../common"
 import "../../core"
 import "../overlay"
@@ -16,8 +17,24 @@ OverlayView
     readonly property real originX: OverlayState.origin.x
     readonly property real originY: OverlayState.origin.y
     property int selected: -1
+    property real progress: 0
+    readonly property real shown: Config.animationsEnabled ? progress : open ? 1 : 0
 
-    Component.onCompleted: Qt.callLater(() => content.forceActiveFocus())
+    Ease on progress
+    {
+        duration: desktopMenu.open ? Theme.animationDurationControl : Theme.animationDurationClose
+        curve: desktopMenu.open ? Theme.easingEmphasized : Theme.easingAccelerate
+    }
+    onOpenChanged: if (ready) updateMenu()
+    onReadyChanged: if (ready) updateMenu()
+
+    function updateMenu()
+    {
+        progress = open ? 1 : 0;
+        if (!open) return;
+        selected = -1;
+        Qt.callLater(() => { if (desktopMenu.open) content.forceActiveFocus(); });
+    }
 
     function activate(index)
     {
@@ -53,21 +70,25 @@ OverlayView
         Rectangle
         {
             id: card
+            objectName: "desktopMenuCard"
 
             x: Math.max(8, Math.min(desktopMenu.originX, content.width - width - 8))
             y: Math.max(8, Math.min(desktopMenu.originY, content.height - height - 8))
-            width: Math.round(240 * Config.themeScale)
+            width: Math.min(240, Math.max(0, content.width - 16))
             height: entries.implicitHeight + 16
             radius: Theme.radiusLarge
             color: Theme.colorSolid
-            border.color: Theme.colorLine
-            border.width: Theme.borderWidth
 
-            readonly property real reveal: desktopMenu.reveal
-            opacity: reveal
-            scale: Config.animationsFluid ? 0.94 + reveal * 0.06 : 1
-            transformOrigin: Item.TopLeft
-            transform: Translate { y: Config.animationsFluid ? (1 - card.reveal) * -8 : 0 }
+            readonly property real zoom: 1 - (Config.animationsFluid ? 0.06 : 0.02) * (1 - desktopMenu.shown)
+            opacity: desktopMenu.shown
+            transform: Scale
+            {
+                objectName: "desktopMenuScale"
+                origin.x: Math.max(0, Math.min(card.width, desktopMenu.originX - card.x))
+                origin.y: Math.max(0, Math.min(card.height, desktopMenu.originY - card.y))
+                xScale: card.zoom
+                yScale: card.zoom
+            }
 
             MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }
 

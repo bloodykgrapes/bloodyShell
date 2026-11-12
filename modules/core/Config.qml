@@ -14,6 +14,8 @@ Singleton
     property real scrollSpeed: 2.5
     property bool debug: false
     property bool helperSeen: false
+    property bool virtualKeyboardEnabled: false
+    property bool greeterSync: false
 
     property bool updateBeta: false
     property bool updateAuto: false
@@ -22,17 +24,16 @@ Singleton
     property int  themeStyle: 1
     property int  themeAnimations: 1
     property bool themeAccent: false
-    property bool themeBorder: false
-    property real themeScale: 1.0
 
     property int frameThickness: 8
 
     property string wallpaperCurrent: ""
     property string wallpaperDirectory: Paths.home + "/Pictures/Wallpapers"
+    property string wallpaperTransition: "grow"
 
     property int equalizerStyle: 0
     property bool desktopEqualizer: true
-    property bool desktopWidgets: false
+    property int desktopBlur: 0
 
     property bool barEnabled: true
     property var  barScreens: []
@@ -150,14 +151,27 @@ Singleton
     function valid(key, v)
     {
         const d = defaults[key];
+        if (key === "wallpaperTransition") return ["none", "simple", "fade", "left", "right", "top", "bottom", "wipe", "wave", "grow", "center", "any", "outer", "random"].includes(v);
 
         if (Array.isArray(d))
-            return Array.isArray(v);
+            return Array.isArray(v) && v.every(item => typeof item === "string" && item.length > 0);
 
         if (d !== null && typeof d === "object")
             return v !== null && typeof v === "object" && !Array.isArray(v);
 
-        return typeof v === typeof d;
+        if (typeof v !== typeof d) return false;
+        if (typeof v !== "number") return true;
+        if (!Number.isFinite(v)) return false;
+        const ranges = {
+            themeStyle: [0, 1], themeAnimations: [0, 2], desktopBlur: [0, 2],
+            barSide: [0, 3], dockSide: [0, 3], barType: [0, 3], dockType: [0, 3],
+            frameThickness: [0, 8], scrollSpeed: [1, 4], dockIconSize: [16, 128],
+            osdDuration: [0, 60000], notificationsDuration: [0, 600000],
+            idleLock: [0, 86400], idleDisplay: [0, 86400], idleSuspend: [0, 86400],
+            nightLightTemperature: [1000, 10000], nightLightMode: [0, 2]
+        };
+        const range = ranges[key];
+        return !range || v >= range[0] && v <= range[1];
     }
 
     function snapshot()
@@ -205,6 +219,11 @@ Singleton
         if (!(key in config) || !isOption(key))
         {
             console.warn("Config: unknown option " + key);
+            return;
+        }
+        if (!valid(key, value))
+        {
+            console.warn("Config: invalid value for " + key);
             return;
         }
         if (JSON.stringify(config[key]) === JSON.stringify(value)) return;
@@ -270,6 +289,7 @@ Singleton
             if (code !== 0)
             {
                 console.warn("Config: could not create config directory " + config.dir);
+                config.initialized = true;
                 return;
             }
             store.path = config.file;

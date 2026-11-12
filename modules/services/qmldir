@@ -27,4 +27,5 @@ singleton ServiceStorage             1.0 ServiceStorage.qml
 singleton ServiceSystem              1.0 ServiceSystem.qml
 singleton ServiceUpdate              1.0 ServiceUpdate.qml
 singleton ServiceUser                1.0 ServiceUser.qml
+singleton ServiceVirtualKeyboard     1.0 ServiceVirtualKeyboard.qml
 singleton ServiceWindowActions       1.0 ServiceWindowActions.qml

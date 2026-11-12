@@ -37,21 +37,16 @@ Item
     {
         interval: 0
         running: Config.initialized
-        onTriggered: build.run(["python3", Paths.runtimeScriptsDir + "/build-keyboard-monitor"])
+        onTriggered: monitor.load()
     }
 
-    CommandProcess
+    NativeLoader
     {
-        id: build
-        stdout: StdioCollector { id: result }
-        onCompleted: code =>
-        {
-            if (code === 0) monitor.source = result.text.trim();
-            else console.warn("Alt+Tab keyboard monitor: " + errorMessage("Could not load Qt keyboard state monitor"));
-        }
+        id: monitor
+        helper: "build-keyboard-monitor"
+        failureText: "Could not load Qt keyboard state monitor"
+        onErrorChanged: if (error !== "") console.warn("Alt+Tab keyboard monitor: " + error)
     }
-
-    Loader { id: monitor }
 
     Binding
     {

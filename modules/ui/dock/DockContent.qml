@@ -37,7 +37,7 @@ Item
         property real reveal: content.host.revealed ? 1 : 0
         Glide on reveal { enabled: Config.animationsEnabled && content.host.initialized }
 
-        opacity: content.host.inFrame ? 1 : Math.min(1, reveal * 1.6)
+        opacity: Math.min(1, reveal * 1.6)
 
         readonly property real restX: Math.round(content.host.isHorizontal ? (content.host.width - width) / 2
             : content.host.side === Enums.EdgeLeft ? content.host.edgeGap : content.host.width - width - content.host.edgeGap)

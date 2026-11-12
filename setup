@@ -7,13 +7,12 @@ readonly NAME="bloodyShell"
 readonly CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 readonly TARGET="$CONFIG_HOME/quickshell/$NAME"
 readonly BIN_HOME="${XDG_BIN_HOME:-$HOME/.local/bin}"
-readonly BACKUP_ROOT="$HOME/$NAME.bak"
+readonly BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/$NAME/backups"
 readonly STATE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/$NAME"
 readonly STATUS_FILE="${BLOODYSHELL_STATUS:-$STATE_DIR/update.status}"
 readonly STAMP="$(date +%Y-%m-%d_%H-%M-%S)-$$"
 readonly PACKAGE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-readonly INSTALL_EXCLUDE=("./.*" "./*.md" "./docs" "./dots" "./greeter" "./assets/wallpapers" "./scripts/tests" "./scripts/tools" "__pycache__" "*.pyc" "*.pyo")
 
 BACKED_UP=false
 
@@ -100,7 +99,6 @@ banner()
 
 finish()
 {
-    local shell="${SHELL:-}"
     section "$1"
     detail "Version" "$(installed_version)"
     detail "Shell" "$(hl "$TARGET")"
@@ -110,15 +108,7 @@ finish()
     detail "Settings" "bloodyShell settings"
     detail "Check" "bloodyShell doctor"
     detail "Update" "bloodyShell update"
-    if [[ ":$PATH:" != *":$BIN_HOME:"* ]]; then
-        printf '\n'
-        info "Open a new terminal to use the command. For this terminal:"
-        if [[ "${shell##*/}" == fish ]]; then
-            printf '    fish_add_path %q\n' "$BIN_HOME"
-        else
-            printf '    export PATH=%q:"$PATH"\n' "$BIN_HOME"
-        fi
-    fi
+    info "Open a new terminal to use the command. Log out and back in for niri keybinds."
     printf '\n'
 }
 
@@ -277,9 +267,26 @@ status() { if $STATUS_ENABLED; then mkdir -p "$(dirname "$STATUS_FILE")"; printf
 
 backup()
 {
-    mkdir -p "$BACKUP_ROOT/$STAMP"
-    mv "$1" "$BACKUP_ROOT/$STAMP/$2"
+    mkdir -p "$BACKUP_ROOT/$STAMP" || return 1
+    [[ ! -e "$BACKUP_ROOT/$STAMP/$2" && ! -L "$BACKUP_ROOT/$STAMP/$2" ]] || return 1
+    mv -- "$1" "$BACKUP_ROOT/$STAMP/$2" || return 1
     BACKED_UP=true
+}
+
+lock_installation()
+{
+    local state="${XDG_STATE_HOME:-$HOME/.local/state}/$NAME"
+    mkdir -p -m 700 "$state"
+    exec {BLOODYSHELL_OPERATION_FD}> "$state/operation.lock"
+    flock -n "$BLOODYSHELL_OPERATION_FD" || die "Another installation, update or uninstall is in progress"
+}
+
+unlock_installation()
+{
+    if [[ -n "${BLOODYSHELL_OPERATION_FD:-}" ]]; then
+        flock -u "$BLOODYSHELL_OPERATION_FD"
+        exec {BLOODYSHELL_OPERATION_FD}>&-
+    fi
 }
 
 version_newer()
@@ -302,6 +309,8 @@ version_newer()
 
 restart_shell()
 {
+    # A daemonized shell must not inherit a held installer lock.
+    unlock_installation
     [[ -n "${WAYLAND_DISPLAY:-}" ]] || { warn "No Wayland session: run bloodyShell after logging into niri"; return 0; }
     if python3 "$BIN_HOME/$NAME" restart; then
         ok "Shell started"
@@ -312,17 +321,12 @@ restart_shell()
 
 install_command()
 {
-    local shell="${SHELL:-}"
-    python3 "$TARGET/scripts/setup/install-command" "$TARGET/scripts/bloodyShell" "$BIN_HOME" "$BACKUP_ROOT/$STAMP/launcher" > /dev/null \
-        || die "Could not set up the bloodyShell command"
+    python3 "$TARGET/scripts/bloodyShell" internal install-command "$TARGET/scripts/bloodyShell" "$BIN_HOME" "$BACKUP_ROOT/$STAMP/launcher" "$@" > /dev/null \
+        || { warn "Could not install the bloodyShell command"; return 1; }
     [[ ! -d "$BACKUP_ROOT/$STAMP/launcher" ]] || BACKED_UP=true
     ok "Command → $(hl "$BIN_HOME/$NAME")"
-    if [[ ":$PATH:" != *":$BIN_HOME:"* ]]; then
-        case "${shell##*/}" in
-            bash|zsh|fish|sh|dash|"") info "PATH prepared for new terminals" ;;
-            *) warn "Add $(hl "$BIN_HOME") to your shell's PATH to use bloodyShell" ;;
-        esac
-    fi
+    if [[ ":$PATH:" != *":$BIN_HOME:"* ]]; then export PATH="$BIN_HOME:$PATH"; fi
+    ok "PATH configured for your shells and user services"
 }
 
 apply_shell()
@@ -331,42 +335,46 @@ apply_shell()
     [[ -f "$package/shell.qml" && -f "$package/version" ]] || die "No shell in $(pretty "$package") (shell.qml, version)"
     command -v python3 > /dev/null || die "Python 3 is required to install the shell command"
 
-    if [[ "$package" != "$TARGET" ]]; then
-        mkdir -p "$CONFIG_HOME/quickshell"
-        local stage; stage="$(mktemp -d "$CONFIG_HOME/quickshell/.$NAME.new.XXXXXX")"
-        local excludes=()
-        for pattern in "${INSTALL_EXCLUDE[@]}"; do excludes+=("--exclude=$pattern"); done
-        if ! tar -C "$package" --no-wildcards-match-slash "${excludes[@]}" -cf - . | tar -C "$stage" -xf -; then
-            rm -rf "$stage"
-            die "Could not stage the shell; the current installation was kept"
-        fi
-        local script
-        for script in bloodyShell setup/install-command; do
-            if [[ ! -f "$stage/scripts/$script" && -f "$PACKAGE/scripts/$script" ]]; then
-                mkdir -p "$(dirname "$stage/scripts/$script")"
-                cp "$PACKAGE/scripts/$script" "$stage/scripts/$script"
+    (
+        stage=""; installed=false; backed=false; committed=false
+        cleanup_installation()
+        {
+            local result=$?
+            trap - EXIT INT TERM
+            if ! $committed; then
+                if $installed; then rm -rf -- "$TARGET"; fi
+                if $backed; then mv -- "$BACKUP_ROOT/$STAMP/shell" "$TARGET"; fi
             fi
-        done
-        [[ -f "$stage/scripts/bloodyShell" && -f "$stage/scripts/setup/install-command" ]] || { rm -rf "$stage"; die "Package has no command launcher"; }
-
-        if [[ -d "$TARGET/assets/wallpapers" && -f "$PACKAGE/scripts/runtime/resources" ]]; then
-            if ! python3 "$PACKAGE/scripts/runtime/resources" seed-wallpapers "$TARGET/assets/wallpapers" > /dev/null; then
-                rm -rf "$stage"
-                die "Could not preserve bundled wallpapers; the current installation was kept"
+            [[ -z "$stage" || ! -d "$stage" ]] || rm -rf -- "$stage"
+            exit "$result"
+        }
+        trap cleanup_installation EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        registration=()
+        if [[ "$package" != "$TARGET" ]]; then
+            mkdir -p "$CONFIG_HOME/quickshell" || exit 1
+            stage="$(mktemp -d "$CONFIG_HOME/quickshell/.$NAME.new.XXXXXX")" || exit 1
+            python3 "$PACKAGE/scripts/bloodyShell" internal stage-runtime "$package" "$stage" "$BIN_HOME" || exit 1
+            if [[ -e "$TARGET" || -L "$TARGET" ]]; then
+                backup "$TARGET" shell || exit 1
+                backed=true
+                info "Previous version → $(hl "$BACKUP_ROOT/$STAMP/shell")"
             fi
+            mv -- "$stage" "$TARGET" || exit 1
+            stage=""; installed=true
+            registration=(--refresh-files)
         fi
-        if [[ -e "$TARGET" || -L "$TARGET" ]]; then
-            backup "$TARGET" shell
-            info "Previous version → $(hl "$BACKUP_ROOT/$STAMP/shell")"
-        fi
-        mv "$stage" "$TARGET"
+        chmod +x "$TARGET/setup" || exit 1
+        install_command "${registration[@]}" || exit 1
+        committed=true
+    ) || die "Installation failed; previous shell and settings were kept"
+    [[ ! -d "$BACKUP_ROOT/$STAMP" ]] || BACKED_UP=true
+    if [[ ":$PATH:" != *":$BIN_HOME:"* ]]; then export PATH="$BIN_HOME:$PATH"; fi
+    if [[ -f "$TARGET/scripts/lib/processes.py" ]]; then
+        python3 "$TARGET/scripts/bloodyShell" internal build-keyboard-monitor > /dev/null || warn "Alt+Tab modifier support needs Qt 6 development tools; see the installation guide in the source repository"
     fi
-    chmod +x "$TARGET/setup"
-    install_command
-    if [[ -f "$TARGET/scripts/runtime/build-keyboard-monitor" ]] && command -v python3 > /dev/null; then
-        python3 "$TARGET/scripts/runtime/build-keyboard-monitor" > /dev/null || warn "Alt+Tab modifier support needs Qt 6 development tools; see the installation guide in the source repository"
-    fi
-    ok "$NAME $(tr -d '[:space:]' < "$package/version") → $(hl "$TARGET")"
+    ok "$NAME $(tr -d '[:space:]' < "$TARGET/version") → $(hl "$TARGET")"
 }
 
 apply_configs()
@@ -379,11 +387,12 @@ apply_configs()
         if [[ -d "$source" ]]; then
             for dir in "$source"/*/; do [[ ! -d "$dir" ]] || available+=("$(basename "$dir")"); done
         else
-            names="$(python3 "$PACKAGE/scripts/runtime/resources" programs)" || return 1
+            names="$(python3 "$PACKAGE/scripts/bloodyShell" internal resources programs)" || return 1
             [[ -z "$names" ]] || mapfile -t available <<< "$names"
         fi
         for program in "${available[@]}"; do
-            if [[ -e "$CONFIG_HOME/$program" ]]; then items+=("$program|replaces $(pretty "$CONFIG_HOME/$program") (backed up)")
+            if [[ "$program" == niri && -e "$CONFIG_HOME/$program" ]]; then items+=("$program|refreshes managed defaults; keeps user/input/output files (backed up)")
+            elif [[ -e "$CONFIG_HOME/$program" ]]; then items+=("$program|replaces $(pretty "$CONFIG_HOME/$program") (backed up)")
             else items+=("$program|new $(pretty "$CONFIG_HOME/$program")"); fi
         done
         [[ ${#items[@]} -gt 0 ]] || return 0
@@ -393,33 +402,14 @@ apply_configs()
         [[ ${#programs[@]} -gt 0 ]] || { info "App configs skipped"; return 0; }
     fi
 
-    ask "Replace configs for ${programs[*]}?" y || { info "App configs skipped"; return 0; }
+    ask "Import configs for ${programs[*]}? Existing files are backed up; niri user files are kept." y || { info "App configs skipped"; return 0; }
 
     for program in "${programs[@]}"; do
         [[ "$program" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "Invalid config name: $program"
-        if [[ ! -d "$source" ]]; then
-            python3 "$PACKAGE/scripts/runtime/resources" import "dots/$program" --human || return 1
-            continue
-        fi
-        [[ -d "$source/$program" ]] || { warn "No config for $program in the package"; continue; }
-
-        local dest="$CONFIG_HOME/$program"
-        [[ -e "$dest" || -L "$dest" ]] && backup "$dest" "$program"
-        mkdir -p "$CONFIG_HOME"
-        cp -a "$source/$program" "$dest"
-        ok "$program → $(hl "$dest")"
+        python3 "$PACKAGE/scripts/bloodyShell" internal resources import "dots/$program" --human || return 1
     done
 }
 
-apply_wallpapers()
-{
-    if [[ -d "$PACKAGE/assets/wallpapers" ]]; then
-        python3 "$PACKAGE/scripts/runtime/resources" seed-wallpapers "$PACKAGE/assets/wallpapers" > /dev/null || return 1
-    else
-        python3 "$PACKAGE/scripts/runtime/resources" import wallpapers --human || return 1
-    fi
-    ok "Wallpapers → $(hl "$HOME/Pictures/Wallpapers")"
-}
 
 readonly DEPENDENCIES=(
     "required|qs|Runs the shell|quickshell|copr:errornointernet/quickshell quickshell|-"
@@ -428,21 +418,19 @@ readonly DEPENDENCIES=(
     "required|grim|Screenshots|grim|grim|grim"
     "required|wl-copy|Screenshot clipboard|wl-clipboard|wl-clipboard|wl-clipboard"
     "required|curl|Updates|curl|curl|curl"
-    "required|tar|Updates|tar|tar|tar"
     "required|nmcli|Network and enterprise Wi-Fi|networkmanager python-gobject libnm|NetworkManager python3-gobject NetworkManager-libnm|network-manager python3-gi gir1.2-nm-1.0"
     "required|wpctl|Sound|pipewire wireplumber|pipewire wireplumber|pipewire wireplumber"
     "required|upower|Battery|upower|upower|upower"
     "required|findmnt|Storage discovery|util-linux|util-linux|util-linux"
     "optional|udisksctl|Mount disks once|udisks2|udisks2|udisks2"
     "optional|pkexec|Administrator authorization|polkit|polkit|pkexec"
-    "required|python3|Shell helpers and greeter|python|python3|python3"
+    "required|python3|Shell helpers|python|python3|python3"
     "required|gsettings|App theme|glib2|glib2|libglib2.0-bin"
     "optional|brightnessctl|Screen brightness|brightnessctl|brightnessctl|brightnessctl"
     "optional|bluetoothctl|Bluetooth|bluez bluez-utils|bluez|bluez"
     "optional|wlsunset|Night light|wlsunset|wlsunset|wlsunset"
     "required|ffmpeg|Screenshot cropping and wallpaper colors|ffmpeg|ffmpeg-free|ffmpeg"
     "optional|lpstat|Printers|cups system-config-printer|cups system-config-printer|cups system-config-printer"
-    "optional|qt6ct|Qt apps follow the theme|qt6ct|qt6ct|qt6ct"
     "optional|notify-send|Update notifications|libnotify|libnotify|libnotify-bin"
     "optional|cava|Audio visualizer in the media menu|cava|cava|cava"
     "optional|playerctl|Media keyboard shortcuts|playerctl|playerctl|playerctl"
@@ -451,6 +439,8 @@ readonly DEPENDENCIES=(
     "optional|kitty|Terminal (its config is in App configs)|kitty|kitty|kitty"
     "optional|fastfetch|System info (its config is in App configs)|fastfetch|fastfetch|fastfetch"
     "optional|gum|Arrow-key installer menus|gum|gum|gum"
+    "optional|sddm|Login screen|sddm qt6-declarative qt6-svg|sddm qt6-qtdeclarative qt6-qtsvg|sddm qml6-module-qtquick-controls qml6-module-qtquick-effects qml6-module-qtquick-shapes"
+    "optional|qt6-multimedia|Video wallpapers|qt6-multimedia qt6-multimedia-ffmpeg|qt6-qtmultimedia|qml6-module-qtmultimedia"
 )
 
 
@@ -634,9 +624,13 @@ install_packages()
 
 tool_available()
 {
+    if [[ "$1" == qt6-multimedia ]]; then
+        python3 "$PACKAGE/scripts/bloodyShell" internal dependencies check "$1"
+        return
+    fi
     command -v "$1" > /dev/null || return 1
-    if [[ "$1" == nmcli && -f "$PACKAGE/scripts/runtime/network-auth" ]]; then
-        python3 "$PACKAGE/scripts/runtime/network-auth" --check > /dev/null 2>&1
+    if [[ "$1" == nmcli && -f "$PACKAGE/scripts/lib/network.py" ]]; then
+        python3 "$PACKAGE/scripts/bloodyShell" internal network-auth --check > /dev/null 2>&1
     fi
 }
 
@@ -709,7 +703,6 @@ install_dependencies()
         warn "${entry#*|} is not in the repositories here: install it by hand${hint:+ — $(hl "$hint")}"
     done
 
-    command -v tar > /dev/null || die "tar is needed to install the shell"
     command -v qs > /dev/null || warn "Quickshell is missing: the shell is installed, but won't start until it is"
     install_native_support "$family"
 }
@@ -717,140 +710,157 @@ install_dependencies()
 
 install_native_support()
 {
-    if command -v c++ > /dev/null && command -v pkg-config > /dev/null && pkg-config --exists Qt6Quick; then return 0; fi
+    if command -v c++ > /dev/null && command -v wayland-scanner > /dev/null && command -v pkg-config > /dev/null && pkg-config --exists Qt6Quick wayland-client xkbcommon; then return 0; fi
     local family="$1" packages=()
     case "$family" in
-        arch) packages=(gcc pkgconf qt6-base qt6-declarative) ;;
-        fedora) packages=(gcc-c++ pkgconf-pkg-config qt6-qtbase-devel qt6-qtdeclarative-devel) ;;
-        debian) packages=(g++ pkg-config qt6-base-dev qt6-base-dev-tools qt6-declarative-dev) ;;
-        *) warn "Install a C++ compiler and Qt 6 Quick development tools for fast Alt+Tab release detection"; return 0 ;;
+        arch) packages=(gcc pkgconf qt6-base qt6-declarative wayland libxkbcommon) ;;
+        fedora) packages=(gcc-c++ pkgconf-pkg-config qt6-qtbase-devel qt6-qtdeclarative-devel wayland-devel libxkbcommon-devel) ;;
+        debian) packages=(g++ pkg-config qt6-base-dev qt6-base-dev-tools qt6-declarative-dev libwayland-dev libwayland-bin libxkbcommon-dev) ;;
+        *) warn "Install C++, Qt 6 Quick, Wayland, and xkbcommon development tools for native keyboard support"; return 0 ;;
     esac
-    if interactive && ask "Install matching Qt development tools for reliable Alt+Tab? (needs sudo)" y; then
-        install_packages "$family" "${packages[@]}" || warn "Native Alt+Tab support could not be prepared"
+    if interactive && ask "Install development tools for Alt+Tab and the on-screen keyboard? (needs sudo)" y; then
+        install_packages "$family" "${packages[@]}" || warn "Native keyboard support could not be prepared"
     else
-        warn "Native Alt+Tab build support skipped: ${packages[*]}"
+        warn "Native keyboard build support skipped: ${packages[*]}"
     fi
 }
 
-readonly GREETER_SHELL="/usr/share/$NAME"
+readonly SDDM_THEME="/usr/share/sddm/themes/$NAME"
 readonly GREETER_STATE="/var/lib/$NAME"
-readonly GREETD_CONF="/etc/greetd/config.toml"
-readonly GREETD_PAM="/etc/pam.d/greetd"
+readonly SDDM_CONF="/etc/sddm.conf.d/zz-$NAME.conf"
+readonly SDDM_SYSTEM_CONF="/etc/sddm.conf"
 
-display_scale()
+restore_sddm_files()
 {
-    local scale=""
-    command -v niri > /dev/null && scale="$(niri msg -j outputs 2>/dev/null | grep -o '"scale": *[0-9.]*' | head -n1 | grep -o '[0-9.]*$')"
-    [[ "$scale" =~ ^[0-9]+([.][0-9]+)?$ ]] && echo "$scale" || echo 1
-}
-
-apply_keyring()
-{
-    [[ -f "$GREETD_PAM" ]] || { warn "No $GREETD_PAM: install greetd first"; return 1; }
-    local module=""
-    local candidate
-    for candidate in /usr/lib/security/pam_gnome_keyring.so /usr/lib64/security/pam_gnome_keyring.so /lib/security/pam_gnome_keyring.so /usr/lib/*/security/pam_gnome_keyring.so; do
-        [[ -f "$candidate" ]] && { module="$candidate"; break; }
-    done
-    [[ -n "$module" ]] || { warn "Install gnome-keyring and its PAM module, then run ./setup greetd"; return 0; }
-    local stage; stage="$(mktemp)"
-    if ! awk -f "$PACKAGE/scripts/setup/greetd-keyring.awk" "$GREETD_PAM" > "$stage"; then
-        rm -f "$stage"
-        return 1
-    fi
-    if cmp -s "$stage" "$GREETD_PAM"; then
-        rm -f "$stage"
-        ok "Keyring PAM integration is already configured"
-        return 0
-    fi
-    if ! sudo -v; then rm -f "$stage"; return 1; fi
-    sudo cp -a "$GREETD_PAM" "$GREETD_PAM.bak-$STAMP"
-    sudo tee "$GREETD_PAM" < "$stage" > /dev/null
-    rm -f "$stage"
-    ok "Keyring unlock configured for the next login (backup: $GREETD_PAM.bak-$STAMP)"
+    local theme_backup="$1" config_backup="$2" system_backup="${3:-}"
+    sudo rm -rf "$SDDM_THEME"
+    [[ -z "$theme_backup" ]] || sudo mv "$theme_backup" "$SDDM_THEME"
+    if [[ -n "$config_backup" ]]; then sudo cp -a "$config_backup" "$SDDM_CONF"; else sudo rm -f "$SDDM_CONF"; fi
+    [[ -z "$system_backup" ]] || sudo cp --preserve=all "$system_backup" "$SDDM_SYSTEM_CONF"
 }
 
 apply_greeter()
 {
     local resource="${BLOODYSHELL_RESOURCE_DIR:-$PACKAGE}"
-    if [[ ! -d "$resource/greeter" ]]; then
-        python3 "$PACKAGE/scripts/runtime/resources" import greeter --human
+    if [[ ! -d "$resource/dots/sddm" ]]; then
+        python3 "$PACKAGE/scripts/bloodyShell" internal resources import greeter --human
         return
     fi
     if ! interactive && ! sudo -n true 2> /dev/null; then warn "Needs sudo in a terminal: login screen skipped"; return 0; fi
-
-    [[ -s "$resource/greeter/shell.qml" && -s "$resource/greeter/Widgets.qml" && -s "$resource/greeter/Theme.qml" ]] || die "Greeter files are missing from this package"
+    local file line sddm_dependency=""
+    for file in Main.qml Widgets.qml Theme.qml metadata.desktop theme.conf niri.kdl; do
+        [[ -s "$resource/dots/sddm/$file" ]] || { warn "Missing login-screen file: $file"; return 1; }
+    done
     local family; family="$(distro_family)"
     local missing=()
-    command -v python3 > /dev/null || missing+=($(dependency_packages "$family" "required|python3|Greeter|python|python3|python3"))
-    command -v greetd > /dev/null || missing+=(greetd)
-    command -v cage > /dev/null || missing+=(cage)
-    command -v qs > /dev/null || missing+=($(dependency_packages "$family" "${DEPENDENCIES[0]}"))
+    for line in "${DEPENDENCIES[@]}"; do [[ "$line" != "optional|sddm|"* ]] || sddm_dependency="$line"; done
+    if ! command -v sddm > /dev/null || ! command -v sddm-greeter-qt6 > /dev/null; then
+        missing+=($(dependency_packages "$family" "$sddm_dependency"))
+    fi
+    command -v niri > /dev/null || missing+=($(dependency_packages "$family" "${DEPENDENCIES[1]}"))
     if [[ ${#missing[@]} -gt 0 ]]; then
         if [[ -n "$family" ]] && ask "Install ${missing[*]}? (needs sudo)" y; then
-            install_packages "$family" "${missing[@]}" || { warn "Could not install ${missing[*]}: login screen skipped"; return 0; }
+            install_packages "$family" "${missing[@]}" || return 1
         else
             warn "Needs ${missing[*]}: login screen skipped"
-            return 0
+            return 1
         fi
     fi
-    getent passwd greeter > /dev/null || { warn "No 'greeter' user (it comes with the greetd package): login screen skipped"; return 0; }
-
-    sudo -v || { warn "No sudo: login screen skipped"; return 0; }
+    command -v sddm > /dev/null && command -v sddm-greeter-qt6 > /dev/null && command -v niri > /dev/null || { warn "Install SDDM with its Qt 6 greeter and niri first"; return 1; }
+    getent passwd sddm > /dev/null || { warn "The SDDM system account is missing: reinstall the sddm package"; return 1; }
+    [[ ! -L "$GREETER_STATE" && ( ! -e "$GREETER_STATE" || -d "$GREETER_STATE" ) ]] || { warn "Login-screen storage must be a directory, not a symlink"; return 1; }
+    niri validate -c "$resource/dots/sddm/niri.kdl" || return 1
+    sudo -v || return 1
 
     local stage; stage="$(mktemp -d)"
-    cp -a "$resource/greeter/." "$stage/"
-    if [[ -e "$GREETER_SHELL" ]]; then
-        local greeter_backup="$GREETER_SHELL.bak-$STAMP"
-        [[ ! -e "$greeter_backup" ]] || greeter_backup="$greeter_backup-$RANDOM"
-        sudo mv "$GREETER_SHELL" "$greeter_backup"
+    local theme_backup="" config_backup="" system_backup="" niri_bin
+    niri_bin="$(command -v niri)"
+    if ! mkdir "$stage/theme" || ! cp -a "$resource/dots/sddm/." "$stage/theme/" || ! ln -s "$GREETER_STATE/theme.conf" "$stage/theme/theme.conf.user"; then
+        rm -rf "$stage"; return 1
     fi
-    sudo mkdir -p "$GREETER_SHELL"
-    sudo cp -a "$stage/." "$GREETER_SHELL/"
-    sudo chown -R root:root "$GREETER_SHELL"
-    sudo chmod -R a+rX,go-w "$GREETER_SHELL"
-    rm -rf "$stage"
-    ok "Shell for the login screen → $(hl "$GREETER_SHELL")"
-
-    sudo install -d -m 2775 -o "$USER" -g greeter "$GREETER_STATE"
-    python3 "$PACKAGE/scripts/runtime/greeter-settings" "$CONFIG_HOME/$NAME/settings.json" "$GREETER_STATE"
-    ok "Greeter appearance exported → $(hl "$GREETER_STATE")"
-
-    local scale; scale="$(display_scale)"
-    if [[ -f "$GREETD_CONF" ]] && ! grep -q "$NAME" "$GREETD_CONF"; then
-        sudo cp -a "$GREETD_CONF" "$GREETD_CONF.bak-$STAMP"
-        info "Old greetd config → $(hl "$GREETD_CONF.bak-$STAMP")"
+    install_native_support "$family"
+    if ! mkdir -p "$stage/theme/keyboard" || ! cp -a "$PACKAGE/modules/common/keyboard/." "$stage/theme/keyboard/" ||
+       ! python3 "$PACKAGE/scripts/bloodyShell" internal build-virtual-keyboard "$stage/theme/native" > /dev/null; then
+        warn "Could not prepare the login-screen keyboard"; rm -rf "$stage"; return 1
     fi
-    sudo mkdir -p "$(dirname "$GREETD_CONF")"
+    printf '\nkeyboardSource=keyboard/Keyboard.qml\n' >> "$stage/theme/theme.conf"
+    local config_stage="$stage/sddm.conf"
     {
-        printf '[terminal]\nvt = 1\n\n'
-        printf '[default_session]\n'
-        printf 'command = "sh -c '"'"'setterm --term linux --clear all --cursor off 2> /dev/null; exec systemd-cat -t %s-greeter cage -s -d -- env BLOODYSHELL_CONFIG=%s QT_SCALE_FACTOR=%s XDG_CACHE_HOME=%s/cache qs -p %s/shell.qml'"'"'"\n' \
-            "$NAME" "$GREETER_STATE" "$scale" "$GREETER_STATE" "$GREETER_SHELL"
-        printf 'user = "greeter"\n'
-    } | sudo tee "$GREETD_CONF" > /dev/null
-    ok "greetd config, scale ${scale}× → $(hl "$GREETD_CONF")"
-
-    apply_keyring
-
-    if systemctl is-enabled --quiet greetd 2> /dev/null; then
-        ok "greetd is already the login screen"
-    else
-        local previous
-        previous="$(systemctl show --property=Id --value display-manager.service 2>/dev/null || true)"
-        [[ "$previous" =~ ^[A-Za-z0-9@_.-]+[.]service$ && "$previous" != greetd.service && "$previous" != display-manager.service ]] || previous=""
-        if ask "Use greetd from the next boot${previous:+ (replaces $previous)}?" y; then
-            if [[ -n "$previous" ]]; then sudo systemctl disable "$previous" || return 1; fi
-            if ! sudo systemctl enable greetd; then
-                [[ -z "$previous" ]] || sudo systemctl enable "$previous"
-                warn "Could not enable greetd; the previous display manager was restored"
-                return 1
-            fi
-            ok "Login screen: greetd (after a reboot)"
-            [[ -z "$previous" ]] || info "To go back: $(hl "sudo systemctl disable greetd && sudo systemctl enable $previous")"
-        else
-            info "Login manager unchanged. Run ./setup greetd to switch later"
+        printf '[General]\nDisplayServer=wayland\n\n[Theme]\nCurrent=%s\n\n[Wayland]\n' "$NAME"
+        printf 'CompositorCommand="%s" -c "%s/niri.kdl"\nEnableHiDPI=true\n' "$niri_bin" "$SDDM_THEME"
+    } > "$config_stage"
+    if [[ -e "$SDDM_SYSTEM_CONF" ]]; then
+        if ! sudo cat "$SDDM_SYSTEM_CONF" > "$stage/system-original.conf"; then rm -rf "$stage"; return 1; fi
+        awk '
+            /^[[:space:]]*\[/ { section=$0; sub(/^[[:space:]]*\[/,"",section); sub(/\].*$/,"",section) }
+            section == "General" && /^[[:space:]]*DisplayServer[[:space:]]*=/ { next }
+            section == "Theme" && /^[[:space:]]*Current[[:space:]]*=/ { next }
+            section == "Wayland" && /^[[:space:]]*(CompositorCommand|EnableHiDPI)[[:space:]]*=/ { next }
+            { print }
+        ' "$stage/system-original.conf" > "$stage/system.conf"
+    fi
+    if [[ -e "$SDDM_THEME" || -L "$SDDM_THEME" ]]; then
+        theme_backup="$SDDM_THEME.bak-$STAMP-$RANDOM"
+        sudo mv "$SDDM_THEME" "$theme_backup" || { rm -rf "$stage"; return 1; }
+    fi
+    if [[ -e "$SDDM_CONF" ]]; then
+        config_backup="$SDDM_CONF.bak-$STAMP-$RANDOM"
+        if ! sudo cp -a "$SDDM_CONF" "$config_backup"; then
+            [[ -z "$theme_backup" ]] || sudo mv "$theme_backup" "$SDDM_THEME"
+            rm -rf "$stage"; return 1
         fi
+    fi
+    if [[ -f "$stage/system.conf" ]] && ! cmp -s "$stage/system-original.conf" "$stage/system.conf"; then
+        system_backup="$SDDM_SYSTEM_CONF.bak-$STAMP-$RANDOM"
+        if ! sudo cp -L --preserve=all "$SDDM_SYSTEM_CONF" "$system_backup"; then
+            restore_sddm_files "$theme_backup" "$config_backup"
+            rm -rf "$stage"; return 1
+        fi
+    fi
+    if ! {
+        sudo mkdir -p "$SDDM_THEME" "$(dirname "$SDDM_CONF")" &&
+        sudo cp -a "$stage/theme/." "$SDDM_THEME/" &&
+        sudo chown -R root:root "$SDDM_THEME" &&
+        sudo chmod -R a+rX,go-w "$SDDM_THEME" &&
+        sudo install -d -m 2755 -o "$USER" -g sddm "$GREETER_STATE" &&
+        python3 "$PACKAGE/scripts/bloodyShell" internal greeter-settings "$CONFIG_HOME/$NAME/settings.json" "$GREETER_STATE" &&
+        sudo install -m 644 "$config_stage" "$SDDM_CONF" &&
+        { [[ -z "$system_backup" ]] || sudo tee "$SDDM_SYSTEM_CONF" < "$stage/system.conf" > /dev/null; };
+    }; then
+        restore_sddm_files "$theme_backup" "$config_backup" "$system_backup"
+        rm -rf "$stage"; return 1
+    fi
+    rm -rf "$stage"
+    ok "SDDM theme → $(hl "$SDDM_THEME")"
+    ok "Wayland login screen uses its own niri configuration"
+    [[ -z "$theme_backup" ]] || info "Previous theme → $(hl "$theme_backup")"
+    [[ -z "$config_backup" ]] || info "Previous configuration → $(hl "$config_backup")"
+    [[ -z "$system_backup" ]] || info "Managed login options moved to $SDDM_CONF (backup: $system_backup)"
+
+    local current previous
+    current="$(systemctl show --property=Id --value display-manager.service 2>/dev/null || true)"
+    if [[ "$current" == sddm.service ]] && systemctl is-enabled --quiet sddm.service 2> /dev/null; then
+        ok "SDDM is already enabled; the running session is unchanged"
+        return
+    fi
+    previous="$current"
+    [[ "$previous" =~ ^[A-Za-z0-9@_.-]+[.]service$ && "$previous" != sddm.service && "$previous" != display-manager.service ]] || previous=""
+    if ask "Use SDDM from the next boot${previous:+ (replaces $previous)}?" y; then
+        if [[ -n "$previous" ]] && ! sudo systemctl disable "$previous"; then
+            restore_sddm_files "$theme_backup" "$config_backup" "$system_backup"; return 1
+        fi
+        if ! sudo systemctl enable sddm.service; then
+            sudo systemctl disable sddm.service || true
+            if [[ -n "$previous" ]] && ! sudo systemctl enable "$previous"; then
+                warn "Could not re-enable $previous; restore it with sudo systemctl enable $previous"
+            fi
+            restore_sddm_files "$theme_backup" "$config_backup" "$system_backup"
+            warn "Could not enable SDDM; theme configuration was rolled back"
+            return 1
+        fi
+        ok "SDDM will be used after a reboot"
+    else
+        info "Theme installed; login manager unchanged"
     fi
 }
 
@@ -882,6 +892,7 @@ latest_tag()
 cmd_install()
 {
     [[ $EUID -ne 0 ]] || die "Run setup as your normal user; it requests sudo only when needed"
+    lock_installation
     section "Installation plan"
     detail "Shell" "$(hl "$TARGET")"
     detail "Command" "$(hl "$BIN_HOME/$NAME")"
@@ -898,14 +909,14 @@ cmd_install()
     install_applications
 
     step "Installing the shell"
-    apply_wallpapers || warn "Wallpapers could not be imported; use Settings → Updates → Import files later"
+    info "Wallpapers are optional: import them from Settings → Updates when wanted"
     apply_shell
 
     step "App configs"
     apply_configs
 
     step "Login screen"
-    if ask "Set up the login screen in the shell's style (greetd, needs sudo)?" n; then apply_greeter; else info "Login screen skipped: run ./setup greetd any time"; fi
+    if ask "Set up the login screen in the shell's style (SDDM, needs sudo)?" n; then apply_greeter; else info "Login screen skipped: run ./setup sddm any time"; fi
 
     step "Checking installation"
     local missing=() kind tool line
@@ -926,6 +937,7 @@ cmd_install()
 
 cmd_update()
 {
+    lock_installation
     local beta=false tag="" force=false
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -940,7 +952,7 @@ cmd_update()
     banner
     STATUS_ENABLED=true
     status "running"
-    command -v curl > /dev/null && command -v tar > /dev/null || die "Updating needs curl and tar"
+    command -v curl > /dev/null && command -v python3 > /dev/null || die "Updating needs curl and Python 3"
     steps 3
 
     step "Looking for a release"
@@ -951,7 +963,7 @@ cmd_update()
     local current; current="$(installed_version)"
     if ! $force && ! version_newer "$tag" "$current"; then
         ok "Up to date: installed $current, latest ${tag#v}"
-        if [[ -f "$TARGET/scripts/bloodyShell" && -f "$TARGET/scripts/setup/install-command" ]]; then install_command; fi
+        if [[ -f "$TARGET/scripts/bloodyShell" && -f "$TARGET/scripts/lib/management.py" ]]; then install_command; fi
         status "done $current"
         return 0
     fi
@@ -965,7 +977,7 @@ cmd_update()
     curl -fsSL --retry 2 --max-time 120 -o "$tmp/package.tar.gz" "https://github.com/$REPO/archive/refs/tags/$tag.tar.gz" \
         || die "Could not download $tag"
     mkdir "$tmp/package"
-    tar -xzf "$tmp/package.tar.gz" --strip-components=1 -C "$tmp/package" || die "Package $tag is damaged"
+    python3 "$PACKAGE/scripts/bloodyShell" internal extract-release "$tmp/package.tar.gz" "$tmp/package" || die "Package $tag is damaged"
 
     [[ -f "$tmp/package/setup" && -f "$tmp/package/shell.qml" && -f "$tmp/package/version" ]] || die "Package $tag has no shell in it"
     local packaged; packaged="$(tr -d '[:space:]' < "$tmp/package/version")"
@@ -979,7 +991,7 @@ cmd_update()
     finish "Update complete"
 }
 
-cmd_greetd()
+cmd_sddm()
 {
     apply_greeter
     return 0
@@ -996,7 +1008,13 @@ cmd_doctor()
 {
     command -v python3 > /dev/null || die "Doctor requires Python 3"
     if [[ "${1:-}" != --json ]]; then banner; section "Diagnostics"; fi
-    python3 "$PACKAGE/scripts/setup/doctor" "$@"
+    python3 "$PACKAGE/scripts/bloodyShell" internal doctor "$@"
+}
+
+cmd_uninstall()
+{
+    # Replace Bash before removing the installed script that Bash is reading.
+    exec python3 "$PACKAGE/scripts/bloodyShell" internal uninstall "$@"
 }
 
 usage()
@@ -1005,10 +1023,11 @@ usage()
     section "Commands"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup"                  "$R" "menu"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup install"          "$R" "install dependencies, the shell and app configs, start it"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup uninstall"        "$R" "preview removal; use --apply, optionally --restore"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup update [--beta]"  "$R" "download and install the latest release"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup doctor [--json]"  "$R" "check dependencies and configuration"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup configs [names]"  "$R" "re-apply app configs (kitty, fastfetch, niri…)"
-    printf '    %s%-26s%s %s\n' "$CYN" "./setup greetd"           "$R" "login screen in the shell's style (greetd, sudo)"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup sddm"           "$R" "login screen in the shell's style (SDDM, sudo)"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup help"             "$R" "show commands and options"
     section "Update options"
     printf '    %-22s %s\n' "--beta"        "update channel: include pre-releases"
@@ -1027,7 +1046,8 @@ menu()
     items+=("Update|Download and install a release");               actions+=(update)
     items+=("Doctor|Check dependencies and configuration");         actions+=(doctor)
     items+=("Configs|Apply app configuration files"); actions+=(configs)
-    items+=("Greetd|Configure the login screen · administrator access");   actions+=(greetd)
+    items+=("SDDM|Configure the login screen · administrator access");   actions+=(sddm)
+    items+=("Uninstall|Preview removal of installed files; keep personal settings"); actions+=(uninstall)
     items+=("Help|View commands and options");                         actions+=(help)
 
     choose "Choose an action" "${items[@]}"
@@ -1044,7 +1064,12 @@ menu()
             esac ;;
         doctor)  cmd_doctor ;;
         configs) cmd_configs ;;
-        greetd) cmd_greetd ;;
+        sddm) cmd_sddm ;;
+        uninstall)
+            python3 "$PACKAGE/scripts/bloodyShell" internal uninstall
+            if ask "Stop and uninstall this installed copy? Personal settings and backups will be kept." n; then
+                cmd_uninstall --apply
+            fi ;;
         help)    usage ;;
     esac
 }
@@ -1064,17 +1089,18 @@ main()
     done
 
     case "$command" in
-        install|greetd|help)
+        install|sddm|help)
             [[ ${#args[@]} -eq 0 ]] || die "Unexpected argument for $command: ${args[0]}"
             ;;
     esac
 
     case "$command" in
         install) banner; cmd_install ;;
+        uninstall) cmd_uninstall "${args[@]+"${args[@]}"}" ;;
         update)  cmd_update  "${args[@]+"${args[@]}"}" ;;
         doctor)  cmd_doctor "${args[@]+"${args[@]}"}" ;;
         configs) banner; cmd_configs "${args[@]+"${args[@]}"}" ;;
-        greetd) banner; cmd_greetd ;;
+        sddm) banner; cmd_sddm ;;
         "")      if interactive; then menu; else usage; fi ;;
         help) usage ;;
         *) usage; exit 1 ;;

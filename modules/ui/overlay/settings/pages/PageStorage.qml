@@ -18,6 +18,21 @@ SettingsPage
     title: Tr.tr("common.storage")
     subtitle: Tr.tr("settings.storage.description")
 
+    SettingsConfirmation
+    {
+        objectName: "mountConfirmation"
+        host: pageStorage
+        visible: pageStorage.active && ServiceStorage.confirming
+        title: Tr.tr("settings.storage.confirmMount")
+        description: ServiceStorage.pending ? ServiceStorage.pending.label + "\n" + (ServiceStorage.pending.mode === "persistent"
+            ? Tr.tr("settings.storage.confirmStartup").arg(ServiceStorage.pending.target)
+            : Tr.tr("settings.storage.confirmOnce")) : ""
+        acceptText: Tr.tr("settings.storage.mount")
+        acceptEnabled: !ServiceStorage.busy && !ServiceStorage.loading
+        onAccepted: ServiceStorage.confirmMount()
+        onRejected: ServiceStorage.cancelMount()
+    }
+
     SettingsGroup
     {
         title: Tr.tr("settings.storage.volumes")
@@ -163,7 +178,7 @@ SettingsPage
                 description: Tr.tr("settings.storage.mountPointHint")
                 SettingsInput
                 {
-                    width: 280
+                    preferredWidth: 280
                     enabled: !ServiceStorage.busy && !ServiceStorage.confirming
                     text: ServiceStorage.mountPoint
                     placeholderText: "/mnt/data"
@@ -187,31 +202,6 @@ SettingsPage
                     text: Tr.tr("settings.storage.mount")
                     enabled: ServiceStorage.selectedDevice !== null && !ServiceStorage.selectedDevice.mounted && !ServiceStorage.busy && !ServiceStorage.loading
                     onClicked: ServiceStorage.prepareMount()
-                }
-            }
-
-            SettingsRow
-            {
-                visible: ServiceStorage.confirming
-                label: Tr.tr("settings.storage.confirmMount")
-                description: ServiceStorage.pending ? ServiceStorage.pending.label + "\n" + (ServiceStorage.pending.mode === "persistent"
-                    ? Tr.tr("settings.storage.confirmStartup").arg(ServiceStorage.pending.target)
-                    : Tr.tr("settings.storage.confirmOnce")) : ""
-                stacked: true
-                Row
-                {
-                    spacing: 8
-                    SettingsButton
-                    {
-                        text: Tr.tr("common.cancel")
-                        onClicked: ServiceStorage.cancelMount()
-                    }
-                    SettingsButton
-                    {
-                        text: Tr.tr("settings.storage.mount")
-                        enabled: !ServiceStorage.busy && !ServiceStorage.loading
-                        onClicked: ServiceStorage.confirmMount()
-                    }
                 }
             }
         }

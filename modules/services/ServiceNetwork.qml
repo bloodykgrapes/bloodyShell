@@ -93,7 +93,7 @@ Singleton
             network = data.ssid;
             pending = true;
             launched = false;
-            exec(["python3", Paths.runtimeScriptsDir + "/network-auth"]);
+            exec(Paths.commandFor("network-auth"));
         }
         function finish(output)
         {

@@ -6,12 +6,13 @@ import Quickshell.Io
 
 import "../common"
 import "../core"
+import "../src/Kdl.js" as Kdl
 
 Singleton
 {
     id: serviceDisplay
 
-    readonly property string helper: Paths.niriHelper
+    readonly property var helper: Paths.commandFor("niri-config")
 
     property var    outputs: []
     property bool   loaded: false
@@ -38,22 +39,16 @@ Singleton
     function stateOf(name)
     {
         const o = output(name);
-        const live = o ? {
-            mode: o.current_mode !== null && o.modes[o.current_mode] ? modeString(o.modes[o.current_mode]) : "",
-            scale: o.logical ? o.logical.scale : 1,
-            transform: o.logical ? transformName(o.logical.transform) : "normal",
+        const mode = o && o.current_mode !== null ? o.modes[o.current_mode] : null;
+        const logical = o ? o.logical : null;
+        return Object.assign({
+            mode: mode ? modeString(mode) : "",
+            scale: logical ? logical.scale : 1,
+            transform: logical ? transformName(logical.transform) : "normal",
             position: null,
-            vrr: o.vrr_enabled ? "on" : "off",
-            enabled: o.logical !== null
-        } : {
-            mode: "",
-            scale: 1,
-            transform: "normal",
-            position: null,
-            vrr: "off",
-            enabled: true
-        };
-        return Object.assign(live, (Config.displays || {})[name] || {});
+            vrr: o && o.vrr_enabled ? "on" : "off",
+            enabled: o ? logical !== null : true
+        }, (Config.displays || {})[name] || {});
     }
 
     function change(name, key, value)
@@ -63,8 +58,13 @@ Singleton
         const before = stateOf(name);
         if (JSON.stringify(before[key]) === JSON.stringify(value)) return;
 
-        const after = Object.assign({}, before);
-        after[key] = value;
+        if (key === "position" && value)
+        {
+            savePositions(name, value);
+            return;
+        }
+
+        const after = Object.assign({}, before, { [key]: value });
         applyLive(name, key, after);
 
         if (riskyKeys.indexOf(key) >= 0)
@@ -124,12 +124,30 @@ Singleton
     {
         const all = Object.assign({}, Config.displays || {});
         all[name] = state;
+        commit(all);
+    }
+
+    function savePositions(name, position)
+    {
+        // Pin neighbouring outputs so niri's automatic placement keeps them in place.
+        const all = Object.assign({}, Config.displays || {});
+        for (const output of outputs.filter(output => output.logical))
+        {
+            const state = stateOf(output.name);
+            all[output.name] = Object.assign({}, state, {
+                position: output.name === name ? position : state.position || { x: output.logical.x, y: output.logical.y }
+            });
+        }
+        commit(all);
+    }
+
+    function commit(all)
+    {
         Config.set("displays", all);
         write(all);
     }
 
     function number(v) { return String(Math.round(v * 1000) / 1000) }
-    function kdlString(s) { return "\"" + String(s).replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"" }
 
     function render(all)
     {
@@ -137,13 +155,13 @@ Singleton
         for (const name of Object.keys(all).sort())
         {
             const d = all[name];
-            lines.push("", "output " + kdlString(name) + " {");
+            lines.push("", "output " + Kdl.quote(name) + " {");
             if (d.enabled === false) lines.push("    off");
             else
             {
-                if (d.mode) lines.push("    mode " + kdlString(d.mode));
+                if (d.mode) lines.push("    mode " + Kdl.quote(d.mode));
                 lines.push("    scale " + number(d.scale || 1));
-                lines.push("    transform " + kdlString(d.transform || "normal"));
+                lines.push("    transform " + Kdl.quote(d.transform || "normal"));
                 if (d.position) lines.push("    position x=" + Math.round(d.position.x) + " y=" + Math.round(d.position.y));
                 if (d.vrr === "on") lines.push("    variable-refresh-rate");
                 else if (d.vrr === "on-demand") lines.push("    variable-refresh-rate on-demand=true");
@@ -157,7 +175,7 @@ Singleton
     {
         if (writer.busy) { writeAgain.restart(); return; }
         error = "";
-        writer.run([helper, "write", "02-output.kdl", render(all)]);
+        writer.run(helper.concat(["write", "07-user-output.kdl", render(all)]));
     }
     Timer { id: writeAgain; interval: 200; onTriggered: serviceDisplay.write(Config.displays || {}) }
 
@@ -169,18 +187,6 @@ Singleton
             if (code !== 0) serviceDisplay.error = writer.errorMessage(Tr.tr("service.display.saveFailed"));
             refreshSoon.restart();
         }
-    }
-
-    function placeNextTo(name, other, side)
-    {
-        const me = output(name), ref = output(other);
-        if (!me || !me.logical || !ref || !ref.logical) return;
-        const r = ref.logical, w = me.logical.width, h = me.logical.height;
-        const pos = side === "left"  ? { x: r.x - w, y: r.y }
-                  : side === "right" ? { x: r.x + r.width, y: r.y }
-                  : side === "above" ? { x: r.x, y: r.y - h }
-                  :                    { x: r.x, y: r.y + r.height };
-        change(name, "position", pos);
     }
 
     Timer { id: refreshSoon; interval: 600; onTriggered: serviceDisplay.refresh() }

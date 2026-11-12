@@ -14,19 +14,20 @@ ROOT = Path(__file__).resolve().parents[2]
 def check_sources():
     hosts = [str(path.relative_to(ROOT)) for path in ROOT.glob("modules/**/*.qml")
              if re.search(r"\bPanelWindow\s*\{", path.read_text())]
-    assert sorted(hosts) == ["modules/ui/desktop/Desktop.qml", "modules/ui/layout/Layout.qml", "modules/ui/overlay/Overlay.qml"], hosts
+    assert sorted(hosts) == ["modules/ui/desktop/Desktop.qml", "modules/ui/keyboard/VirtualKeyboard.qml", "modules/ui/layout/Layout.qml", "modules/ui/overlay/Overlay.qml"], hosts
 
 
-def run_fixture(base):
+def run_fixture(base, scenario=None):
     shutil.copytree(ROOT / "modules", base / "modules")
     (base / "assets").symlink_to(ROOT / "assets", target_is_directory=True)
     (base / "translations").symlink_to(ROOT / "translations", target_is_directory=True)
     shutil.copytree(ROOT / "scripts", base / "scripts", ignore=shutil.ignore_patterns("tests", "tools", "__pycache__"))
-    (base / "scripts/runtime/resources").write_text('''import json, sys, time
+    (base / "scripts/lib/resources.py").write_text('''import json, sys, time
 time.sleep(0.08)
 if sys.argv[1:] == ["status"]:
     print(json.dumps(dict(source="repository",terminal=[],entries=[
-        dict(id="dots/fixture",kind="dots",name="fixture",destination="/tmp/fixture-config"),
+        dict(id="compositor",kind="compositor",name="niri",destination="/tmp/fixture-niri"),
+        dict(id="dots",kind="dots",name="dots",programs=["fixture"],destination="/tmp/fixture-config"),
         dict(id="greeter",kind="greeter",name="greeter",destination="/tmp/fixture-greeter"),
         dict(id="wallpapers",kind="wallpapers",name="wallpapers",destination="/tmp/fixture-wallpapers")
     ])))
@@ -35,6 +36,8 @@ elif sys.argv[1:] == ["import", "wallpapers"]:
 else:
     sys.exit(1)
 ''')
+    fixture_module = base / "scripts/lib/resources.py"
+    fixture_module.write_text("def resources_main():\n" + "".join("    " + line for line in fixture_module.read_text().splitlines(keepends=True)))
     shutil.copy2(ROOT / "setup", base / "setup")
     shutil.copy2(ROOT / "version", base / "version")
     for name in ("config", "cache", "runtime", "bin"):
@@ -67,6 +70,7 @@ else:
     layout = layout.replace("component Surface: PanelWindow", "component Surface: Fixtures.FakePanelWindow")
     layout = layout.replace("anchors.top:", "reserveAnchors.top:").replace("anchors.bottom:", "reserveAnchors.bottom:")
     layout = layout.replace("anchors.left:", "reserveAnchors.left:").replace("anchors.right:", "reserveAnchors.right:")
+    layout = layout.replace("WlrLayershell.layer:", "surfaceLayer:")
     layout = re.sub(r"^        WlrLayershell.keyboardFocus:[^\n]*\n(?: +:[^\n]*\n)*", "", layout, flags=re.M)
     layout = re.sub(r"^        (?:WlrLayershell\.|BackgroundEffect\.).*\n", "", layout, flags=re.M)
     (base / "modules/ui/layout/LayoutFixture.qml").write_text(layout)
@@ -75,6 +79,7 @@ import Quickshell
 Item
 {
     property var screen
+    property int surfaceLayer: -1
     property color color: "transparent"
     property int exclusionMode: ExclusionMode.Auto
     property int exclusiveZone: -999
@@ -110,6 +115,14 @@ ShellRoot
     property var mediaOwner: null
     property real slideBefore: 0
     function check(ok, message) { if (!ok) throw new Error(message) }
+    function verifyMediaCenter()
+    {
+        const menu = loadedPage(frame.island, Qt.resolvedUrl("modules/ui/bar/menus/MenuMedia.qml"));
+        check(menu && menu.centerOnWidget, "Media menu does not request centered placement");
+        const center = menu.mapToItem(frame, menu.width / 2, menu.height / 2);
+        const body = frame.island.bodyRect;
+        check(Math.abs(center.x - body.x - body.width / 2) <= 1, "Media menu is off center after island width changed");
+    }
     function ready(name)
     {
         check(overlay.testPage.status === Loader.Ready && overlay.testPage.item.name === name, "Could not load " + name);
@@ -127,8 +140,7 @@ ShellRoot
     function find(item, name)
     {
         if (item.objectName === name) return item;
-        for (const child of item.children || []) { const found = find(child, name); if (found) return found; }
-        return null;
+        return events.findChild(item, name);
     }
     function slot(item, name)
     {
@@ -153,6 +165,94 @@ ShellRoot
         if (String(item.source) === String(source) && item.status === Loader.Ready && item.item) return item.item;
         for (const child of item.children || []) { const found = loadedPage(child, source); if (found) return found; }
         return null;
+    }
+    function visibleMenuText(item)
+    {
+        if (item.label && item.visible && item.width > 0 && item.height > 0)
+        {
+            let visible = true;
+            for (let node = item; node; node = node.parent)
+            {
+                const point = item.mapToItem(node, item.width / 2, item.height / 2);
+                if (node.opacity <= 0 || (node.clip && (point.x < 0 || point.y < 0 || point.x >= node.width || point.y >= node.height))) visible = false;
+            }
+            const point = item.mapToItem(frame, item.width / 2, item.height / 2);
+            if (visible && point.x >= 0 && point.y >= 0 && point.x < frame.width && point.y < frame.height) return true;
+        }
+        return (item.children || []).some(child => visibleMenuText(child));
+    }
+    function menuEdges()
+    {
+        const names = ["Battery", "Bluetooth", "Clock", "Layout", "Media", "Network", "Notifications", "Tray", "Volume"];
+        for (const style of [Enums.MenuDefault, Enums.MenuFloating])
+        {
+            Config.set("barMenu", style);
+            for (const edge of [Enums.EdgeBottom, Enums.EdgeRight, Enums.EdgeTop, Enums.EdgeLeft])
+            {
+                Config.set("barSide", edge);
+                events.wait(40);
+                const trigger = slot(frame.bar, "clock").widget;
+                for (const name of names)
+                {
+                    const source = Qt.resolvedUrl("modules/ui/bar/menus/Menu" + name + ".qml");
+                    MenuState.toggle(source, trigger);
+                    events.wait(40);
+                    const menu = loadedPage(frame.bar, source);
+                    check(menu && menu.visible && menu.active && menu.presented && menu.width > 0 && menu.height > 0, "Menu is hidden on edge " + edge + ": " + name);
+                    if (edge === Enums.EdgeLeft || edge === Enums.EdgeRight)
+                    {
+                        const panel = MenuState.menuOwner.panel;
+                        check(Math.abs(panel.width - menu.width) < 0.01 && Math.abs(panel.height - menu.height) < 0.01, "Vertical menu background does not fit its content: " + name);
+                    }
+                    if (name !== "Layout") check(visibleMenuText(menu), "Menu content is clipped on edge " + edge + ": " + name);
+                    if (name === "Clock")
+                    {
+                        menu.offset = 1;
+                        const today = find(menu, "calendarToday");
+                        events.mouseClick(today, today.width / 2, today.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
+                        check(menu.offset === 0, "Menu content cannot receive clicks on edge " + edge);
+                    }
+                }
+            }
+        }
+        MenuState.close();
+        Config.set("barMenu", Enums.MenuDefault);
+        Config.set("barSide", Enums.EdgeTop);
+        events.wait(360);
+    }
+    function sidebarEdges()
+    {
+        for (const mode of [Enums.AnimationsStandard, Enums.AnimationsFluid])
+        {
+            Config.set("themeAnimations", mode);
+            for (const style of [Enums.MenuDefault, Enums.MenuFloating])
+            {
+                Config.set("barMenu", style);
+                for (const edge of [Enums.EdgeLeft, Enums.EdgeRight])
+                {
+                    Config.set("barSide", edge);
+                    for (const side of ["left", "right"])
+                    {
+                        const sidebar = side === "left" ? frame.leftSidebar : frame.rightSidebar;
+                        SidebarState.toggle(side, Quickshell.screens[0].name);
+                        events.wait(70);
+                        const panel = sidebar.panel;
+                        const inset = Theme.frameThickness + (style === Enums.MenuFloating ? 10 : 0);
+                        check(sidebar.progress > 0 && sidebar.progress < 1, "Vertical sidebar reveal snapped");
+                        check(panel.width === sidebar.panelWidth && panel.height > 0 && panel.height < sidebar.panelHeight, "Vertical sidebar did not reveal vertically");
+                        check(sidebar.scrollView.height === sidebar.panelHeight - 8 && sidebar.contentBody.width === sidebar.panelWidth - 36, "Vertical sidebar content reflows during reveal");
+                        check(Math.abs((side === "left" ? panel.y : frame.height - panel.y - panel.height) - inset) < 0.01, "Vertical sidebar is not aligned to its top or bottom edge");
+                        const contentEdge = sidebar.scrollView.mapToItem(frame, 0, side === "left" ? 0 : sidebar.scrollView.height);
+                        check(Math.abs((side === "left" ? contentEdge.y : frame.height - contentEdge.y) - inset - 4) < 1, "Vertical sidebar content slides away from its reveal edge: " + contentEdge.y + " inset=" + inset + " side=" + side + " mode=" + mode);
+                        SidebarState.close();
+                        events.wait(340);
+                    }
+                }
+            }
+        }
+        Config.set("themeAnimations", Enums.AnimationsDisabled);
+        Config.set("barMenu", Enums.MenuDefault);
+        Config.set("barSide", Enums.EdgeTop);
     }
     function geometry()
     {
@@ -182,8 +282,15 @@ ShellRoot
             check(bar.hoveringBand, "Expanded bar background does not reveal a hover hint");
             events.mouseClick(band, x, y, Qt.LeftButton, Qt.NoModifier, 0);
             check(SidebarState.current === side, "Clicking an empty bar half did not open its sidebar");
-            const panel = (side === "left" ? frame.leftSidebar : frame.rightSidebar).panel;
+            const sidebar = side === "left" ? frame.leftSidebar : frame.rightSidebar;
+            const panel = sidebar.panel;
             const gap = Theme.frameSmoothing;
+            const vertical = Config.barSide === Enums.EdgeLeft || Config.barSide === Enums.EdgeRight;
+            const right = vertical ? Config.barSide === Enums.EdgeRight : side === "right";
+            const bottom = Config.barSide === Enums.EdgeBottom || (vertical && side === "right");
+            check(Math.abs(panel.x - (right ? frame.width - sidebar.rightInset - panel.width : sidebar.leftInset)) < 0.01, "Sidebar did not follow its bar corner horizontally");
+            check(Math.abs(panel.y - (bottom ? frame.height - sidebar.bottomInset - panel.height : sidebar.topInset)) < 0.01, "Sidebar did not follow its bar corner vertically");
+            check(panel.width > 0 && panel.height > 0 && sidebar.contentBody.width > 0, "Sidebar content has no visible area");
             if (Config.barSide === Enums.EdgeTop) check(panel.y >= bar.reserve + gap, "Sidebar blends into the top bar");
             if (Config.barSide === Enums.EdgeBottom) check(panel.y + panel.height <= frame.height - bar.reserve - gap, "Sidebar blends into the bottom bar");
             if (Config.barSide === Enums.EdgeLeft) check(panel.x >= bar.reserve + gap, "Sidebar blends into the left bar");
@@ -279,7 +386,6 @@ ShellRoot
             x: 500; y: 300; width: 220
             visible: false
             Toggle { id: toggleProbe; onToggled: value => checked = value }
-            MenuToggle { id: rowProbe; text: "Shared switch"; onToggle: value => checked = value }
             ControlToggle { id: tileProbe; width: parent.width; height: implicitHeight; text: "Wi-Fi"; onToggled: value => checked = value }
             ControlSlider
             {
@@ -295,11 +401,13 @@ ShellRoot
     Timer
     {
         property int step: 0
+        property bool checkedMenuEdges: false
         property int previewStep: 0
         property int previewWait: 0
         property real previewPhase: 0
         property real previewBarHeight: 0
         property int mediaChecks: 0
+        property bool mediaRestored: false
         property int sidebarChecks: 0
         property int importChecks: 0
         property int importWait: 0
@@ -309,6 +417,15 @@ ShellRoot
             if (!Config.initialized) return;
             try
             {
+                if (!checkedMenuEdges)
+                {
+                    checkedMenuEdges = true;
+                    stop();
+                    tests.menuEdges();
+                    tests.sidebarEdges();
+                    start();
+                    return;
+                }
                 if (step < 32)
                 {
                     if (step > 0) { tests.geometry(); tests.barInteraction(); }
@@ -487,13 +604,41 @@ ShellRoot
                         tests.mediaWidget.toggleMenu(); tests.mediaOwner = MenuState.menuOwner; break;
                     case 35:
                         tests.check(MenuState.menuActive && MenuState.menuWidget === tests.mediaWidget, "Media menu failed to open independently");
-                        player.isPlaying = false; player.trackTitle = ""; ServiceMedia.players = []; break;
+                        tests.check(!tests.find(tests.mediaWidget, "islandCompactContent").visible, "Media menu duplicated the compact artwork and track details");
+                        tests.check(frame.island.bodyRect.height === 0, "Expanded media retained an empty compact island");
+                        tests.check(!tests.find(tests.mediaWidget, "islandEqualizer").streaming, "Hidden compact media retained its visualizer subscription");
+                        tests.verifyMediaCenter();
+                        const expanded = tests.loadedPage(frame.island, Qt.resolvedUrl("modules/ui/bar/menus/MenuMedia.qml"));
+                        const expandedEdge = expanded.mapToItem(frame, 0, expanded.height);
+                        tests.check(Math.abs(frame.height - expandedEdge.y - Theme.frameThickness) < 1, "Expanded media did not replace the island at its screen edge");
+                        const seek = tests.find(frame.island, "mediaSeek");
+                        seek.forceActiveFocus();
+                        events.keyClick(Qt.Key_End);
+                        tests.check(player.position === player.length, "Keyboard seek did not reach the end");
+                        events.keyClick(Qt.Key_Home);
+                        tests.check(player.position === 0, "Keyboard seek did not reach the start");
+                        events.keyClick(Qt.Key_Right);
+                        tests.check(Math.abs(player.position - 5) < 0.1, "Keyboard seek did not move forward");
+                        const play = tests.find(frame.island, "mediaPlayPause");
+                        events.mouseClick(play, play.width / 2, play.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
+                        tests.check(MenuState.menuKeyboard && play.activeFocus && !player.isPlaying, "Media control did not pause playback and enable keyboard focus");
+                        events.keyClick(Qt.Key_Space);
+                        tests.check(player.isPlaying, "Keyboard play/pause did not resume playback");
+                        player.isPlaying = false;
+                        player.trackTitle = ""; ServiceMedia.players = []; break;
                     case 36:
                         tests.check(MenuState.menuActive && MenuState.menuOwner === tests.mediaOwner && tests.find(frame.island, "dynamicIsland") === tests.mediaWidget, "Track loading closed or recreated the menu");
-                        player.trackTitle = "Next track"; player.isPlaying = true; ServiceMedia.players = [player]; break;
+                        tests.verifyMediaCenter();
+                        player.trackTitle = "Next track with a much longer title to expand the island"; player.isPlaying = true; ServiceMedia.players = [player]; break;
                     case 37:
-                        tests.check(MenuState.menuActive && tests.mediaWidget.shown.title === "Next track", "Track update lost the media menu");
-                        MenuState.close(); player.isPlaying = false;
+                        if (!mediaRestored)
+                        {
+                            tests.check(MenuState.menuActive && tests.mediaWidget.shown.title === player.trackTitle, "Track update lost the media menu");
+                            tests.verifyMediaCenter();
+                            MenuState.close(); mediaRestored = true; return;
+                        }
+                        tests.check(!tests.mediaWidget.menuOpen && tests.find(tests.mediaWidget, "islandCompactContent").visible && frame.island.bodyRect.height > 0, "Closing media did not restore the compact island");
+                        player.isPlaying = false;
                         OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "island");
                         OverlayState.show("settings"); break;
                     case 38:
@@ -594,14 +739,6 @@ ShellRoot
                     case 49:
                         events.mouseClick(toggleProbe, toggleProbe.width / 2, toggleProbe.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                         tests.check(toggleProbe.checked, "Shared settings toggle does not emit changes");
-                        events.mouseClick(rowProbe, 20, rowProbe.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                        tests.check(rowProbe.checked, "Shared menu row no longer toggles");
-                        const switchControl = rowProbe.children.find(item => item.thumbStretch !== undefined);
-                        tests.check(switchControl !== undefined, "Menu row does not use the shared switch");
-                        events.mouseMove(switchControl, switchControl.width / 2, switchControl.height / 2, 0);
-                        tests.check(rowProbe.hovered, "Shared switch loses the row hover animation");
-                        events.mouseClick(switchControl, switchControl.width / 2, switchControl.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                        tests.check(!rowProbe.checked, "Clicking the shared switch toggles twice");
                         events.mouseClick(tileProbe, tileProbe.width / 2, tileProbe.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                         tests.check(tileProbe.checked && String(tileProbe.children[0].color) === String(Theme.colorAccent), "Enabled control tile does not highlight its full background");
                         const sliderPointer = tests.find(sliderProbe, "controlSliderPointer");
@@ -786,10 +923,12 @@ ShellRoot
                                 if (importChecks === 1)
                                 {
                                     if ((ServiceResources.busy || ServiceResources.entries.length === 0) && importWait++ < 20) return;
-                                    tests.check(ServiceResources.entries.length === 3 && ServiceResources.source === "repository", "Import catalog did not load");
-                                    tests.find(imports, "importResource-dots/fixture").clicked();
-                                    tests.check(ServiceResources.pending && ServiceResources.pending.id === "dots/fixture", "Per-app import did not request confirmation");
-                                    ServiceResources.apply();
+                                    tests.check(ServiceResources.entries.map(entry => entry.id).join(",") === "compositor,dots,greeter,wallpapers", "Import catalog did not load");
+                                    tests.find(imports, "importResource-dots").clicked();
+                                    tests.check(ServiceResources.pending && ServiceResources.pending.id === "dots", "Dots import did not request confirmation");
+                                    const confirmation = tests.find(overlay.testPage.item, "resourceConfirmation");
+                                    tests.check(confirmation && confirmation.visible && confirmation.modal, "Import confirmation is not a modal popup");
+                                    tests.find(confirmation.contentItem, "acceptConfirmation").clicked();
                                     tests.check(ServiceResources.pending && ServiceResources.error !== "" && !ServiceResources.busy, "Missing terminal did not preserve the confirmation");
                                     ServiceResources.pending = null;
                                     tests.find(imports, "importResource-greeter").clicked();
@@ -802,7 +941,8 @@ ShellRoot
                                 {
                                     if (ServiceResources.busy) return;
                                     tests.find(imports, "importResource-wallpapers").clicked();
-                                    tests.find(imports, "applyResourceImport").clicked();
+                                    const confirmation = tests.find(overlay.testPage.item, "resourceConfirmation");
+                                    tests.find(confirmation.contentItem, "acceptConfirmation").clicked();
                                     tests.check(ServiceResources.busy && ServiceUpdate.resourcesBusy, "Import and updater can run concurrently");
                                     importChecks++; return;
                                 }
@@ -947,22 +1087,291 @@ ShellRoot
     }
 }
 ''')
+    if scenario is not None:
+        scenario(base)
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software",
-               XDG_CONFIG_HOME=str(base / "config"), XDG_CACHE_HOME=str(base / "cache"), XDG_RUNTIME_DIR=str(base / "runtime"),
+               XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"), XDG_RUNTIME_DIR=str(base / "runtime"),
                PATH=str(base / "bin") + os.pathsep + os.environ["PATH"],
                DBUS_SESSION_BUS_ADDRESS="unix:path=/tmp/bloodyshell-test-no-session-bus",
                DBUS_SYSTEM_BUS_ADDRESS="unix:path=/tmp/bloodyshell-test-no-system-bus", NIRI_SOCKET="/tmp/bloodyshell-test-no-niri")
     env.pop("WAYLAND_DISPLAY", None)
-    result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=20)
+    result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=40)
     print(result.stdout)
     assert result.returncode == 0 and "SURFACES_PASSED" in result.stdout, "Surface integration checks failed"
     assert not re.search(r"SURFACES_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|is not a type|Failed to load configuration", result.stdout), "Surface QML error"
+
+
+def fullscreen_fixture(base):
+    compositor = base / "modules/services/ServiceCompositor.qml"
+    source = compositor.read_text().replace("id: serviceCompositor", "id: serviceCompositor\n    property var testOutputs: []", 1)
+    source = source.replace("fullscreenScreens(Quickshell.screens)", "fullscreenScreens(testOutputs)")
+    compositor.write_text(source)
+    (base / "shell.qml").write_text(r'''import QtQuick
+import QtQuick.Window
+import QtTest
+import Quickshell
+import Quickshell.Wayland
+import "modules/core"
+import "modules/services"
+import "modules/ui/layout"
+import "modules/ui/frame"
+
+ShellRoot {
+    Window {
+        id: window; visible: true; width: 1280; height: 800
+        QtObject { id: outputA; property string name:"A"; property int width:1280; property int height:800 }
+        QtObject { id: outputB; property string name:"B"; property int width:1920; property int height:1080 }
+        LayoutFixture { id: layout; modelData: outputA; Component.onCompleted: canvasSurface.visible=false }
+        Frame { id:frameView; anchors.fill:parent; screen:outputA }
+        readonly property alias frame: frameView
+        property int windowChanges:0
+        property int fullscreenChanges:0
+        Connections { target:ServiceCompositor; function onWindowListChanged() { window.windowChanges++; } }
+        Connections { target:ServiceCompositor; function onFullscreenOutputsChanged() { window.fullscreenChanges++; } }
+        function check(ok,message) { if(!ok) throw new Error(message); }
+        function send(event) { ServiceCompositor.event(JSON.stringify(event)); }
+        function tile(width,height,x=null,y=null) { return {tile_size:[width,height],tile_pos_in_workspace_view:x===null || y===null ? null : [x,y],window_size:[width,height]}; }
+        function fullscreen(on) { send({WindowLayoutsChanged:{changes:[[1,on ? tile(1280,800) : tile(1000,700,10,10)]]}}); }
+        function find(item,name) { if(item.objectName===name) return item; for(const child of item.children || []) { const match=find(child,name); if(match) return match; } return null; }
+        TestCase {
+            id: input; when:false; optional:true
+            function edge(side) {
+                if(side===Enums.EdgeTop) mouseMove(window.contentItem,640,1);
+                else if(side===Enums.EdgeBottom) mouseMove(window.contentItem,640,799);
+                else if(side===Enums.EdgeLeft) mouseMove(window.contentItem,1,400);
+                else mouseMove(window.contentItem,1279,400);
+            }
+            function outside() { mouseMove(window.contentItem,640,400); }
+            function until(test,message,timeout=1200) {
+                let elapsed=0;
+                while(!test() && elapsed<timeout) { wait(20); elapsed+=20; }
+                window.check(test(),message);
+            }
+            function exercise() {
+                until(()=>Config.initialized,"Settings did not initialize",2000);
+                Config.set("barScreens",["A"]); Config.set("dockScreens",["A"]);
+                until(()=>Config.initialized && window.frame && window.frame.bar && window.frame.dock,"Frame did not initialize",2000);
+                const frame=window.frame, check=window.check;
+                const send=event=>window.send(event), tile=(...args)=>window.tile(...args), fullscreen=on=>window.fullscreen(on), find=(...args)=>window.find(...args);
+                Config.set("barHideAuto",false); Config.set("dockHideAuto",false);
+                Config.set("barHideSmart",true); Config.set("dockHideSmart",true);
+                ServiceCompositor.testOutputs=[outputA,outputB];
+                send({WorkspacesChanged:{workspaces:[
+                    {id:10,idx:1,output:"A",is_active:true,is_focused:true,active_window_id:1},
+                    {id:11,idx:2,output:"A",is_active:false,is_focused:false,active_window_id:3},
+                    {id:12,idx:3,output:"A",is_active:false,is_focused:false,active_window_id:null},
+                    {id:20,idx:1,output:"B",is_active:true,is_focused:false,active_window_id:2},
+                    {id:21,idx:2,output:"B",is_active:false,is_focused:false,active_window_id:null}
+                ]}});
+                send({WindowsChanged:{windows:[
+                    {id:1,workspace_id:10,app_id:"surface-test",is_focused:true,layout:tile(1000,700,10,10)},
+                    {id:2,workspace_id:20,layout:tile(1920,1080)},
+                    {id:3,workspace_id:11,layout:tile(1280,800)}
+                ]}});
+                check(ServiceCompositor.fullscreenOutputs.join(",")==="B","Inactive workspace affected fullscreen outputs");
+                check(!frame.fullscreen && frame.bar.revealWanted && frame.dock.revealWanted,"Other output changed normal panels");
+                check(layout.canvasSurface.surfaceLayer===WlrLayer.Overlay,"Shell canvas does not sit above fullscreen apps");
+                Config.set("barHideAuto",true); Config.set("dockHideAuto",true); outside(); wait(30);
+                check(!frame.bar.revealWanted && !frame.dock.revealWanted,"Occupied output should auto-hide its panels");
+                send({WorkspaceActivated:{id:21,focused:true}}); wait(30);
+                check(ServiceCompositor.workspaceEmptyOnOutput("B") && !ServiceCompositor.workspaceEmptyOnOutput("A"),"Empty workspace state leaked between outputs");
+                check(!frame.bar.revealWanted && !frame.dock.revealWanted,"Focusing another output's empty workspace revealed these panels");
+                until(()=>!frame.bar.revealed && !frame.dock.revealed,"Other output's empty workspace kept panels visible");
+                send({WorkspaceActivated:{id:12,focused:true}}); wait(30);
+                check(frame.bar.revealWanted && frame.dock.revealWanted,"Own empty workspace did not reveal panels");
+                send({WindowOpenedOrChanged:{window:{id:4,workspace_id:12,is_floating:true}}}); wait(30);
+                check(!frame.bar.revealWanted && !frame.dock.revealWanted,"Floating window left its workspace marked empty");
+                send({WindowClosed:{id:4}}); wait(30);
+                check(frame.bar.revealWanted && frame.dock.revealWanted,"Closing the last window did not reveal its panels");
+                Config.set("barHideSmart",false); Config.set("dockHideSmart",false); wait(30);
+                check(!frame.bar.revealWanted && !frame.dock.revealWanted,"Disabled empty-workspace setting revealed panels");
+                check(!ServiceCompositor.workspaceEmptyOnOutput("missing"),"Unknown output was treated as empty");
+                Config.set("barHideSmart",true); Config.set("dockHideSmart",true);
+                send({WorkspaceActivated:{id:10,focused:true}}); send({WorkspaceActivated:{id:20,focused:false}}); wait(30);
+                check(!frame.bar.revealWanted && !frame.dock.revealWanted,"Returning to an occupied workspace left panels revealed");
+                Config.set("barHideAuto",false); Config.set("dockHideAuto",false);
+                fullscreen(true); wait(30);
+                check(frame.fullscreen && ServiceCompositor.fullscreenOutputs.join(",")==="A,B","Live layout event did not enter fullscreen");
+                const fullscreenState=ServiceCompositor.fullscreenOutputs, fullscreenChanges=window.fullscreenChanges;
+                for(let i=0;i<40;i++) {
+                    const record=ServiceCompositor.windowList.find(window=>window.id===1);
+                    send({WindowOpenedOrChanged:{window:Object.assign({},record,{title:"Changed " + i})}});
+                }
+                check(ServiceCompositor.fullscreenOutputs===fullscreenState && window.fullscreenChanges===fullscreenChanges,"Title changes republished fullscreen state");
+                const count=window.windowChanges;
+                fullscreen(true); check(window.windowChanges===count,"Geometry updates rebuilt application lists");
+                check(frame.reservations.every(value=>value===0),"Fullscreen retained application margins");
+                send({WindowFocusChanged:{id:null}}); check(frame.fullscreen,"Opening a shell surface cleared fullscreen detection");
+                send({WorkspaceActiveWindowChanged:{workspace_id:10,active_window_id:null}}); check(!frame.fullscreen,"No active window retained fullscreen");
+                send({WorkspaceActiveWindowChanged:{workspace_id:10,active_window_id:1}}); check(frame.fullscreen,"Restoring active window did not restore fullscreen");
+                send({OverviewOpenedOrClosed:{is_open:true}}); check(!frame.fullscreen,"Overview did not restore panels");
+                send({OverviewOpenedOrClosed:{is_open:false}}); check(frame.fullscreen,"Closing overview lost fullscreen state");
+                fullscreen(false); wait(30);
+                for(const mode of [0,1,2]) {
+                    Config.set("themeAnimations",mode);
+                    for(const side of [0,1,2,3]) {
+                        Config.set("barSide",side); Config.set("dockSide",(side+1)%4);
+                        outside(); fullscreen(true); wait(30);
+                        check(frame.bar.autoHide && frame.dock.autoHide,"Fullscreen did not override panel auto-hide settings");
+                        until(()=>!frame.bar.revealed && !frame.dock.revealed,"Fullscreen panels did not hide at mode/side " + mode + "/" + side,1800);
+                        until(()=>frame.bar.reveal===0 && frame.dock.container.reveal===0 && frame.thickness===0,"Fullscreen animation did not settle",1800);
+                        check(!frame.inputRegion.regions.includes(frame.bar.inputRegion) && !frame.inputRegion.regions.includes(frame.dock.inputRegion),"Hidden fullscreen panels intercepted application input");
+                        check(!frame.island || frame.inputRegion.regions.includes(frame.island.inputRegion),"Fullscreen removed dynamic island input");
+                        edge(side); wait(40);
+                        check(!frame.bar.revealWanted && !frame.bar.revealed && frame.bar.reveal===0,"Edge hover revealed the fullscreen bar");
+                        outside();
+                        SidebarState.toggle("left","A"); wait(40);
+                        check(!frame.bar.revealWanted,"Sidebar revealed the fullscreen bar"); SidebarState.close();
+                        edge((side+1)%4); wait(40);
+                        check(!frame.dock.revealWanted && !frame.dock.revealed && frame.dock.container.reveal===0,"Edge hover revealed the fullscreen dock");
+                        fullscreen(false); wait(30);
+                        check(frame.bar.revealWanted && frame.dock.revealWanted && !frame.bar.autoHide && !frame.dock.autoHide,"Fullscreen exit changed configured panel behavior");
+                        Config.set("barHideAuto",true); Config.set("dockHideAuto",true);
+                        outside();
+                        until(()=>!frame.bar.revealed && !frame.dock.revealed,"Normal auto-hide did not resume",1800);
+                        until(()=>frame.bar.reveal===0 && frame.dock.container.reveal===0,"Normal hide animation did not settle",1800);
+                        edge(side); wait(40);
+                        check(frame.bar.revealed,"Normal bar hover reveal stopped working");
+                        if(mode>0) check(frame.bar.reveal>0 && frame.bar.reveal<1,"Normal bar snapped instead of animating");
+                        until(()=>frame.bar.reveal===1,"Normal bar reveal did not finish");
+                        outside(); SidebarState.toggle("left","A"); wait(40);
+                        check(frame.bar.revealWanted,"Sidebar did not hold the normal bar open"); SidebarState.close();
+                        edge((side+1)%4); wait(40);
+                        check(frame.dock.revealed,"Normal dock hover reveal stopped working");
+                        until(()=>frame.dock.container.reveal===1,"Normal dock reveal did not finish");
+                        const dockItem=frame.dock.container.children.find(child=>child.itemAtIndex!==undefined).itemAtIndex(0).item;
+                        frame.dock.menuOpen(dockItem); outside(); wait(40);
+                        check(frame.dock.revealWanted,"Dock menu did not hold the normal dock open");
+                        fullscreen(true); wait(40);
+                        check(!frame.bar.revealWanted && !frame.dock.revealWanted && !frame.dock.keyboardWanted,"Entering fullscreen retained the dock menu");
+                        Config.set("barHideAuto",false); Config.set("dockHideAuto",false);
+                        fullscreen(false); wait(30);
+                        check(frame.bar.revealWanted && frame.dock.revealWanted && !frame.bar.autoHide && !frame.dock.autoHide,"Fullscreen exit changed configured panel behavior");
+                    }
+                }
+                const fake=ServiceCompositor.windowLayouts;
+                fullscreen(false); check(ServiceCompositor.windowLayouts===fake,"Identical layout events allocate state");
+                send({WindowClosed:{id:2}}); check(!ServiceCompositor.fullscreenOnOutput("B") && ServiceCompositor.windowLayouts[2]===undefined,"Closing fullscreen window left stale output state");
+                console.log("SURFACES_PASSED per-output empty-workspace reveal, fullscreen suppresses panel hover and input on all edges/modes, island input preserved, normal smooth reveal, menu holds, margins and recovery");
+            }
+        }
+        Timer { interval:100; running:true; onTriggered: { try { input.exercise(); } catch(error) { console.error("SURFACES_FAILED fullscreen",error); } Qt.quit(); } }
+    }
+}
+''')
+
+
+def artwork_checks():
+    import runpy
+
+    prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-artwork-") as temporary:
+        base = Path(temporary)
+        env = prepare(base)
+        (base / "home").mkdir()
+        env.update(HOME=str(base / "home"), XDG_STATE_HOME=str(base / "state"))
+        env.pop("WAYLAND_DISPLAY", None)
+        for name in ("first.png", "second.png", "third.png"):
+            shutil.copyfile(base / "fixture.png", base / name)
+        media = base / "modules/services/ServiceMedia.qml"
+        media.write_text(media.read_text().replace("readonly property var players: Mpris.players.values", "property var players: []"))
+        (base / "shell.qml").write_text('''import QtQuick
+import QtQuick.Window
+import QtTest
+import Quickshell
+import "modules/core"
+import "modules/services"
+import "modules/ui/bar/menus"
+
+ShellRoot {
+    QtObject {
+        id: player
+        property string dbusName: "artwork-test"
+        property string identity: "Player"
+        property string trackTitle: "Track"
+        property string trackArtist: "Artist"
+        property string trackAlbum: "Album"
+        property string trackArtUrl: ""
+        property bool isPlaying: false
+        property bool positionSupported: false
+        property bool lengthSupported: false
+        property bool canSeek: false
+        property bool canTogglePlaying: false
+        property bool canGoPrevious: false
+        property bool canGoNext: false
+        property bool shuffleSupported: false
+        property bool shuffle: false
+        property bool loopSupported: false
+        property int loopState: 0
+    }
+    Window {
+        visible: true; width: 500; height: 400
+        MenuMedia { id: menu; width: implicitWidth; height: implicitHeight }
+        TestCase {
+            id: input; when: false; optional: true
+            function check(ok, message) { if (!ok) throw new Error(message); }
+            function settled(cover, url) {
+                return cover.currentImage.status === Image.Ready
+                    && String(cover.currentImage.source) === String(url) && cover.blend === 0;
+            }
+            function awaitState(predicate, message) {
+                for (let i = 0; i < 100; i++) { if (predicate()) return; wait(20); }
+                throw new Error(message);
+            }
+            function exercise() {
+                ServiceMedia.players = [player];
+                const cover = findChild(menu, "mediaArtwork");
+                check(cover && menu.active, "Artwork is not visible");
+                const first = Qt.resolvedUrl("first.png"), second = Qt.resolvedUrl("second.png"), third = Qt.resolvedUrl("third.png");
+                for (const mode of [0, 1, 2]) {
+                    Config.set("themeAnimations", mode);
+                    player.trackArtUrl = first;
+                    awaitState(() => settled(cover, first), "First artwork failed to load");
+                    const previous = cover.currentImage;
+                    player.trackArtUrl = second;
+                    if (mode > 0) {
+                        awaitState(() => cover.blend > 0 && cover.blend < 1, "Artwork did not crossfade");
+                        check(cover.currentImage === previous && previous.opacity === 1, "Outgoing artwork disappeared during the crossfade");
+                    }
+                    player.trackArtUrl = third;
+                    awaitState(() => settled(cover, third), "Rapid artwork changes did not show the latest cover");
+                    player.trackArtUrl = "";
+                    awaitState(() => cover.currentImage.status === Image.Null && cover.blend === 0, "Missing artwork left a stale cover");
+                    player.trackArtUrl = Qt.resolvedUrl("missing.png");
+                    awaitState(() => cover.currentImage.status === Image.Error && cover.blend === 0, "Failed artwork left a transition running");
+                    player.trackArtUrl = first;
+                    awaitState(() => settled(cover, first), "Artwork did not recover after an error");
+                    player.trackArtUrl = second;
+                    wait(60);
+                    Config.set("themeAnimations", 0);
+                    awaitState(() => settled(cover, second), "Disabling animations left artwork between covers");
+                }
+                ServiceMedia.players = [];
+                console.log("ARTWORK_PASSED loading, crossfades, rapid changes, missing/failed artwork, recovery, and animation cancellation");
+                Qt.quit();
+            }
+        }
+        Timer {
+            interval: 150; running: Config.initialized
+            onTriggered: { try { input.exercise(); } catch (error) { console.error("ARTWORK_FAILED", error); Qt.quit(); } }
+        }
+    }
+}
+''')
+        result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=15)
+        output = result.stdout + result.stderr
+        print(output)
+        assert result.returncode == 0 and "ARTWORK_PASSED" in output, output
+        assert not re.search(r"ARTWORK_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|is not a type|Failed to load configuration", output), output
 
 
 def main():
     check_sources()
     with tempfile.TemporaryDirectory(prefix="bloodyshell-surfaces-") as temporary:
         run_fixture(Path(temporary))
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-fullscreen-") as temporary:
+        run_fixture(Path(temporary), fullscreen_fixture)
+    artwork_checks()
     print("Three surface hosts, frame styles, dock joins, sidebars, dynamic overlays, and island presentation passed.")
 
 

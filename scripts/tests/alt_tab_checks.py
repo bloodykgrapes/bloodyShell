@@ -21,7 +21,9 @@ with tempfile.TemporaryDirectory(prefix="bloodyshell-alt-tab-") as temporary:
     shutil.copytree(ROOT / "modules/animations", base / "animations")
     for name in ("AltTabContent", "AltTabCard", "AltTabKeyboard"):
         shutil.copyfile(ROOT / f"modules/ui/overlay/altTab/{name}.qml", base / f"ui/overlay/altTab/{name}.qml")
-    put(base, "scripts/runtime/build-keyboard-monitor", "print(" + repr(str(base / "Monitor.qml")) + ")\n")
+    shutil.copytree(ROOT / "scripts/lib", base / "scripts/lib")
+    shutil.copy2(ROOT / "scripts/bloodyShell", base / "scripts/bloodyShell")
+    put(base, "scripts/lib/processes.py", "def keyboard_main():\n    print(" + repr((base / "Monitor.qml").as_uri()) + ")\n")
     put(base, "Monitor.qml", '''import QtQuick
 Item {
     objectName: "monitorFixture"
@@ -34,17 +36,17 @@ Item {
     for name in ("Theme", "Enums"):
         shutil.copyfile(ROOT / f"modules/core/{name}.qml", base / f"core/{name}.qml")
     stub(base, "core", "Config", '''
+    property real scrollSpeed: 1
+    function scrollDelta(pixel, angle) { return (pixel || angle / 120 * 48) * scrollSpeed; }
     property bool initialized: true
     property int themeStyle: 1
     property int themeAnimations: 2
     property bool themeAccent: true
     property int frameThickness: 8
-    property bool themeBorder: false
-    property real themeScale: 1
     property bool animationsFluid: true
     property bool animationsEnabled: false
 ''')
-    stub(base, "core", "Paths", 'property string runtimeScriptsDir: ' + json.dumps(str(base / "scripts/runtime")))
+    shutil.copyfile(ROOT / "modules/core/Paths.qml", base / "core/Paths.qml")
     stub(base, "core", "Tr", 'function tr(key) { return key }')
     stub(base, "core", "MenuState", 'function close() {}')
     stub(base, "core", "OverlayState", '''
@@ -196,11 +198,21 @@ ShellRoot
                 check(card.children[0].selected, "selected card lost its highlight");
                 if (phase === 0)
                 {
+                    cards.forceActiveFocus();
+                    events.keyRelease(Qt.Key_Tab, Qt.NoModifier);
+                    check(ServiceAltTab.active, "Tab release without synchronized modifiers ended the held switcher");
+                    events.keyRelease(Qt.Key_Backtab, Qt.NoModifier);
+                    check(ServiceAltTab.active, "Reverse Tab release ended the held switcher");
                     const before = ServiceAltTab.selected;
                     events.mouseWheel(deck, deck.width / 2, deck.height / 2, 0, 60, Qt.NoButton, Qt.NoModifier, 0);
                     check(ServiceAltTab.selected === before, "partial wheel step changed selection");
                     events.mouseWheel(deck, deck.width / 2, deck.height / 2, 0, 60, Qt.NoButton, Qt.NoModifier, 0);
                     check(ServiceAltTab.selected === (before + ServiceAltTab.windows.length - 1) % ServiceAltTab.windows.length, "wheel did not switch exactly once");
+                    Config.scrollSpeed = 2;
+                    const faster = ServiceAltTab.selected;
+                    events.mouseWheel(deck, deck.width / 2, deck.height / 2, 0, 60, Qt.NoButton, Qt.NoModifier, 0);
+                    check(ServiceAltTab.selected === (faster + ServiceAltTab.windows.length - 1) % ServiceAltTab.windows.length, "Alt+Tab ignored scroll speed");
+                    Config.scrollSpeed = 1;
                     const moved = repeater.itemAt(ServiceAltTab.selected);
                     check(Math.abs(rail.x + moved.x + moved.width / 2 - deck.width / 2) < 1, "disabled animation did not snap to selection");
                     Config.animationsEnabled = true;
@@ -221,7 +233,7 @@ ShellRoot
     }
 }
 ''')
-    env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", XDG_RUNTIME_DIR=str(base / "runtime"), XDG_CACHE_HOME=str(base / "cache"))
+    env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", XDG_RUNTIME_DIR=str(base / "runtime"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"))
     env.pop("WAYLAND_DISPLAY", None)
     result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=10)
     output = result.stdout + result.stderr

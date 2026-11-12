@@ -14,7 +14,7 @@ Text
     text: label
     textFormat: Text.PlainText
 
-    font.pixelSize: Math.round(size * Config.themeScale)
+    font.pixelSize: size
     font.family: Theme.fontText
 
     elide: Text.ElideRight

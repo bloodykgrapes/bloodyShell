@@ -130,6 +130,8 @@ Menu
             interactive: contentHeight > height
             boundsBehavior: Flickable.StopAtBounds
 
+            SmoothScroll { view: scroller }
+
             Column
             {
                 id: list

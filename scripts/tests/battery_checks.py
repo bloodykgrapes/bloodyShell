@@ -143,7 +143,6 @@ ShellRoot
                         battery.state = UPowerDeviceState.Discharging;
                         battery.percentage = 0.08;
                         Config.themeStyle = Enums.ThemeLight;
-                        Config.themeScale = 1.5;
                         Config.shellLanguage = "ru";
                     }
                     if (step === 5)
@@ -151,7 +150,7 @@ ShellRoot
                         if (Tr.language !== "ru" || Tr.strings["common.battery"] === "Battery") return;
                         window.check(menu.levelColor === Theme.colorCritical, "Low battery has no warning color");
                         window.check(window.profiles()[0].text === Tr.tr("menu.battery.saver"), "Profiles did not translate");
-                        window.check(window.all(menu, item => item.label !== undefined && item.visible).every(item => item.width > 0), "Scaled text has no room");
+                        window.check(window.all(menu, item => item.label !== undefined && item.visible).every(item => item.width > 0), "Translated text has no room");
                         battery.isLaptopBattery = false;
                     }
                     if (step === 6)
@@ -160,7 +159,7 @@ ShellRoot
                         const link = window.all(menu, item => item.text === Tr.tr("menu.battery.settings") && item.clicked !== undefined)[0];
                         link.clicked();
                         window.check(OverlayState.current === "settings" && Registry.settings[OverlayState.settingsPage].id === "power", "Power settings shortcut opens the wrong page");
-                        console.log("BATTERY_PASSED charge states, keyboard profiles, missing hardware, translations, scaling and animation lifecycle");
+                    console.log("BATTERY_PASSED charge states, keyboard profiles, missing hardware, translations and animation lifecycle");
                         TestPower.device = null;
                         stop(); Qt.callLater(() => Qt.quit()); return;
                     }
@@ -173,7 +172,7 @@ ShellRoot
 }
 ''')
         env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software",
-                   XDG_CONFIG_HOME=str(base / "config"), XDG_CACHE_HOME=str(base / "cache"), XDG_RUNTIME_DIR=str(base / "runtime"),
+                   XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"), XDG_RUNTIME_DIR=str(base / "runtime"),
                    DBUS_SESSION_BUS_ADDRESS="unix:path=/tmp/bloodyshell-test-no-bus", DBUS_SYSTEM_BUS_ADDRESS="unix:path=/tmp/bloodyshell-test-no-system-bus")
         env.pop("WAYLAND_DISPLAY", None)
         result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=10)

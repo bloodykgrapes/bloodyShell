@@ -38,7 +38,7 @@ Item
     Accessible.onPressAction: if (enabled && interactive && !busy) clicked()
 
     width: view ? view.rowWidth : parent ? parent.width : 200
-    height: prominent ? (filled ? 68 : 58) : filled ? (subtitle !== "" || level >= 0 ? 44 : 40) : subtitle !== "" || level >= 0 ? 42 : 34
+    height: Math.max(prominent ? (filled ? 68 : 58) : filled ? (subtitle !== "" || level >= 0 ? 48 : 40) : subtitle !== "" || level >= 0 ? 46 : 36, labels.implicitHeight + 16)
 
     scale: area.pressed ? 0.98 : interactive && menuRow.hovered ? (filled ? Config.animationsFluid ? 1.01 : 1 : 1.025) : 1
     Spring on scale {}
@@ -103,6 +103,7 @@ Item
 
         Column
         {
+            id: labels
             anchors
             {
                 left: glyph.visible ? glyph.right : parent.left

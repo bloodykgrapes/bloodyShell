@@ -52,8 +52,9 @@ Item
 {
     property bool active: true
     property int side: 0
-    implicitWidth: side < 2 ? 300 : 32
-    implicitHeight: side < 2 ? 32 : 300
+    property real along: 300
+    implicitWidth: side < 2 ? along : 32
+    implicitHeight: side < 2 ? 32 : along
 }
 ''')
     stub(base, "core", "MenuState", '''
@@ -92,6 +93,12 @@ ShellRoot
     property real since: 0
     property var content: null
     property int samples: 0
+    property var slot: null
+    function verifyIsland()
+    {
+        const middle = zone.islandA0 + zone.islandAlong / 2;
+        check(Math.abs(zone.anchorCenter - middle) <= 1, "Anchor left the resizing island center: " + zone.anchorCenter + " expected " + middle);
+    }
 
     function check(ok, message) { if (!ok) throw new Error(message + " side=" + zone.side + " mode=" + Config.mode) }
     function nearEdge(rect)
@@ -118,6 +125,11 @@ ShellRoot
         const center = content.mapToItem(zone, content.width / 2, content.height / 2);
         const offset = (zone.isHorizontal ? center.x : center.y) - zone.anchorCenter;
         if (centered) check(Math.abs(offset) < 1, "Centered menu shifted by " + offset + " with anchor=" + zone.anchorCenter + " size=" + zone.fullAlong);
+        if (centered && !zone.isHorizontal)
+        {
+            check(Math.abs(zone.panel.width - content.width) < 0.01, "Vertical menu background is wider than its content");
+            check(Math.abs(zone.panel.height - content.height) < 0.01, "Vertical menu background is taller than its content");
+        }
         samples++;
     }
     function advance()
@@ -209,15 +221,32 @@ ShellRoot
                     MenuState.menuActive = true;
                     tests.advance();
                 }
-                else if (tests.phase === 6 && elapsed > 160)
+                else if (tests.phase === 6 && elapsed > 200)
                 {
                     const view = zone.panel.children.find(item => item.front !== undefined);
                     tests.check(view.front.item === tests.content && tests.content.presented, "Rapid reopen replaced or left the menu hidden");
                     tests.check(tests.content.firstSection.reveal > 0 && tests.content.firstSection.reveal >= tests.content.lastSection.reveal, "Rapid reopen lost the section animation");
-                    MenuState.close();
+                    zone.align = "center";
+                    tests.slot = zone.children.find(item => item.slots !== undefined).slots[0];
+                    MenuState.menuWidget = tests.slot.widget;
+                    tests.slot.widget.along = 500;
                     tests.advance();
                 }
-                else if (tests.phase === 7 && elapsed > 360) tests.phase = 0;
+                else if (tests.phase === 7 || tests.phase === 8)
+                {
+                    tests.verifyIsland();
+                    tests.verify(elapsed > 220);
+                    if (elapsed < 250) return;
+                    if (tests.phase === 7) tests.slot.widget.along = 140;
+                    else MenuState.close();
+                    tests.advance();
+                }
+                else if (tests.phase === 9 && elapsed > 360)
+                {
+                    tests.slot.widget.along = 300;
+                    zone.align = "end";
+                    tests.phase = 0;
+                }
             }
             catch (error) { console.error("MENU_GEOMETRY_FAILED", error); Qt.quit() }
         }
@@ -225,12 +254,12 @@ ShellRoot
 }
 ''')
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software",
-               XDG_RUNTIME_DIR=str(base / "runtime"), XDG_CACHE_HOME=str(base / "cache"))
+               XDG_RUNTIME_DIR=str(base / "runtime"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"))
     env.pop("WAYLAND_DISPLAY", None)
-    result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=50)
+    result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=65)
     output = result.stdout + result.stderr
     print(output)
     assert result.returncode == 0 and "MENU_GEOMETRY_PASSED" in output, "Menu geometry checks failed"
     assert not re.search(r"MENU_GEOMETRY_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign", output), "Menu geometry QML error"
 
-print("Compact menus stayed centered on their widget; Default/Floating edges stayed fixed while resizing and reopening on all four edges and animation modes.")
+print("Menus followed growing and shrinking islands; compact menus stayed centered on their widget; Default/Floating edges stayed fixed while resizing and reopening on all four edges and animation modes.")

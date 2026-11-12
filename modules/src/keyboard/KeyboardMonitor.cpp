@@ -26,8 +26,7 @@ public:
     {
         if (target == window) return;
         target = window;
-        ready.invalidate();
-        seenAlt = false;
+        releasedSince.invalidate();
         emit targetWindowChanged();
     }
 
@@ -35,8 +34,7 @@ public:
     {
         if (enabled == value) return;
         enabled = value;
-        ready.invalidate();
-        seenAlt = false;
+        releasedSince.invalidate();
         if (enabled) probe.start();
         else probe.stop();
         emit listeningChanged();
@@ -50,20 +48,21 @@ signals:
 private:
     void sample()
     {
-        if (!target || !target->isVisible()) return;
-        if (!target->isActive())
+        // Focusing the next client can briefly interrupt layer-shell keyboard focus.
+        // Neither that handoff nor cached key-event modifiers means Alt was released.
+        if (!target || !target->isVisible() || !target->isActive())
         {
-            if (ready.isValid()) finish();
+            releasedSince.invalidate();
             return;
         }
-        if (!ready.isValid()) ready.start();
-        const bool current = QGuiApplication::keyboardModifiers().testFlag(Qt::AltModifier);
+        const bool current = QGuiApplication::queryKeyboardModifiers().testFlag(Qt::AltModifier);
         if (current)
         {
-            seenAlt = true;
+            releasedSince.invalidate();
             return;
         }
-        if (seenAlt || ready.elapsed() >= 64) finish();
+        if (!releasedSince.isValid()) releasedSince.start();
+        else if (releasedSince.elapsed() >= 64) finish();
     }
 
     void finish()
@@ -74,9 +73,8 @@ private:
 
     QPointer<QQuickWindow> target;
     QTimer probe;
-    QElapsedTimer ready;
+    QElapsedTimer releasedSince;
     bool enabled = false;
-    bool seenAlt = false;
 };
 
 class KeyboardPlugin : public QQmlExtensionPlugin

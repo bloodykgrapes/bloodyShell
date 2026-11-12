@@ -51,7 +51,7 @@ Item
     readonly property bool checkable: entry && entry.buttonType !== QsMenuButtonType.None
 
     width: ListView.view ? ListView.view.rowWidth : parent ? parent.width : 200
-    height: Math.round((separator ? 9 : 30) * Config.themeScale)
+    height: separator ? 9 : 30
 
     MenuSeparator { anchors.centerIn: parent; visible: row.separator }
 
@@ -82,7 +82,7 @@ Item
             id: mark
             x: 10
             anchors.verticalCenter: parent.verticalCenter
-            width: Math.round(16 * Config.themeScale)
+            width: 16
             height: width
 
             ShellIcon

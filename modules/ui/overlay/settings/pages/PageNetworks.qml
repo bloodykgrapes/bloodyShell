@@ -199,7 +199,7 @@ SettingsPage
                         visible: networkRow.known
                         icon: Icon.trash
                         enabled: !networkRow.changing
-                        onClicked: { pageNetworks.cancelPassword(); pageNetworks.forgetFor = networkRow.name; pageNetworks.revealControl(forgetConfirmation) }
+                        onClicked: { pageNetworks.cancelPassword(); pageNetworks.forgetFor = networkRow.name; }
                     }
                 }
             }
@@ -226,23 +226,17 @@ SettingsPage
         }
     }
 
-    SettingsRow
+    SettingsConfirmation
     {
-        id: forgetConfirmation
-        visible: pageNetworks.forgetFor !== ""
-        label: Tr.tr("settings.networks.forgetTitle").arg(pageNetworks.forgetFor)
+        objectName: "forgetConfirmation"
+        host: pageNetworks
+        visible: pageNetworks.active && pageNetworks.forgetFor !== ""
+        title: Tr.tr("settings.networks.forgetTitle").arg(pageNetworks.forgetFor)
         description: Tr.tr("settings.networks.forgetHint")
-        Row
-        {
-            spacing: 8
-            SettingsButton { text: Tr.tr("common.cancel"); onClicked: pageNetworks.forgetFor = "" }
-            SettingsButton
-            {
-                text: Tr.tr("common.forget")
-                danger: true
-                onClicked: { ServiceNetwork.forgetNetwork(pageNetworks.forgetFor); pageNetworks.forgetFor = "" }
-            }
-        }
+        acceptText: Tr.tr("common.forget")
+        danger: true
+        onAccepted: { ServiceNetwork.forgetNetwork(pageNetworks.forgetFor); pageNetworks.forgetFor = ""; }
+        onRejected: pageNetworks.forgetFor = ""
     }
 
     SettingsRow

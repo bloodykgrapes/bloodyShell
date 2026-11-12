@@ -22,7 +22,7 @@ Singleton
     property bool autostartRefreshPending: false
     readonly property bool autostartWatching: autostartClients.length > 0
     readonly property bool autostartBusy: autostartCommand.busy
-    readonly property string autostartHelper: Paths.runtimeScriptsDir + "/autostart"
+    readonly property var autostartHelper: Paths.commandFor("autostart")
 
     function setAutostartActive(client, active)
     {
@@ -39,14 +39,14 @@ Singleton
     {
         if (autostartBusy) { autostartRefreshPending = true; return; }
         if (clearError) autostartError = "";
-        autostartCommand.run(["python3", autostartHelper, "list"]);
+        autostartCommand.run(autostartHelper.concat(["list"]));
     }
 
     function changeAutostart(action, id, enabled)
     {
         if (autostartBusy || !id) return false;
         autostartError = "";
-        const args = ["python3", autostartHelper, action, String(id)];
+        const args = autostartHelper.concat([action, String(id)]);
         if (action === "set") args.push(enabled ? "true" : "false");
         return autostartCommand.run(args);
     }
@@ -97,7 +97,7 @@ Singleton
     Process
     {
         running: serviceApplications.autostartWatching
-        command: ["python3", serviceApplications.autostartHelper, "watch"]
+        command: serviceApplications.autostartHelper.concat(["watch"])
         stdout: SplitParser { onRead: line => { if (line === "changed") serviceApplications.queueAutostartRefresh() } }
         onExited: (code, status) =>
         {

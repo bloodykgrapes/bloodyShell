@@ -26,6 +26,8 @@ ListView
     clip: interactive
     boundsBehavior: Flickable.StopAtBounds
 
+    SmoothScroll { view: menuList }
+
     currentIndex: -1
     highlightFollowsCurrentItem: false
 

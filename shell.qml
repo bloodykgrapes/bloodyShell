@@ -10,6 +10,7 @@ import "modules/ui/desktop"
 import "modules/ui/layout"
 import "modules/ui/overlay"
 import "modules/ui/overlay/helper"
+import "modules/ui/keyboard"
 
 ShellRoot
 {
@@ -22,7 +23,7 @@ ShellRoot
         void ServiceLock.locked;
         void ServiceIdle.objectName;
         void ServiceGreeter.appearance;
-        void ServiceCompositor.accent;
+        void ServiceCompositor.windowList;
     }
 
     Variants { model: Config.initialized ? Quickshell.screens : []; Desktop { } }
@@ -30,6 +31,15 @@ ShellRoot
 
     Overlay { }
     HelperStartup { }
+    VirtualKeyboard { }
+
+    IpcHandler
+    {
+        target: "keyboard"
+        function show(): void { ServiceVirtualKeyboard.show(); }
+        function hide(): void { ServiceVirtualKeyboard.hide(); }
+        function toggle(): void { ServiceVirtualKeyboard.toggle(); }
+    }
 
     Variants
     {

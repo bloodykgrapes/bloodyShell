@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls.Basic as Controls
 
 import "../../../../common"
 import "../../../../core"
@@ -19,37 +20,33 @@ Flickable
     property alias header: fixedControls.data
     readonly property bool hasHeader: fixedControls.children.length > 0
     readonly property real headerHeight: hasHeader ? fixedHeader.height : 0
+    readonly property int pagePadding: width < 640 ? 24 : 32
 
     clip: true
     contentWidth: width
-    contentHeight: column.y + column.implicitHeight + 36
+    contentHeight: column.y + column.implicitHeight + pagePadding
     boundsBehavior: Flickable.StopAtBounds
     flickableDirection: Flickable.VerticalFlick
+    interactive: contentHeight > height
+
+    Controls.ScrollBar.vertical: Controls.ScrollBar
+    {
+        width: 6
+        anchors.right: parent.right
+        anchors.rightMargin: 6
+        padding: 1
+        policy: Controls.ScrollBar.AsNeeded
+        active: settingsPage.moving || hovered || pressed
+        contentItem: Rectangle { implicitWidth: 4; radius: 2; color: Theme.text4; opacity: 0.5 }
+    }
+
+    SmoothScroll { id: scroll; view: settingsPage }
 
     function resetScroll()
     {
         scroll.stop();
         cancelFlick();
         contentY = 0;
-    }
-
-    WheelHandler
-    {
-        target: null
-        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-
-        onWheel: event =>
-        {
-            const delta = Config.scrollDelta(event.pixelDelta.y, event.angleDelta.y);
-            const from = scroll.running ? scroll.to : settingsPage.contentY;
-            const target = Math.max(0, Math.min(settingsPage.contentHeight - settingsPage.height, from - delta));
-
-            scroll.stop();
-            if (!Config.animationsEnabled || event.pixelDelta.y !== 0) settingsPage.contentY = target;
-            else { scroll.to = target; scroll.start(); }
-
-            event.accepted = true;
-        }
     }
 
     Component.onCompleted:
@@ -63,16 +60,6 @@ Flickable
         });
     }
 
-    NumberAnimation
-    {
-        id: scroll
-        target: settingsPage
-        property: "contentY"
-        duration: 320
-        easing.type: Easing.BezierSpline
-        easing.bezierCurve: Theme.easingEmphasized
-    }
-
     component Heading: Column
     {
         width: parent.width
@@ -80,7 +67,9 @@ Flickable
 
         ShellText
         {
+            width: Math.max(0, parent.width - Theme.settingsControlHeight - 12)
             label: settingsPage.title
+            wrapMode: Text.Wrap
             size: 24
             color: Theme.text1
             font.bold: true
@@ -99,10 +88,10 @@ Flickable
     {
         id: column
 
-        x: 32
+        x: settingsPage.pagePadding
         y: settingsPage.hasHeader ? settingsPage.headerHeight + 6 : 28
-        width: Math.max(0, settingsPage.width - 64)
-        spacing: 22
+        width: Math.max(0, settingsPage.width - settingsPage.pagePadding * 2)
+        spacing: Theme.settingsSectionGap
 
         Heading { visible: !settingsPage.hasHeader }
     }
@@ -121,15 +110,15 @@ Flickable
         Heading
         {
             id: fixedHeading
-            x: 32; y: 28
-            width: Math.max(0, parent.width - 64)
+            x: settingsPage.pagePadding; y: 28
+            width: Math.max(0, parent.width - settingsPage.pagePadding * 2)
         }
         Column
         {
             id: fixedControls
-            x: 32
+            x: settingsPage.pagePadding
             y: fixedHeading.y + fixedHeading.implicitHeight + 10
-            width: Math.max(0, parent.width - 64)
+            width: Math.max(0, parent.width - settingsPage.pagePadding * 2)
             spacing: 6
         }
     }

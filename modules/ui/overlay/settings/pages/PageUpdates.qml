@@ -24,6 +24,49 @@ SettingsPage
         : phase === "dev" ? Theme.colorWarning
         : Theme.text3
 
+    function resourceTitle(entry)
+    {
+        if (!entry) return "";
+        if (entry.kind === "compositor") return Tr.tr("settings.about.compositor");
+        if (entry.kind === "dots") return Tr.tr("settings.imports.dots");
+        if (entry.kind === "greeter") return Tr.tr("settings.imports.greeter");
+        return Tr.tr("common.wallpapers");
+    }
+
+    SettingsConfirmation
+    {
+        objectName: "resourceConfirmation"
+        host: pageUpdates
+        visible: pageUpdates.active && ServiceResources.pending !== null
+        title: Tr.tr("settings.imports.confirm") + " · " + pageUpdates.resourceTitle(ServiceResources.pending)
+        description: !ServiceResources.pending ? ""
+            : ServiceResources.pending.kind === "greeter" ? Tr.tr("settings.imports.confirmGreeter")
+            : ServiceResources.pending.kind === "compositor" ? Tr.tr("settings.imports.confirmNiri").arg(ServiceUpdate.pretty(ServiceResources.pending.destination))
+            : ServiceResources.pending.kind === "dots" ? Tr.tr("settings.imports.confirmDots").arg((ServiceResources.pending.programs || []).join(", "))
+            : Tr.tr("settings.imports.confirmWallpapers").arg(ServiceUpdate.pretty(ServiceResources.pending.destination))
+        errorText: ServiceResources.error
+        acceptText: ServiceResources.pending && ServiceResources.pending.kind === "wallpapers" ? Tr.tr("settings.imports.import") : Tr.tr("settings.dependencies.continueInTerminal")
+        acceptEnabled: !ServiceResources.busy && !ServiceUpdate.busy
+        onAccepted: ServiceResources.apply()
+        onRejected: ServiceResources.pending = null
+    }
+
+    SettingsConfirmation
+    {
+        objectName: "dependencyConfirmation"
+        host: pageUpdates
+        visible: pageUpdates.active && ServiceDependencies.pending !== null
+        title: Tr.tr("settings.dependencies.confirm")
+        description: ServiceDependencies.pending
+            ? (ServiceDependencies.pending.remove ? Tr.tr("settings.dependencies.confirmRemove") : Tr.tr("settings.dependencies.confirmInstall")).arg(ServiceDependencies.pending.tool) : ""
+        errorText: ServiceDependencies.error
+        acceptText: Tr.tr("settings.dependencies.continueInTerminal")
+        acceptEnabled: !ServiceDependencies.busy
+        danger: ServiceDependencies.pending !== null && ServiceDependencies.pending.remove
+        onAccepted: ServiceDependencies.apply()
+        onRejected: ServiceDependencies.pending = null
+    }
+
     function date(iso)
     {
         const d = new Date(iso);
@@ -55,14 +98,16 @@ SettingsPage
 
                 Item
                 {
+                    id: statusHeading
+                    readonly property bool compact: width < 620
                     width: parent.width
-                    height: Math.max(head.implicitHeight, actions.height)
+                    height: compact ? head.implicitHeight + 12 + actions.implicitHeight : Math.max(head.implicitHeight, actions.implicitHeight)
 
                     Rectangle
                     {
                         id: badge
 
-                        anchors.verticalCenter: parent.verticalCenter
+                        y: head.y
                         width: 46
                         height: 46
                         radius: 23
@@ -94,18 +139,18 @@ SettingsPage
                     {
                         id: head
 
-                        anchors.verticalCenter: parent.verticalCenter
+                        y: statusHeading.compact ? 0 : (parent.height - implicitHeight) / 2
                         x: badge.width + 14
-                        width: parent.width - x - actions.width - 16
+                        width: Math.max(0, parent.width - x - (statusHeading.compact ? 0 : actions.desiredWidth + 16))
                         spacing: 4
 
-                        Row
+                        Flow
                         {
+                            width: parent.width
                             spacing: 8
 
                             ShellText
                             {
-                                anchors.verticalCenter: parent.verticalCenter
                                 label: "bloodyShell " + ServiceUpdate.version
                                 size: 17
                                 color: Theme.text1
@@ -134,22 +179,26 @@ SettingsPage
                         }
                     }
 
-                    Row
+                    Flow
                     {
                         id: actions
 
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
+                        readonly property real desiredWidth: children.reduce((total, child) => total + (child.visible ? child.implicitWidth + spacing : 0), -spacing)
+                        x: statusHeading.compact ? head.x : parent.width - width
+                        y: statusHeading.compact ? head.implicitHeight + 12 : (parent.height - height) / 2
+                        width: statusHeading.compact ? Math.max(0, parent.width - badge.width - 14) : Math.max(0, desiredWidth)
                         spacing: 8
 
                         SettingsButton
                         {
+                            maximumWidth: Math.max(0, statusHeading.width - badge.width - 14)
                             visible: pageUpdates.phase === "error" && ServiceUpdate.installFailed
                             text: Tr.tr("settings.updates.openLog")
                             onClicked: ServiceUpdate.openLog()
                         }
                         SettingsButton
                         {
+                            maximumWidth: Math.max(0, statusHeading.width - badge.width - 14)
                             visible: !ServiceUpdate.availableUpdate || pageUpdates.phase === "error" || pageUpdates.phase === "dev"
                             text: pageUpdates.phase === "checking" ? Tr.tr("common.checking") : pageUpdates.phase === "error" ? Tr.tr("settings.updates.retry") : Tr.tr("settings.updates.checkNow")
                             icon: Icon.reload
@@ -158,6 +207,7 @@ SettingsPage
                         }
                         SettingsButton
                         {
+                            maximumWidth: Math.max(0, statusHeading.width - badge.width - 14)
                             visible: ServiceUpdate.installed && ServiceUpdate.availableUpdate && pageUpdates.phase !== "error"
                             text: pageUpdates.phase === "installing" ? Tr.tr("settings.updates.installing") : Tr.tr("settings.updates.updateTo").arg(ServiceUpdate.versionLatest)
                             icon: Icon.update
@@ -290,35 +340,20 @@ SettingsPage
 
         SettingsRow
         {
-            label: Tr.tr("settings.imports.source")
-            description: ServiceResources.source === "local" ? Tr.tr("settings.imports.localSource") : Tr.tr("settings.imports.repositorySource")
-            SettingsButton { text: ServiceResources.busy ? Tr.tr("common.working") : Tr.tr("common.refresh"); enabled: !ServiceResources.busy && !ServiceUpdate.busy; onClicked: ServiceResources.refresh() }
+            visible: ServiceResources.busy && ServiceResources.entries.length === 0
+            label: Tr.tr("common.checking")
         }
         SettingsRow
         {
             visible: ServiceResources.error !== "" || ServiceResources.message !== ""
             label: ServiceResources.error !== "" ? Tr.tr("common.error") : Tr.tr("settings.imports.finished")
             description: ServiceResources.error || ServiceResources.message
-        }
-        SettingsRow
-        {
-            visible: ServiceResources.pending !== null
-            label: Tr.tr("settings.imports.confirm")
-            description: !ServiceResources.pending ? ""
-                : ServiceResources.pending.kind === "greeter" ? Tr.tr("settings.imports.confirmGreeter")
-                : ServiceResources.pending.kind === "wallpapers" ? Tr.tr("settings.imports.confirmWallpapers").arg(ServiceUpdate.pretty(ServiceResources.pending.destination))
-                : Tr.tr("settings.imports.confirmConfig").arg(ServiceUpdate.pretty(ServiceResources.pending.destination))
-            Row
+            SettingsButton
             {
-                spacing: 8
-                SettingsButton { text: Tr.tr("common.cancel"); onClicked: ServiceResources.pending = null }
-                SettingsButton
-                {
-                    objectName: "applyResourceImport"
-                    text: ServiceResources.pending && ServiceResources.pending.kind === "wallpapers" ? Tr.tr("settings.imports.import") : Tr.tr("settings.dependencies.continueInTerminal")
-                    enabled: !ServiceResources.busy && !ServiceUpdate.busy
-                    onClicked: ServiceResources.apply()
-                }
+                visible: ServiceResources.error !== ""
+                text: Tr.tr("common.refresh")
+                enabled: !ServiceResources.busy && !ServiceUpdate.busy && ServiceResources.pending === null
+                onClicked: ServiceResources.refresh()
             }
         }
         Repeater
@@ -328,14 +363,18 @@ SettingsPage
             {
                 id: resourceRow
                 required property var modelData
-                label: resourceRow.modelData.kind === "dots" ? resourceRow.modelData.name : resourceRow.modelData.kind === "wallpapers" ? Tr.tr("common.wallpapers") : Tr.tr("settings.imports.greeter")
+                objectName: "importRow-" + modelData.id
+                label: pageUpdates.resourceTitle(modelData)
                 description: resourceRow.modelData.kind === "greeter" ? Tr.tr("settings.imports.greeterHint")
-                    : (resourceRow.modelData.kind === "wallpapers" ? Tr.tr("settings.imports.wallpapersHint") : Tr.tr("settings.imports.configHint")).arg(ServiceUpdate.pretty(resourceRow.modelData.destination))
+                    : resourceRow.modelData.kind === "compositor" ? Tr.tr("settings.imports.niriHint").arg(ServiceUpdate.pretty(resourceRow.modelData.destination))
+                    : resourceRow.modelData.kind === "dots" ? Tr.tr("settings.imports.dotsHint")
+                    : Tr.tr("settings.imports.wallpapersHint").arg(ServiceUpdate.pretty(resourceRow.modelData.destination))
                 SettingsButton
                 {
                     objectName: "importResource-" + resourceRow.modelData.id
                     text: ServiceResources.operation === resourceRow.modelData.id ? Tr.tr("common.working") : Tr.tr("settings.imports.import")
                     enabled: !ServiceResources.busy && !ServiceUpdate.busy && ServiceResources.pending === null
+                        && (resourceRow.modelData.kind !== "dots" || resourceRow.modelData.programs.length > 0)
                     onClicked: ServiceResources.request(resourceRow.modelData.id)
                 }
             }
@@ -361,19 +400,6 @@ SettingsPage
             label: Tr.tr("settings.dependencies.error")
             description: ServiceDependencies.error
             SettingsButton { text: Tr.tr("common.refresh"); onClicked: ServiceDependencies.refresh(); enabled: !ServiceDependencies.busy }
-        }
-        SettingsRow
-        {
-            visible: ServiceDependencies.pending !== null
-            label: Tr.tr("settings.dependencies.confirm")
-            description: ServiceDependencies.pending
-                ? (ServiceDependencies.pending.remove ? Tr.tr("settings.dependencies.confirmRemove") : Tr.tr("settings.dependencies.confirmInstall")).arg(ServiceDependencies.pending.tool) : ""
-            Row
-            {
-                spacing: 8
-                SettingsButton { text: Tr.tr("common.cancel"); onClicked: ServiceDependencies.pending = null }
-                SettingsButton { text: Tr.tr("settings.dependencies.continueInTerminal"); onClicked: ServiceDependencies.apply(); enabled: !ServiceDependencies.busy }
-            }
         }
         SettingsRow
         {
@@ -432,7 +458,6 @@ SettingsPage
         property color  tint: "transparent"
         readonly property bool tinted: tint.a > 0
 
-        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
         width: chipText.implicitWidth + 14
         height: chipText.implicitHeight + 6
         radius: height / 2
@@ -492,7 +517,7 @@ SettingsPage
                         color: Theme.text1
                         font.bold: true
                     }
-                    Chip { visible: notesItem.release.prerelease; text: Tr.tr("settings.updates.preRelease"); tint: Theme.colorWarning }
+                    Chip { anchors.verticalCenter: parent.verticalCenter; visible: notesItem.release.prerelease; text: Tr.tr("settings.updates.preRelease"); tint: Theme.colorWarning }
                     ShellText
                     {
                         anchors.verticalCenter: parent.verticalCenter
@@ -531,7 +556,7 @@ SettingsPage
                     wrapMode: Text.Wrap
                     color: Theme.text2
                     linkColor: Theme.colorAttention
-                    font.pixelSize: Math.round(12 * Config.themeScale)
+                    font.pixelSize: 12
                     font.family: Theme.fontText
                     lineHeight: 1.15
                     onLinkActivated: link => Qt.openUrlExternally(link)

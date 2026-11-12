@@ -1,7 +1,9 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls.Basic as Controls
 
+import "." as Content
 import "../../../animations"
 import "../../../common"
 import "../../../core"
@@ -16,33 +18,42 @@ Rectangle
     property int currentPage: 0
     property int direction: 1
     property real pageReveal: 1
-    readonly property var titles: [Tr.tr("helper.welcome"), Tr.tr("common.appearance"), Tr.tr("helper.components"), Tr.tr("helper.shortcuts")]
-    readonly property var subtitles: [Tr.tr("helper.welcomeHint"), Tr.tr("helper.appearanceHint"), Tr.tr("helper.componentsHint"), Tr.tr("helper.shortcutsHint")]
+    readonly property int inset: 24
+    readonly property var steps: [
+        {label: Tr.tr("helper.start"), title: Tr.tr("helper.welcome"), hint: Tr.tr("helper.welcomeHint")},
+        {label: Tr.tr("common.appearance"), title: Tr.tr("common.appearance"), hint: Tr.tr("helper.appearanceHint")},
+        {label: Tr.tr("helper.layout"), title: Tr.tr("helper.layout"), hint: Tr.tr("helper.layoutHint")},
+        {label: Tr.tr("helper.input"), title: Tr.tr("helper.input"), hint: Tr.tr("helper.inputHint")},
+        {label: Tr.tr("helper.ready"), title: Tr.tr("helper.ready"), hint: Tr.tr("helper.readyHint")}
+    ]
+    readonly property bool inputBusy: pages.inputBusy
+    readonly property string inputError: pages.inputError
 
-    implicitWidth: 720
-    implicitHeight: 600
+    implicitWidth: 800
+    implicitHeight: 640
     radius: Theme.settingsRadius
     color: Theme.colorSolid
-    border.width: Theme.borderWidth
-    border.color: Theme.colorHairline
     focus: true
     Component.onCompleted: forceActiveFocus()
 
     function go(index)
     {
-        const next = Math.max(0, Math.min(titles.length - 1, index));
+        const next = Math.max(0, Math.min(steps.length - 1, index));
         if (next === currentPage) return;
         direction = next > currentPage ? 1 : -1;
+        scrolling.stop();
+        content.cancelFlick();
         currentPage = next;
         content.contentY = 0;
         arrival.stop();
         pageReveal = Config.animationsEnabled ? 0 : 1;
         if (Config.animationsEnabled) arrival.start();
+        forceActiveFocus(Qt.TabFocusReason);
     }
 
     function advance()
     {
-        if (currentPage === titles.length - 1) finished();
+        if (currentPage === steps.length - 1) { if (!inputBusy) finished(); }
         else go(currentPage + 1);
     }
 
@@ -56,40 +67,125 @@ Rectangle
         easing.type: Easing.OutCubic
     }
 
-    Keys.onReturnPressed: advance()
-    Keys.onEnterPressed: advance()
-    Keys.onEscapePressed: finished()
-    Keys.onLeftPressed: go(currentPage - 1)
-    Keys.onRightPressed: go(currentPage + 1)
+    Connections
+    {
+        target: Config
+        function onAnimationsEnabledChanged()
+        {
+            if (Config.animationsEnabled) return;
+            arrival.stop();
+            helperContent.pageReveal = 1;
+        }
+    }
+
+    Keys.onPressed: event =>
+    {
+        if (![Qt.Key_Return, Qt.Key_Enter, Qt.Key_Escape, Qt.Key_Left, Qt.Key_Right, Qt.Key_Home, Qt.Key_End].includes(event.key)) return;
+        event.accepted = true;
+        if (event.isAutoRepeat) return;
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) advance();
+        else if (event.key === Qt.Key_Escape) finished();
+        else if (event.key === Qt.Key_Left) go(currentPage - 1);
+        else if (event.key === Qt.Key_Right) go(currentPage + 1);
+        else go(event.key === Qt.Key_Home ? 0 : steps.length - 1);
+    }
 
     MouseArea { anchors.fill: parent; onClicked: helperContent.forceActiveFocus() }
+
+    Item
+    {
+        id: brand
+        x: helperContent.inset
+        y: 20
+        width: parent.width - helperContent.inset * 2
+        height: 36
+        Row
+        {
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+            ShellIcon { anchors.verticalCenter: parent.verticalCenter; icon: Icon.settingsGeneral; size: 20 }
+            ShellText { anchors.verticalCenter: parent.verticalCenter; label: "bloodyShell"; size: 14; font.weight: Font.DemiBold; color: Theme.text1 }
+            ShellText { anchors.verticalCenter: parent.verticalCenter; visible: helperContent.width > 500; label: Tr.tr("helper.setup"); size: 11; color: Theme.text3 }
+        }
+        SettingsIconButton
+        {
+            objectName: "helperClose"
+            anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+            icon: Icon.close
+            text: Tr.tr("common.close")
+            onClicked: helperContent.finished()
+        }
+    }
+
+    Row
+    {
+        id: stepNavigation
+        x: helperContent.inset
+        y: brand.y + brand.height + 16
+        width: parent.width - helperContent.inset * 2
+        spacing: 6
+        Repeater
+        {
+            model: helperContent.steps
+            Rectangle
+            {
+                id: step
+                required property int index
+                required property var modelData
+                readonly property bool current: index === helperContent.currentPage
+                width: (stepNavigation.width - stepNavigation.spacing * (helperContent.steps.length - 1)) / helperContent.steps.length
+                height: 36
+                radius: Theme.radiusMedium
+                color: current ? Theme.colorSelection : Theme.colorField
+                objectName: "helperStep-" + index
+                activeFocusOnTab: true
+                Tint on color {}
+                Keys.onSpacePressed: event => { if (!event.isAutoRepeat) helperContent.go(index); event.accepted = true }
+                Keys.onReturnPressed: event => { if (!event.isAutoRepeat) helperContent.go(index); event.accepted = true }
+                Keys.onEnterPressed: event => { if (!event.isAutoRepeat) helperContent.go(index); event.accepted = true }
+                Accessible.role: Accessible.Button
+                Accessible.name: modelData.title
+                Accessible.onPressAction: helperContent.go(index)
+                Rectangle
+                {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    color: Theme.colorHover
+                    opacity: stepHover.hovered || step.activeFocus ? 1 : 0
+                    Smooth on opacity {}
+                }
+                Row
+                {
+                    anchors.centerIn: parent
+                    spacing: 7
+                    ShellText { label: String(step.index + 1); size: 11; font.family: Theme.fontMono; color: step.current ? Theme.text1 : Theme.text3 }
+                    ShellText { visible: helperContent.width >= 560; width: Math.max(0, step.width - 38); label: step.modelData.label; size: 11; font.weight: step.current ? Font.DemiBold : Font.Normal; color: step.current ? Theme.text1 : Theme.text2 }
+                }
+                HoverHandler { id: stepHover }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: helperContent.go(step.index) }
+            }
+        }
+    }
 
     Column
     {
         id: heading
-        x: 28
-        y: 26
-        width: parent.width - 100
+        x: helperContent.inset
+        y: stepNavigation.y + stepNavigation.height + 20
+        width: parent.width - helperContent.inset * 2
         spacing: 8
 
-        ShellText { label: "bloodyShell  ·  " + Tr.tr("helper.setup"); size: 11; color: Theme.text3 }
-        ShellText { width: parent.width; label: helperContent.titles[helperContent.currentPage]; size: 25; font.weight: Font.DemiBold; color: Theme.text1 }
-        ShellText { width: parent.width; label: helperContent.subtitles[helperContent.currentPage]; size: 12; wrapMode: Text.Wrap; color: Theme.text2 }
-    }
-
-    SettingsIconButton
-    {
-        anchors { top: parent.top; right: parent.right; margins: 20 }
-        icon: Icon.close
-        onClicked: helperContent.finished()
+        ShellText { width: parent.width; label: helperContent.steps[helperContent.currentPage].title; size: 24; font.weight: Font.DemiBold; color: Theme.text1; wrapMode: Text.Wrap }
+        ShellText { width: parent.width; label: helperContent.steps[helperContent.currentPage].hint; size: 12; wrapMode: Text.Wrap; color: Theme.text2 }
     }
 
     Flickable
     {
         id: content
-        x: 28
-        y: heading.y + heading.height + 24
-        width: parent.width - 56
+        objectName: "helperContentScroll"
+        x: helperContent.inset
+        y: heading.y + heading.height + 18
+        width: parent.width - helperContent.inset * 2
         height: Math.max(0, navigation.y - y - 20)
         contentWidth: width
         contentHeight: pages.implicitHeight
@@ -99,98 +195,21 @@ Rectangle
         opacity: helperContent.pageReveal
         transform: Translate { x: Config.animationsFluid ? (1 - helperContent.pageReveal) * 20 * helperContent.direction : 0 }
 
-        Column
+        SmoothScroll { id: scrolling; view: content }
+        Controls.ScrollBar.vertical: Controls.ScrollBar { policy: Controls.ScrollBar.AsNeeded }
+
+        Content.HelperPages
         {
             id: pages
             width: parent.width
-            spacing: 12
-
-            Column
-            {
-                visible: helperContent.currentPage === 0
-                width: parent.width
-                spacing: 12
-                Tip { icon: Icon.settingsAppearance; title: Tr.tr("helper.customize"); description: Tr.tr("helper.customizeHint") }
-                Tip { icon: Icon.settingsGeneral; title: Tr.tr("helper.livePreview"); description: Tr.tr("helper.livePreviewHint") }
-                Tip { icon: Icon.user; title: Tr.tr("helper.reopen"); description: Tr.tr("helper.reopenHint") }
-            }
-
-            Column
-            {
-                visible: helperContent.currentPage === 1
-                width: parent.width
-                spacing: 2
-                SettingsRow
-                {
-                    label: Tr.tr("settings.appearance.theme")
-                    stacked: true
-                    SettingsChoices
-                    {
-                        wrap: true
-                        options: [{label: Tr.tr("settings.appearance.light"), value: Enums.ThemeLight}, {label: Tr.tr("settings.appearance.dark"), value: Enums.ThemeDark}]
-                        current: Theme.light ? Enums.ThemeLight : Enums.ThemeDark
-                        onSelected: value => Config.set("themeStyle", value)
-                    }
-                }
-                SettingsRow
-                {
-                    label: Tr.tr("settings.appearance.automaticColor")
-                    Toggle { checked: Config.themeAccent; onToggled: value => Config.set("themeAccent", value) }
-                }
-                SettingsRow
-                {
-                    label: Tr.tr("settings.appearance.animations")
-                    stacked: true
-                    SettingsChoices
-                    {
-                        wrap: true
-                        options: [{label: Tr.tr("settings.appearance.minimal"), value: Enums.AnimationsDisabled}, {label: Tr.tr("settings.appearance.standard"), value: Enums.AnimationsStandard}, {label: Tr.tr("settings.appearance.fluid"), value: Enums.AnimationsFluid}]
-                        current: Config.themeAnimations
-                        onSelected: value => Config.set("themeAnimations", value)
-                    }
-                }
-            }
-
-            Column
-            {
-                visible: helperContent.currentPage === 2
-                width: parent.width
-                spacing: 2
-                SettingsRow
-                {
-                    icon: Icon.settingsBar
-                    label: Tr.tr("common.bar")
-                    Toggle { checked: Config.barEnabled; onToggled: value => Config.set("barEnabled", value) }
-                }
-                SettingsRow
-                {
-                    icon: Icon.settingsDock
-                    label: Tr.tr("common.dock")
-                    Toggle { checked: Config.dockEnabled; onToggled: value => Config.set("dockEnabled", value) }
-                }
-                SettingsRow
-                {
-                    icon: Icon.settingsOSD
-                    label: Tr.tr("shell.dynamicIsland")
-                    Toggle { checked: Config.islandEnabled; onToggled: value => Config.set("islandEnabled", value) }
-                }
-            }
-
-            Column
-            {
-                visible: helperContent.currentPage === 3
-                width: parent.width
-                spacing: 12
-                Tip { icon: Icon.keyboard; title: Tr.tr("helper.launcher"); description: Tr.tr("helper.launcherHint") }
-                Tip { icon: Icon.mouse; title: Tr.tr("helper.bar"); description: Tr.tr("helper.barHint") }
-                Tip { icon: Icon.wallpapers; title: Tr.tr("helper.desktop"); description: Tr.tr("helper.desktopHint") }
-            }
+            currentPage: helperContent.currentPage
+            onNavigate: index => helperContent.go(index)
         }
     }
 
     Rectangle
     {
-        anchors { left: parent.left; right: parent.right; bottom: navigation.top; bottomMargin: 16; leftMargin: 28; rightMargin: 28 }
+        anchors { left: parent.left; right: parent.right; bottom: navigation.top; bottomMargin: 16; leftMargin: helperContent.inset; rightMargin: helperContent.inset }
         height: 1
         color: Theme.settingsColorLine
     }
@@ -198,13 +217,15 @@ Rectangle
     Item
     {
         id: navigation
-        x: 28
+        x: helperContent.inset
         y: parent.height - height - 24
-        width: parent.width - 56
-        height: 34
+        width: parent.width - helperContent.inset * 2
+        height: Theme.settingsControlHeight
 
         SettingsButton
         {
+            id: back
+            objectName: "helperBack"
             anchors { left: parent.left; verticalCenter: parent.verticalCenter }
             text: Tr.tr("helper.back")
             icon: Icon.chevronLeft
@@ -212,72 +233,26 @@ Rectangle
             onClicked: helperContent.go(helperContent.currentPage - 1)
         }
 
-        Row
+        ShellText
         {
             anchors.centerIn: parent
-            spacing: 6
-            Repeater
-            {
-                model: helperContent.titles.length
-                Item
-                {
-                    id: dot
-                    required property int index
-                    width: 22
-                    height: 28
-                    Rectangle
-                    {
-                        anchors.centerIn: parent
-                        width: dot.index === helperContent.currentPage ? 20 : 6
-                        height: 6
-                        radius: 3
-                        color: dot.index === helperContent.currentPage ? Theme.colorAccent : Theme.text4
-                        Glide on width { duration: Theme.animationDurationControl }
-                        Tint on color {}
-                    }
-                    MouseArea
-                    {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: helperContent.go(dot.index)
-                    }
-                    Accessible.role: Accessible.Button
-                    Accessible.name: helperContent.titles[index]
-                    Accessible.onPressAction: helperContent.go(index)
-                }
-            }
+            width: Math.max(0, parent.width - back.width - next.width - 32)
+            horizontalAlignment: Text.AlignHCenter
+            label: (helperContent.currentPage + 1) + " / " + helperContent.steps.length
+            color: Theme.text3
+            size: 11
+            font.family: Theme.fontMono
         }
 
         SettingsButton
         {
+            id: next
+            objectName: "helperNext"
             anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-            text: helperContent.currentPage === helperContent.titles.length - 1 ? Tr.tr("helper.finish") : Tr.tr("helper.next")
-            icon: helperContent.currentPage === helperContent.titles.length - 1 ? Icon.check : Icon.chevronRight
+            text: helperContent.currentPage === helperContent.steps.length - 1 ? Tr.tr("helper.finish") : Tr.tr("helper.next")
+            icon: helperContent.currentPage === helperContent.steps.length - 1 ? Icon.check : Icon.chevronRight
+            enabled: helperContent.currentPage !== helperContent.steps.length - 1 || !helperContent.inputBusy
             onClicked: helperContent.advance()
-        }
-    }
-
-    component Tip: Rectangle
-    {
-        id: tip
-        property string icon: ""
-        property string title: ""
-        property string description: ""
-        width: parent.width
-        height: Math.max(42, copy.implicitHeight) + 28
-        radius: Theme.radiusLarge
-        color: Theme.settingsColorCard
-        ShellIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; icon: tip.icon; size: 22 }
-        Column
-        {
-            id: copy
-            x: 54
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - x - 16
-            spacing: 6
-            ShellText { width: parent.width; label: tip.title; size: 13; font.weight: Font.DemiBold; color: Theme.text1 }
-            ShellText { width: parent.width; label: tip.description; size: 12; wrapMode: Text.Wrap; color: Theme.text2 }
         }
     }
 }

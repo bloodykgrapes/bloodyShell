@@ -19,6 +19,8 @@ Item
     property bool expandCross: false
 
     readonly property var    widgetMeta: Registry.widgets[widgetID]
+    readonly property Item widget: loader.item
+    readonly property rect contentRect: Qt.rect(content.x, content.y, content.width, content.height)
 
     readonly property bool allowed: !vertical || !widgetMeta || widgetMeta.vertical !== false
 
@@ -54,6 +56,7 @@ Item
 
     Item
     {
+        id: content
         x: widgetSlot.vertical ? 0 : widgetSlot.gap + widgetSlot.lead
         y: widgetSlot.vertical ? widgetSlot.gap + widgetSlot.lead : 0
         width:  widgetSlot.vertical ? widgetSlot.width : Math.max(0, widgetSlot.width - widgetSlot.gap - widgetSlot.lead - widgetSlot.trail)

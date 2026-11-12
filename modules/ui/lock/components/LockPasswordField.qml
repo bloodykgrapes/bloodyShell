@@ -97,7 +97,7 @@ Item
         opacity: lockPasswordField.reveal ? 1 : 0
         echoMode: lockPasswordField.reveal ? TextInput.Normal : TextInput.Password
         font.family: Theme.fontText
-        font.pixelSize: Math.round(15 * Config.themeScale)
+        font.pixelSize: 15
         color: Theme.lockText1
         selectionColor: Theme.lockSelection
         inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText

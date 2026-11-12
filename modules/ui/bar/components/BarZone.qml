@@ -95,26 +95,41 @@ Item
 
     property bool floating: false
 
-    property real anchorCenter: 0
+    readonly property real anchorCenter:
+    {
+        const widget = MenuState.menuWidget;
+        if (!widget) return hasWidgets ? rowMid : total / 2;
+        if (row.slots.length === 1 && row.slots[0]?.widget === widget)
+            return rowMid;
+
+        // Read the ancestors' animated geometry as well as the trigger itself.
+        // mapToItem alone does not make those coordinates binding dependencies.
+        let node = widget;
+        while (node && node !== barZone)
+        {
+            const geometry = [node.x, node.y, node.width, node.height];
+            if (node instanceof WidgetSlot && node.widget === widget)
+            {
+                const rect = node.contentRect;
+                return isHorizontal ? row.x + node.x + rect.x + rect.width / 2
+                                    : row.y + node.y + rect.y + rect.height / 2;
+            }
+            node = node.parent;
+        }
+        const point = widget.mapToItem(barZone, widget.width / 2, widget.height / 2);
+        return isHorizontal ? point.x : point.y;
+    }
 
     function refreshPanel()
     {
         if (wantAlong > 0 && wantOut > 0)
         {
             fullAlong = wantAlong + (isHorizontal ? 20 : 0);
-            fullOut = wantOut + (isHorizontal ? 0 : 20);
+            fullOut = wantOut;
         }
         if (!open) return;
 
         floating = Config.barMenu === Enums.MenuFloating;
-
-        const w = MenuState.menuWidget;
-        if (w)
-        {
-            const p = w.mapToItem(barZone, w.width / 2, w.height / 2);
-            anchorCenter = isHorizontal ? p.x : p.y;
-        }
-        else anchorCenter = hasWidgets ? rowMid : total / 2;
     }
     Connections
     {

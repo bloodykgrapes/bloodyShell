@@ -17,13 +17,13 @@ Singleton
     property string operation: ""
     property var pending: null
     readonly property bool busy: probe.busy || command.busy
-    readonly property string helper: Paths.runtimeScriptsDir + "/dependencies"
+    readonly property var helper: Paths.commandFor("dependencies")
 
     function refresh(clearError = true)
     {
         if (busy) return;
         if (clearError) error = "";
-        probe.run(["python3", helper, "status"]);
+        probe.run(helper.concat(["status"]));
     }
 
     function request(tool, remove)
@@ -46,7 +46,7 @@ Singleton
         pending = null;
         operation = change.tool;
         error = "";
-        command.run(terminal.concat(["python3", helper, change.remove ? "remove" : "install", change.tool]));
+        command.run(terminal.concat(helper.concat([change.remove ? "remove" : "install", change.tool])));
     }
 
     CommandProcess

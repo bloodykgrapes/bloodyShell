@@ -166,7 +166,7 @@ SettingsPage
         Accessible.role: Accessible.StaticText
         Accessible.name: label + ": " + shortcut
 
-        TextMetrics { id: actionMetrics; text: row.label; font.family: Theme.fontText; font.pixelSize: Math.round(13 * Config.themeScale) }
+        TextMetrics { id: actionMetrics; text: row.label; font.family: Theme.fontText; font.pixelSize: 13 }
         TextMetrics { id: keyMetrics; text: row.shortcut; font: keys.font }
         Rectangle
         {

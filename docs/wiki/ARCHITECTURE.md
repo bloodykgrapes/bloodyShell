@@ -13,7 +13,7 @@ The shell modules have six areas:
 
 Feature-specific controls live beside their feature in `components/`. Bar widgets and menus have separate folders. Settings components and pages are in `ui/overlay/settings/`; wallpaper content is in `ui/overlay/wallpapers/components/`. Alt+Tab is part of `ui/overlay/altTab/`.
 
-`AltTabKeyboard.qml` owns Alt+Tab's Qt shortcuts, IPC entry point, and Alt-release monitor. Compositor bindings are kept in `dots/niri/bloodyShell/06-binds.kdl`; startup does not edit them. The standalone `scripts/bloodyShell` command separates action definitions and validation, instance discovery, lifecycle control, and maintenance dispatch. Action help is generated from the same definitions used for routing.
+`AltTabKeyboard.qml` owns Alt+Tab's Qt shortcuts, IPC entry point, and Alt-release monitor. Compositor bindings are kept in `dots/niri/bloodyShell/04-binds.kdl`; startup does not edit them. The standalone `scripts/bloodyShell` command separates action definitions and validation, instance discovery, lifecycle control, and maintenance dispatch. Action help is generated from the same definitions used for routing.
 
 The Dynamic Island uses `ui/osd/OSD.qml` and `OSDContent.qml`. Its configuration and service APIs retain their existing names. It is not a second standalone OSD.
 
@@ -81,7 +81,7 @@ The notification menu shares the filled DND tile and action buttons with the oth
 
 `CaptureSelection.qml` handles area dragging, movement, resizing, and full-screen selection. It preserves the area across mode switches and supports bounded keyboard movement and resizing. `Config.screenshotMode` stores the integer selection mode; `Config.screenshotSave` stores the boolean destination. Logical selection edges map to the captured PNG's actual pixel dimensions, including fractional monitor scales.
 
-`scripts/runtime/screenshot` owns private runtime capture directories, grim capture, ffmpeg PNG cropping, file saves, and wl-clipboard publication. Cropping reads the frozen source instead of capturing the desktop again or exporting the QML view, preserving native pixels and excluding selectors and selection decorations. Full-screen exports copy the original PNG without recoding it. Save uses unique filenames under XDG Pictures/Screenshots. Copy uses an independent systemd user service when available, with a normal wl-copy fallback. Completed and cancelled sessions remove their temporary files.
+`scripts/lib/screenshot.py` owns private runtime capture directories, grim capture, ffmpeg PNG cropping, file saves, and wl-clipboard publication. Cropping reads the frozen source instead of capturing the desktop again or exporting the QML view, preserving native pixels and excluding selectors and selection decorations. Full-screen exports copy the original PNG without recoding it. Save uses unique filenames under XDG Pictures/Screenshots. Copy uses an independent systemd user service when available, with a normal wl-copy fallback. Completed and cancelled sessions remove their temporary files.
 
 ## Dynamic Island
 
@@ -107,13 +107,13 @@ The power menu fits smaller outputs and wraps translated tile labels. Changing s
 
 The Applications settings page keeps its installed-application search in the fixed `SettingsPage.header` slot while the page contents scroll. Header input is separated from scrolling content and intercepts clicks above it. It uses `SettingsAutostart.qml` for its collapsible startup list and searchable installed-application picker. The picker shows at most four static matches without its own scroll area; typing refines the matches. Wheel and touchpad scrolling move the surrounding page normally, including while the picker is open. `ServiceApplications` owns discovery, add/remove actions, enable state, session support, and errors. File watching is active only while an Applications page is visible; client registration handles overlapping page transitions.
 
-`scripts/runtime/autostart` reads the effective XDG autostart entries using user-first filename precedence. Changes write atomically to `$XDG_CONFIG_HOME/autostart`, with system entries controlled through user overrides. Desktop-entry commands, field codes, localized metadata, action sections, and unknown keys are preserved. Disabling an entry sets `Hidden=true`; enabling also handles the GNOME autostart flag and restores full metadata for minimal system masks. Only user entries without a system default can be removed.
+`scripts/lib/desktop.py` reads the effective XDG autostart entries using user-first filename precedence. Changes write atomically to `$XDG_CONFIG_HOME/autostart`, with system entries controlled through user overrides. Desktop-entry commands, field codes, localized metadata, action sections, and unknown keys are preserved. Disabling an entry sets `Hidden=true`; enabling also handles the GNOME autostart flag and restores full metadata for minimal system masks. Only user entries without a system default can be removed.
 
 Niri's systemd session launches the entries at login through `xdg-desktop-autostart.target`. Saving changes or restarting bloodyShell does not launch them. The UI reports unavailable session support and desktop/executable restrictions. Existing niri `spawn-at-startup` configuration is independent of this list.
 
 ## Wi-Fi authentication
 
-`ServiceNetwork` handles Wi-Fi connections and authentication failures. `common/WifiCredentials.qml` shares the sign-in form between the bar and Networks settings. `scripts/runtime/network-auth` uses Python GObject and libnm, receiving credentials over stdin. New PEAP/TTLS profiles accept username and password, with optional server domain and CA certificate settings. Certificate validation uses system trust or a supplied CA file. Saved profiles retain their EAP and certificate configuration. New profiles are saved after successful authentication.
+`ServiceNetwork` handles Wi-Fi connections and authentication failures. `common/WifiCredentials.qml` shares the sign-in form between the bar and Networks settings. `scripts/lib/network.py` uses Python GObject and libnm, receiving credentials over stdin. New PEAP/TTLS profiles accept username and password, with optional server domain and CA certificate settings. Certificate validation uses system trust or a supplied CA file. Saved profiles retain their EAP and certificate configuration. New profiles are saved after successful authentication.
 
 ## Runtime activity
 
@@ -121,36 +121,36 @@ Niri's systemd session launches the entries at login through `xdg-desktop-autost
 
 `src/ModelSync.js` reconciles keyed ListModels without replacing surviving delegates. Dock, workspaces, network lists, and mounted volumes share it. It accepts a role name or a key function and reports whether anything changed. Launcher search caches normalized metadata and alphabetical order when desktop entries change. `common/Equalizer.qml` selects Bars or Waves from `Config.equalizerStyle` by default; the Dynamic Island explicitly keeps Bars. Appearance settings uses the shared style cards with synthetic samples and hover previews; previews do not subscribe to live audio. Bars retains its layout, while Waves uses a closed cubic curve with at most 32 samples and one frame-driven smoothing pass with a faster rise and slower fall. Equalizers share their gradient and resample once per active view; liquid battery waves cache their spatial trigonometry.
 
-Appearance startup reads the current system settings and icon theme. Theme and font enumeration runs when Appearance settings requests it.
+Appearance startup reads the current system settings and icon theme, then applies the shell's light/dark color scheme. Theme and font enumeration runs when Appearance settings requests it.
 
-Appearance places Qt theme selection immediately after GTK. `ServiceAppearance` and the existing `scripts/runtime/appearance` helper read and write qt6ct's `Appearance/style`, independently of the GTK theme and Qt palette, fonts, and icons. Style discovery includes Qt's Fusion and Windows styles, reads installed Qt 6 plugin metadata when qtplugininfo is available, and recognizes common style plugins as a fallback. Qt proxy styles are hidden. The control handles style names without case sensitivity and retains an unavailable current selection.
+Appearance places Qt theme selection immediately after GTK. `ServiceAppearance` and the existing `scripts/lib/appearance.sh` helper read and write qt6ct's `Appearance/style`, independently of the GTK theme and Qt palette, fonts, and icons. Style discovery includes Qt's Fusion and Windows styles, reads installed Qt 6 plugin metadata when qtplugininfo is available, and recognizes common style plugins as a fallback. Qt proxy styles are hidden. The control handles style names without case sensitivity and retains an unavailable current selection.
 
-Qt integration is optional and requires qt6ct. Choosing a style or pressing Enable saves `QT_QPA_PLATFORMTHEME=qt6ct` in `environment.d/90-bloodyShell-qt.conf` when the session has no active qt6ct integration. It also updates the user service activation environment, so a persistent systemd user manager uses the backend for the next session. Existing active qt5ct/qt6ct backend aliases are kept. The Qt selector is disabled without qt6ct; Enable is shown only when integration is not active or configured. This controls Qt 6 applications; applications with their own styles or overrides may keep them. Appearance writes are debounced, and reapplying is disabled until pending writes finish.
+Qt integration is optional and requires qt6ct. Choosing a style or pressing Enable saves `QT_QPA_PLATFORMTHEME=qt6ct` in `environment.d/90-bloodyShell-qt.conf` when the session has no active qt6ct integration. The active session environment is preserved; this file is used at the next login. Existing active qt5ct/qt6ct backend aliases are kept. The Qt selector is disabled without qt6ct; Enable is shown only when integration is not active or configured. This controls Qt 6 applications; applications with their own styles or overrides may keep them. Appearance writes are debounced, and reapplying is disabled until pending writes finish.
 
-`SettingsPortals.qml` provides an Open/Save dialog selector directly below Qt theme in the Applications group, without descriptive hints. A compact installed-backend list and Refresh button follow it. The selector offers only backends with FileChooser support; existing fallback chains and unavailable selections remain visible. Other portal preferences are preserved without exposing per-function controls. Read refreshes retain unchanged metadata arrays.
-
-The existing appearance helper validates portal changes as a batch and writes the active user portal config atomically, preserving desktop-specific precedence, symlinks, comments, and unrelated preferences. If no user config exists, it copies the active desktop config first. Choosing a primary backend retains the previous fallback order; Default removes a specific override. When a dialog or default preference changes and qt6ct is installed, Qt standard dialogs are directed through XDG Desktop Portal without changing the selected Qt style. Other portal functions remain independent of Qt. No portal services are restarted automatically; changes take effect after signing out and back in. Dialog colors and styling use the GTK/Qt appearance settings rather than a separate portal theme format.
-
-Compositor window records are immutable. Unchanged snapshots reuse their records and avoid publishing a new list; focus history changes only when its contents change. The dock caches each window group and updates changed roles directly when row order is stable, using ModelSync for structural changes. Dragging invalidates its row snapshot before reconciliation. Alt+Tab uses an ID index for live-window reconciliation while preserving its active switching order and presentation delay.
-
-Application searches retain at most 16 normalized queries and desktop-entry lookups at most 128 entries, including misses. Catalog replacement invalidates both caches; metadata changes rebuild the search index. Search results are shared read-only arrays. Notification timestamps are retained only for tracked notifications. Equalizer resampling geometry changes only with source/target counts; wave smoothing computes its two time weights once per frame and curve coordinates once per sample without reducing frame rate or resolution.
+Portal configuration is managed outside bloodyShell. Appearance does not expose
+portal selectors, enumerate installed portal backends, or rewrite portal preferences
+or Qt's standard-dialog setting. Existing portal configurations are preserved.
 
 ## Installation and commands
 
 `scripts/bloodyShell` is the standalone desktop command. Its action commands and logs find the newest bloodyShell instance in the current desktop session and target its ID. Lifecycle and maintenance commands use the selected installation or source checkout. Setup copies the command into the user's bin directory and refreshes it on updates.
 
-Action and log discovery cache the selected instance in a private file under `$XDG_RUNTIME_DIR/bloodyShell-command/`, keyed by display. Cache hits verify the IPC socket, process start time, display, and unchanged Quickshell instance-directory set. New instances, dead processes, PID reuse, invalid cache files, or unavailable runtime metadata fall back to a fresh `qs list`. Lifecycle commands always query their selected installation directly. Routing never depends on the source checkout remaining at its original path.
+Action and log discovery cache the selected instance in a private file under `$XDG_RUNTIME_DIR/bloodyShell/command/`, keyed by display. Cache hits verify the IPC socket, process start time, display, and unchanged Quickshell instance-directory set. New instances, dead processes, PID reuse, invalid cache files, or unavailable runtime metadata fall back to a fresh `qs list`. Lifecycle commands always query their selected installation directly. Routing never depends on the source checkout remaining at its original path.
 
-Script helpers are grouped by purpose:
+`scripts/bloodyShell internal DOMAIN ...` is the single backend entry point.
+QML callers use `Paths.commandFor()`. `scripts/lib/backend.py` dispatches to the
+management, desktop, processes, resources, networking, storage and capture
+modules. `ownership.py` tracks explicit external writes and implements conservative
+cleanup and restoration. `setup` remains the interactive installer; the appearance
+Bash module and greetd AWK transform are private implementation details. Tests and
+development tools remain in `scripts/tests` and `scripts/tools` and are excluded
+from installed copies.
 
-- `scripts/runtime/`: system appearance, XDG autostart, network authentication, storage, screenshots, dependency and resource imports, greeter appearance export, niri configuration writes, and the native keyboard builder. QML callers use `Paths.runtimeScriptsDir`.
-- `scripts/setup/`: command installation, greetd PAM integration, and read-only Doctor diagnostics.
-- `scripts/tools/`: development utilities, including icon generation.
-- `scripts/tests/`: isolated regression fixtures and checks.
+Command installation is atomic and does not change shell startup files. Backups
+live under `$XDG_STATE_HOME/bloodyShell/backups`. See
+[ownership and restoration](../OWNERSHIP.md) for defaults, data locations and limits.
 
-Installed copies include runtime and setup helpers and exclude tools and tests. `scripts/setup/install-command` installs the executable atomically, backs up replaced files, and prepares shell startup paths when needed. Managed startup-file symlinks are preserved.
-
-`ServiceResources.qml` owns the Updates page's collapsed import section, confirmations, terminal execution, and progress. `scripts/runtime/resources` lists app configurations and imports individual resources from the checkout or repository. Remote archives are temporary and only selected resource paths are extracted. Dotfile imports back up replaced directories. Wallpaper imports preserve existing files and deduplicate repeated imports; setup relocates legacy bundled images before replacing an old installation. Later updates do not import wallpapers. `scripts/runtime/greeter-settings` remains installed so greeter appearance stays synchronized without shipping the greeter source. Resource operations block shell updates while they use the installed scripts.
+`ServiceResources.qml` owns the Updates page's collapsed import section, confirmations, terminal execution, and progress. `scripts/lib/resources.py` lists app configurations and imports individual resources from the checkout or repository. Remote archives are temporary and only selected resource paths are extracted. Dotfile imports back up replaced directories. Wallpaper imports preserve existing files and deduplicate repeated imports; setup relocates legacy bundled images before replacing an old installation. Later updates do not import wallpapers. The resources module exports greeter appearance only when sharing is enabled, without shipping the greeter source. Resource operations block shell updates while they use the installed scripts.
 
 `ServiceUpdate.qml` checks releases on the `Config.updateCheck` schedule. With `Config.updateAuto` enabled, successful checks install the newest eligible release through the existing setup updater, which restarts the shell. Enabling the option also installs an update already found by a successful check. Settings and the installed version must finish loading first; development copies never update themselves. Each successful check permits one automatic installation attempt. A failed installation waits for the next check or a manual retry. `scripts/tests/update_checks.py` covers this flow with fake release responses and an isolated installer.
 
@@ -162,10 +162,17 @@ Run `python3 scripts/tests/run.py` for isolated regressions, surface integration
 
 `about_checks.py` uses private system files and fake niri/lspci commands to check lazy detection, cached reopening, refresh, CPU and GPU parsing, missing data, and responsive light/dark layouts with translations.
 
-`appearance_checks.py` uses private Qt and portal configurations, fake settings tools and metadata, and the real Appearance page to check all installed backends and their capabilities, per-function filtering, primary/fallback ordering, atomic batches, inherited preferences, default reset, symlinks, compact dialog selection and installed inventory, optional Qt activation, error recovery, and translations. It does not change the desktop's appearance or session environment.
+`appearance_checks.py` uses private configurations, fake settings tools and Qt
+plugin metadata, and the real Appearance page to verify theme discovery, independent
+GTK/Qt settings, configuration and symlink preservation, missing tools, error recovery,
+and translations. It also verifies that portal controls are absent and existing
+portal preferences and Qt standard-dialog settings stay unchanged. It does not
+change the desktop's appearance or session environment.
 
 `optimization_checks.py` checks dock ordering, pinning, focus, urgency, unchanged compositor snapshots, search cache bounds and invalidation, notification timestamp cleanup and grouping, and Alt+Tab MRU behavior. It reports work counts and timings for 180 windows and 4,000 applications; regression limits use operation counts rather than machine-dependent timing thresholds. All compositor actions and notification tracking are simulated.
 
 `overlay_checks.py` verifies immediate view readiness, single entrance fades, first-page presentation, background preparation and its modal/lock guards, opening and unloading every regular overlay in all animation modes, and released media/autostart subscriptions. It reports component-construction timings without imposing machine-dependent timing thresholds. Command tests cover cached discovery, newer instances, stale processes, PID reuse, invalid files, failed writes, and session isolation.
 
 Source checks validate relative imports and static resource URLs. Surface tests load every settings page and exercise shared switch interactions, alongside all edge reservations, canvas anchoring and the exclusive-zone setter contract, independent island enablement and bar-side alignment, shared visual style controls, full-strip pointer routing and sidebar clearance on all four bar edges, persistent media menus through player removal, sidebar hover padding, and animation reversal. They use isolated configuration and buses with compositor commands disabled. Native layer placement still requires a graphical-session check; the test environment may not access the running niri socket.
+
+See [niri config ownership](../NIRI.md) for fragment names and import preservation. The Compositor settings page and compositor config-writing service have been removed; keyboard, cursor and display settings write only user fragments.

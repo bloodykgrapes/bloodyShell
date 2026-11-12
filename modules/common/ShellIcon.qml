@@ -1,7 +1,5 @@
 import QtQuick
 
-import "../core"
-
 Image
 {
     property string icon: ""
@@ -13,8 +11,8 @@ Image
 
     source: icon
 
-    width:  Math.round(size * Config.themeScale)
-    height: Math.round(size * Config.themeScale)
+    width: size
+    height: size
 
     sourceSize.width:  Math.round(width * zoom)
     sourceSize.height: Math.round(height * zoom)

@@ -37,23 +37,21 @@ Item
         }
     }
 
-    readonly property real cardWidth: Math.min(width, 296 * Config.themeScale)
-    readonly property real cardSpacing: 10 * Config.themeScale
+    readonly property real cardWidth: Math.min(width, 296)
+    readonly property real cardSpacing: 10
 
-    function scroll(delta)
+    function scroll(pixelDelta, angleDelta)
     {
-        wheelRemainder += delta;
-        const steps = Math.trunc(wheelRemainder / 120);
+        wheelRemainder += Config.scrollDelta(pixelDelta, angleDelta);
+        const steps = Math.trunc(wheelRemainder / 48);
         if (steps === 0) return;
-        wheelRemainder -= steps * 120;
+        wheelRemainder -= steps * 48;
         ServiceAltTab.cycle(-steps);
     }
 
     Keys.onReleased: event =>
     {
-        if (ServiceAltTab.active && !event.isAutoRepeat &&
-            (event.key === Qt.Key_Alt ||
-             ((event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) && !(event.modifiers & Qt.AltModifier))))
+        if (ServiceAltTab.active && !event.isAutoRepeat && event.key === Qt.Key_Alt)
         {
             ServiceAltTab.confirm();
             event.accepted = true;
@@ -84,7 +82,7 @@ Item
         acceptedButtons: Qt.NoButton
         onWheel: wheel =>
         {
-            content.scroll(wheel.angleDelta.y || wheel.angleDelta.x);
+            content.scroll(wheel.pixelDelta.y || wheel.pixelDelta.x, wheel.angleDelta.y || wheel.angleDelta.x);
             wheel.accepted = true;
         }
 

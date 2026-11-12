@@ -4,7 +4,6 @@ import Quickshell
 import "common"
 import "core"
 import "services"
-import "src/Visualizer.js" as Visualizer
 
 ShellRoot
 {
@@ -70,27 +69,10 @@ ShellRoot
     readonly property bool visualizerWanted: activity.active && Config.animationsEnabled
     onVisualizerWantedChanged: ServiceMedia.setVisualizerActive(presenter, visualizerWanted)
 
-    function checkShape()
-    {
-        for (const phase of [0, 0.1, 2.5, 6.28, 10000])
-        {
-            const actual = Visualizer.points(58, 44, 7, phase);
-            check(actual.length === 73, "contour retains original resolution");
-            for (let i = 0; i <= 72; i++)
-            {
-                const angle = i / 72 * Math.PI * 2;
-                const radius = 44 + 7 * (0.6 * Math.sin(5 * angle + phase * 2) + 0.4 * Math.sin(3 * angle - phase * 1.3));
-                check(Math.abs(actual[i].x - (58 + radius * Math.cos(angle))) < 1e-7, "contour x preserves shape");
-                check(Math.abs(actual[i].y - (58 + radius * Math.sin(angle))) < 1e-7, "contour y preserves shape");
-            }
-        }
-    }
-
     Component.onCompleted: Qt.callLater(() =>
     {
         ServiceMedia.cavaMissing = true;
         Mpris.players = { values: [player] };
-        checkShape();
         check(equalizer.barCount === 28, "equalizer derives count from width");
         equalizer.width = 54;
         check(equalizer.barCount === 14, "equalizer responds to resizing");

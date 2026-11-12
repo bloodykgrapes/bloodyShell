@@ -20,6 +20,7 @@ import Quickshell
 import "src/Clients.js" as Clients
 import "src/ModelSync.js" as ModelSync
 import "src/Visualizer.js" as Visualizer
+import "src/WindowLayout.js" as WindowLayout
 
 ShellRoot
 {
@@ -114,14 +115,45 @@ ShellRoot
                     }
                 }
             }
-            console.log("RUNTIME_PASSED client ownership, delegate identity, 120 mixed model updates,", reads, "native reads for 500 reversed rows, and identical wave geometry");
+            let tileReads = 0;
+            const geometry = {};
+            for (let id = 0; id < 500; id++) {
+                const tile = {width:1920,height:1080};
+                Object.defineProperty(geometry,id,{enumerable:true,get() { tileReads++; return tile; }});
+            }
+            const sameLayout = [[1,{tile_size:[1920,1080],tile_pos_in_workspace_view:null}]];
+            for (let i = 0; i < 1000; i++)
+                check(WindowLayout.update(geometry,sameLayout,false) === geometry,"Unchanged geometry allocated a new cache");
+            check(tileReads === 1000,"Unchanged geometry scanned unrelated cached windows: " + tileReads);
+            const stableTile = geometry[2];
+            const changedGeometry = WindowLayout.update(geometry,[[1,{tile_size:[1280,800]}]],false);
+            check(changedGeometry !== geometry && changedGeometry[1].width === 1280 && changedGeometry[2] === stableTile,"Changed geometry replaced unrelated tile objects");
+            const snapshot = [[1,{tile_size:[1280,800]}],[2,{tile_size:[1920,1080]}]];
+            const trimmed = WindowLayout.update(changedGeometry,snapshot,true);
+            check(Object.keys(trimmed).length === 2 && trimmed[2] === stableTile,"Snapshot retained removed windows or replaced unchanged tiles");
+            check(WindowLayout.update(trimmed,snapshot,true) === trimmed,"Identical geometry snapshot allocated a new cache");
+            const invalid = WindowLayout.update(trimmed,[[1,{tile_size:[NaN,800]}]],false);
+            check(!invalid[1] && invalid[2] === stableTile,"Invalid size was retained or removed another window");
+
+            const screens = [{name:"A",width:1920,height:1080},{name:"B",width:1280,height:800}];
+            const workspaceRows = [{wsId:1,output:"A",activated:true,activeWindowId:2},{wsId:2,output:"B",activated:true,activeWindowId:1}];
+            const workspaceModel = {count:workspaceRows.length,get(index) { return workspaceRows[index]; }};
+            const windows = [{id:2,workspace_id:1},{id:1,workspace_id:2}];
+            const cache = {outputs:[]};
+            const fullscreen = WindowLayout.fullscreen(screens,workspaceModel,windows,trimmed,false,cache);
+            check(fullscreen.join(",") === "A,B","Fullscreen geometry lost an output");
+            check(WindowLayout.fullscreen(screens,workspaceModel,windows.map(window=>Object.assign({},window,{title:"Changed"})),trimmed,false,cache) === fullscreen,"Title updates replaced unchanged fullscreen state");
+            workspaceRows[1].activated = false;
+            check(WindowLayout.fullscreen(screens,workspaceModel,windows,trimmed,false,cache).join(",") === "A","Inactive workspace retained fullscreen");
+            check(WindowLayout.fullscreen(screens,workspaceModel,windows,trimmed,true,cache).length === 0,"Overview retained fullscreen");
+            console.log("RUNTIME_PASSED client ownership, delegate identity, mixed model updates, wave geometry, and 1000 tile reads for 1000 unchanged updates across 500 cached windows; fullscreen state identity preserved");
         }
         catch (error) { console.error("RUNTIME_FAILED", error); }
         Qt.quit();
     })
 }
 ''')
-        env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", XDG_RUNTIME_DIR=str(base / "runtime"), XDG_CACHE_HOME=str(base / "cache"))
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", XDG_RUNTIME_DIR=str(base / "runtime"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"))
         env.pop("WAYLAND_DISPLAY", None)
         result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=10)
         output = result.stdout + result.stderr

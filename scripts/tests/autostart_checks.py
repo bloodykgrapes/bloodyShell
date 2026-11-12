@@ -11,7 +11,7 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-HELPER = ROOT / "scripts/runtime/autostart"
+HELPER = ROOT / "scripts/bloodyShell"
 
 
 def put(path, text):
@@ -29,14 +29,14 @@ def fixture(base):
         (base / "bin" / name).chmod(0o700)
     return dict(os.environ, HOME=str(base / "home"), XDG_CONFIG_HOME=str(base / "config"),
                 XDG_CONFIG_DIRS=str(base / "system") + ":" + str(base / "lower"), XDG_DATA_HOME=str(base / "data"),
-                XDG_DATA_DIRS=str(base / "system-data"), XDG_CACHE_HOME=str(base / "cache"), XDG_RUNTIME_DIR=str(base / "runtime"),
+                XDG_DATA_DIRS=str(base / "system-data"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"), XDG_RUNTIME_DIR=str(base / "runtime"),
                 XDG_CURRENT_DESKTOP="niri", LANG="en_US.UTF-8", LC_ALL="", LC_MESSAGES="", PATH=str(base / "bin") + os.pathsep + os.environ["PATH"])
 
 
 def run_files(base):
     env = fixture(base)
     def command(*args, success=True):
-        result = subprocess.run([sys.executable, str(HELPER), *args], env=env, capture_output=True, text=True, timeout=6)
+        result = subprocess.run([sys.executable, str(HELPER), "internal", "autostart", *args], env=env, capture_output=True, text=True, timeout=6)
         assert (result.returncode == 0) == success, result.stdout + result.stderr
         return json.loads(result.stdout) if success else result.stderr
     original = "# Keep comments\n[Desktop Entry]\nType=Application\nName=System app\nName[ru]=Системное\nExec=/bin/true %U\nIcon=application-x-executable\nX-Custom-Key=keep %s\nOnlyShowIn=niri;\n"
@@ -102,7 +102,7 @@ def run_files(base):
     assert "X-GNOME-Autostart-enabled=true" in (base / "config/autostart/gnome.desktop").read_text()
     (base / "config/autostart/loop.desktop").symlink_to("loop.desktop")
     assert not list((base / "config/autostart").glob(".bloodyShell-*.tmp"))
-    watcher = subprocess.Popen([sys.executable, str(HELPER), "watch"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    watcher = subprocess.Popen([sys.executable, str(HELPER), "internal", "autostart", "watch"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
         assert select.select([watcher.stdout], [], [], 3)[0] and watcher.stdout.readline().strip() == "ready"
         put(base / "config/autostart/external.desktop", app)
@@ -118,10 +118,11 @@ def run_ui(base):
     shutil.copytree(ROOT / "modules", base / "modules")
     (base / "assets").symlink_to(ROOT / "assets", target_is_directory=True)
     (base / "translations").symlink_to(ROOT / "translations", target_is_directory=True)
-    (base / "scripts/runtime").mkdir(parents=True)
-    shutil.copy2(HELPER, base / "scripts/runtime/autostart")
-    put(base / "scripts/runtime/appearance", "#!/bin/sh\nexit 0\n")
-    (base / "scripts/runtime/appearance").chmod(0o700)
+    (base / "scripts/lib").mkdir(parents=True)
+    shutil.copytree(ROOT / "scripts/lib", base / "scripts/lib", dirs_exist_ok=True)
+    shutil.copy2(ROOT / "scripts/bloodyShell", base / "scripts/bloodyShell")
+    put(base / "scripts/lib/appearance.sh", "#!/bin/sh\nexit 0\n")
+    (base / "scripts/lib/appearance.sh").chmod(0o700)
     put(base / "modules/services/ServiceLock.qml", 'pragma Singleton\nimport QtQuick\nimport Quickshell\nSingleton { property bool locked: false; function lock() {} }\n')
     put(base / "config/bloodyShell/settings.json", json.dumps({"helperSeen": True, "themeAnimations": 0}))
     original = "[Desktop Entry]\nType=Application\nName=System fixture\nExec=/bin/true\n"
@@ -143,6 +144,9 @@ ShellRoot
     property int phase: 0
     property string appId: ""
     property string entryId: ""
+    property real sectionHeight: 0
+    property real pageHeight: 0
+    property int catalogCount: -1
     function check(ok, message) { if (!ok) throw new Error(message) }
     function find(item, name)
     {
@@ -160,6 +164,7 @@ ShellRoot
     }
     Timer
     {
+        id: inputTimer
         interval: 80; repeat: true; running: true
         onTriggered:
         {
@@ -172,39 +177,71 @@ ShellRoot
                 {
                     const app = ServiceApplications.search("Autostart Fixture")[0];
                     if (!app || ServiceApplications.autostartEntries.length === 0) return;
+                    if (tests.catalogCount !== page.apps.length) { tests.catalogCount = page.apps.length; return; }
+                    if (!section.expanded) { section.expanded = true; return; }
                     tests.appId = app.id;
                     tests.entryId = app.id.endsWith(".desktop") ? app.id : app.id + ".desktop";
-                    section.expanded = true;
+                    tests.sectionHeight = section.height;
+                    tests.pageHeight = page.contentHeight;
                     const add = tests.find(section, "autostartAdd");
                     events.mouseClick(add, add.width / 2, add.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                     tests.phase++;
                 }
                 else if (tests.phase === 1)
                 {
-                    const results = tests.find(section, "autostartCandidates");
-                    const pickerSearch = tests.find(section, "autostartSearch");
-                    tests.check(results && section.candidates.length === 4 && results.height === 4 * 56, "Autostart picker is not limited to four static rows");
-                    tests.check(page.interactive && results.contentY === undefined, "Page scrolling or static results changed");
-                    const matches = section.candidates.map(app => app.id).join(",");
+                    inputTimer.stop();
+                    const picker = section.picker;
+                    let results = tests.find(picker.contentItem, "autostartCandidates");
+                    let pickerSearch = tests.find(picker.contentItem, "autostartSearch");
+                    tests.check(picker.visible && picker.modal && OverlayState.settingsPopup, "Add does not open a modal application picker");
+                    tests.check(results && results.count > 4 && results.interactive, "Application picker is still limited to inline rows");
+                    tests.check(section.height === tests.sectionHeight && page.contentHeight === tests.pageHeight, "Opening the picker inserts rows into the page");
+                    tests.check(picker.x >= 0 && picker.y >= 0 && picker.x + picker.width <= picker.parent.width && picker.y + picker.height <= picker.parent.height, "Application picker exceeds its host");
                     const pagePosition = page.contentY;
                     events.mouseWheel(results, results.width / 2, 28, 0, -120, Qt.NoButton, Qt.NoModifier, 0);
-                    tests.check(page.contentY > pagePosition, "Wheel over static results does not scroll the page");
-                    const nextPosition = page.contentY;
+                    events.wait(200);
+                    tests.check(results.contentY > 0 && page.contentY === pagePosition, "Picker scrolling moves the settings page");
                     events.mouseWheel(pickerSearch, pickerSearch.width / 2, pickerSearch.height / 2, 0, -120, Qt.NoButton, Qt.NoModifier, 0);
-                    tests.check(page.contentY > nextPosition, "Wheel over autostart search does not scroll the page");
-                    tests.check(section.candidates.map(app => app.id).join(",") === matches, "Scrolling changes the static matches");
-                    page.resetScroll();
+                    events.wait(60);
+                    tests.check(page.contentY === pagePosition, "Search wheel events leak through the modal picker");
+                    window.width = 420; window.height = 360;
+                    events.wait(40);
+                    tests.check(picker.width <= window.width - 32 && picker.height <= window.height - 32 && results.height > 0, "Application picker does not fit a compact window");
+                    window.width = 1080; window.height = 800;
+                    events.wait(40);
+                    pickerSearch.grabFocus();
+                    events.keyClick(Qt.Key_Down);
+                    tests.check(results.activeFocus && results.currentIndex === 0, "Popup results cannot be reached from search with the keyboard");
+                    events.keyClick(Qt.Key_Escape);
+                    tests.check(!picker.visible && !OverlayState.settingsPopup && ServiceApplications.autostartEntries.length === 1, "Escape did not cancel the picker without adding an app");
+                    const add = tests.find(section, "autostartAdd");
+                    tests.check(add.activeFocus, "Closing the picker did not restore focus to Add application");
+                    events.mouseClick(add, add.width / 2, add.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
+                    const cancel = tests.find(picker.contentItem, "autostartCancel");
+                    events.mouseClick(cancel, cancel.width / 2, cancel.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
+                    tests.check(!picker.visible && !OverlayState.settingsPopup, "Cancel did not dismiss the picker");
+                    events.mouseClick(add, add.width / 2, add.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
+                    events.mouseClick(window.contentItem, 2, 2, Qt.LeftButton, Qt.NoModifier, 0);
+                    tests.check(!picker.visible && !OverlayState.settingsPopup, "Outside click did not dismiss the picker");
+                    events.mouseClick(add, add.width / 2, add.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
+                    section.choose("org.example.DoesNotExist");
+                    for (let i=0;i<100 && (ServiceApplications.autostartBusy || picker.errorText === "");i++) events.wait(20);
+                    tests.check(picker.visible && picker.errorText !== "", "Failed addition closed the picker or hid its error");
                     pickerSearch.text = "Autostart Fixture"; pickerSearch.textEdited(pickerSearch.text);
-                    tests.check(section.candidates.length === 1 && section.candidates[0].id === tests.appId, "Static picker does not update on search");
-                    const choose = tests.find(section, "autostartChoose-" + tests.appId);
+                    tests.check(section.candidates.length === 1 && section.candidates[0].id === tests.appId, "Popup search does not update its results");
+                    events.wait(20);
+                    const choose = tests.find(picker.contentItem, "autostartChoose-" + tests.appId);
                     tests.check(choose !== null, "Searchable application picker did not load");
                     events.mouseClick(choose, choose.width / 2, choose.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                     tests.phase++;
+                    inputTimer.start();
                 }
                 else if (tests.phase === 2)
                 {
                     if (!entry) return;
                     tests.check(entry.enabled && entry.removable, "Adding an application failed");
+                    if (section.picker.visible) return;
+                    tests.check(!OverlayState.settingsPopup && section.pendingApp === "", "Successful addition left popup state behind");
                     const toggle = tests.find(section, "autostartToggle-" + tests.entryId);
                     events.mouseClick(toggle, toggle.width / 2, toggle.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                     tests.phase++;
@@ -212,7 +249,7 @@ ShellRoot
                 else if (tests.phase === 3)
                 {
                     if (!entry || entry.enabled) return;
-                    Quickshell.execDetached(["python3", Paths.shellDir + "/scripts/runtime/autostart", "set", tests.entryId, "true"]);
+                    Quickshell.execDetached(["python3", Paths.command, "internal", "autostart", "set", tests.entryId, "true"]);
                     tests.phase++;
                 }
                 else if (tests.phase === 4)
@@ -269,8 +306,15 @@ ShellRoot
                     tests.check(add.pressed && String(add.color) === String(Theme.colorField), "Press changes the button base color");
                     add.enabled = false;
                     events.mouseRelease(add, add.width / 2, add.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                    tests.check(!add.hovered && !add.pressed && !section.adding, "Disabled button keeps its hover or accepts a click");
+                    tests.check(!add.hovered && !add.pressed && !section.picker.visible, "Disabled button keeps its hover or accepts a click");
+                    add.enabled = true;
+                    page.resetScroll();
+                    events.mouseClick(add, add.width / 2, add.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
+                    events.wait(Theme.animationDurationControl + 40);
+                    tests.check(section.picker.visible, "Animated popup failed to open");
                     page.visible = false;
+                    events.wait(Theme.animationDurationClose + 40);
+                    tests.check(!section.picker.visible && !OverlayState.settingsPopup, "Hidden Applications page left its popup open");
                     tests.check(!ServiceApplications.autostartWatching, "Hidden Applications page keeps its file watcher");
                     console.log("AUTOSTART_UI_PASSED"); Qt.quit();
                 }
@@ -292,7 +336,7 @@ ShellRoot
     assert (base / "system/autostart/system.desktop").read_text() == original
     assert "Hidden=false" in (base / "config/autostart/system.desktop").read_text()
     assert not (base / "config/autostart/org.example.Autostart.desktop").exists()
-    print("Applications picker, fixed search, button states, autostart actions, external changes, and watcher suspension passed.")
+    print("Autostart popup, isolated scrolling, search, cancellation, errors, focus, successful adds, external changes and watcher cleanup passed.")
 
 
 def main():

@@ -12,11 +12,21 @@ SettingsPage
     subtitle: Tr.tr("settings.general.description")
 
     property bool confirmReset: false
-    Timer { id: confirmTimer; interval: 3000; onTriggered: pageGeneral.confirmReset = false }
 
+    SettingsConfirmation
+    {
+        objectName: "resetConfirmation"
+        host: pageGeneral
+        visible: pageGeneral.active && pageGeneral.confirmReset
+        title: Tr.tr("settings.general.resetAllSettings")
+        description: Tr.tr("settings.general.resetHint")
+        acceptText: Tr.tr("settings.general.reset")
+        danger: true
+        onAccepted: { pageGeneral.confirmReset = false; Config.reset(); }
+        onRejected: pageGeneral.confirmReset = false
+    }
     SettingsGroup
     {
-        title: Tr.tr("helper.setup")
         SettingsRow
         {
             label: Tr.tr("helper.setup")
@@ -49,6 +59,12 @@ SettingsPage
 
         SettingsRow
         {
+            label: Tr.tr("settings.general.greeterSync")
+            description: Tr.tr("settings.general.greeterSyncHint")
+            Toggle { checked: Config.greeterSync; onToggled: value => Config.set("greeterSync", value) }
+        }
+        SettingsRow
+        {
             label: Tr.tr("settings.general.debugLogging")
             description: Tr.tr("settings.general.debugLoggingHint")
 
@@ -66,12 +82,9 @@ SettingsPage
             SettingsButton
             {
                 danger: true
-                text: pageGeneral.confirmReset ? Tr.tr("settings.general.confirmReset") : Tr.tr("settings.general.reset")
-                onClicked:
-                {
-                    if (pageGeneral.confirmReset) { Config.reset(); pageGeneral.confirmReset = false; }
-                    else { pageGeneral.confirmReset = true; confirmTimer.restart(); }
-                }
+                objectName: "requestReset"
+                text: Tr.tr("settings.general.reset")
+                onClicked: pageGeneral.confirmReset = true
             }
         }
     }

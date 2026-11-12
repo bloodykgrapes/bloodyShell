@@ -4,6 +4,8 @@ import Quickshell.Wayland
 
 import "../../common"
 import "../../core"
+import "../../services"
+import "." as Parts
 
 PanelWindow
 {
@@ -17,6 +19,12 @@ PanelWindow
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Bottom
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+    Parts.WallpaperLayer
+    {
+        anchors.fill: parent
+        outputName: desktop.screen.name
+    }
 
     MouseArea
     {

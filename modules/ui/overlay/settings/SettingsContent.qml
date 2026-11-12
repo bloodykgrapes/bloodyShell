@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls.Basic as Controls
 import Quickshell.Widgets
 
 import "../../../animations"
@@ -23,26 +24,33 @@ Rectangle
         const entry = tabRepeater.itemAt(current);
         if (!entry) return;
         const top = tabColumn.y + entry.y + entry.tabY;
-        const bottom = top + 32;
+        const bottom = top + entry.tabHeight;
         if (top >= navigation.contentY && bottom <= navigation.contentY + navigation.height) return;
-        navigation.cancelFlick();
-        navigation.contentY = Math.max(0, Math.min(Math.max(0, navigation.contentHeight - navigation.height),
-            top < navigation.contentY ? top : bottom - navigation.height));
+        navigationScroll.scrollTo(top < navigation.contentY ? top : bottom - navigation.height, settled);
     }
-    onCurrentChanged: Qt.callLater(revealTab)
-    onTabsChanged: Qt.callLater(revealTab)
+    onCurrentChanged: revealTimer.restart()
+    onTabsChanged: revealTimer.restart()
+
+    Timer
+    {
+        id: revealTimer
+        interval: 0
+        onTriggered:
+        {
+            settingsContent.revealTab();
+            settingsContent.settled = true;
+        }
+    }
 
     radius: Theme.settingsRadius
     color: Theme.settingsColorBackground
-    border.color: Theme.colorHairline
-    border.width: Theme.borderWidth
     clip: true
 
     focus: true
     Component.onCompleted:
     {
         forceActiveFocus();
-        Qt.callLater(() => { settingsContent.settled = true; settingsContent.revealTab(); });
+        revealTimer.restart();
     }
 
     property bool settled: false
@@ -67,7 +75,7 @@ Rectangle
 
         x: 1
         y: 1
-        width: Theme.settingsSidebar
+        width: Math.min(settingsContent.width < 900 ? Theme.settingsSidebar - 24 : Theme.settingsSidebar, Math.max(180, settingsContent.width * 0.32))
         height: parent.height - 2
 
         topLeftRadius: settingsContent.radius - 1
@@ -79,7 +87,8 @@ Rectangle
             id: brand
 
             x: 20
-            y: 22
+            y: 24
+            width: parent.width - 40
             spacing: 12
 
             ClippingRectangle
@@ -101,11 +110,12 @@ Rectangle
 
             Column
             {
+                width: Math.max(0, brand.width - 38 - brand.spacing)
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 1
 
-                ShellText { label: "bloodyShell"; size: 15; color: Theme.text1; font.bold: true }
-                ShellText { label: Tr.tr("common.settings"); size: 11; color: Theme.text3 }
+                ShellText { width: parent.width; label: "bloodyShell"; size: 15; color: Theme.text1; font.bold: true }
+                ShellText { width: parent.width; label: Tr.tr("common.settings"); size: 11; color: Theme.text3 }
             }
         }
 
@@ -122,6 +132,19 @@ Rectangle
             boundsBehavior: Flickable.StopAtBounds
             interactive: contentHeight > height
 
+            SmoothScroll { id: navigationScroll; view: navigation }
+
+            Controls.ScrollBar.vertical: Controls.ScrollBar
+            {
+                width: 4
+                anchors.right: parent.right
+                anchors.rightMargin: 3
+                padding: 1
+                policy: Controls.ScrollBar.AsNeeded
+                active: navigation.moving || hovered || pressed
+                contentItem: Rectangle { implicitWidth: 2; radius: 1; color: Theme.text4; opacity: 0.4 }
+            }
+
             Rectangle
             {
                 id: highlight
@@ -131,7 +154,7 @@ Rectangle
                 x: tabColumn.x
                 y: entry ? tabColumn.y + entry.y + entry.tabY : 0
                 width: tabColumn.width
-                height: 32
+                height: entry ? entry.tabHeight : Theme.settingsTabHeight
                 radius: Theme.radiusLarge - 2
                 color: Theme.colorSelection
                 visible: entry !== null
@@ -162,6 +185,7 @@ Rectangle
 
                         readonly property bool groupStart: index === 0 || settingsContent.tabs[index - 1].group !== modelData.group
                         readonly property real tabY: tab.y
+                        readonly property real tabHeight: tab.height
                         readonly property real tabScale: tab.scale
 
                         width: tabColumn.width
@@ -268,8 +292,8 @@ Rectangle
     SettingsIconButton
     {
         anchors { top: parent.top; right: parent.right; margins: 16 }
-        width: 30
-        height: 30
+        width: 32
+        height: 32
         icon: Icon.close
         iconSize: 14
         text: Tr.tr("common.close")

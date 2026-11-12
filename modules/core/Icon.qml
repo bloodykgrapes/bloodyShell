@@ -40,7 +40,6 @@ Singleton
     readonly property string tray: path + "tray.svg"
     readonly property string keyboard: path + "keyboard.svg"
 
-    readonly property string bluetoothSearching: path + "bluetooth_searching.svg"
     readonly property string bluetoothON:        path + "bluetooth_enabled.svg"
     readonly property string bluetoothOFF:       path + "bluetooth_disabled.svg"
 
@@ -112,7 +111,6 @@ Singleton
     readonly property string close: path + "close.svg"
 
     readonly property string userLock:   path + "lock.svg"
-    readonly property string userSwitch: path + "switch.svg"
     readonly property string userLogOut: path + "logout.svg"
 
     readonly property string computerSleep:    path + "sleep.svg"
@@ -134,7 +132,6 @@ Singleton
     readonly property string settingsApplications: path + "apps.svg"
     readonly property string settingsTimeLanguage: path + "language.svg"
 
-    readonly property string settingsCompositor:   path + "compositor.svg"
     readonly property string settingsAppearance:   path + "palette.svg"
     readonly property string settingsDesktop:      path + "desktop.svg"
     readonly property string settingsBar:          path + "bar.svg"

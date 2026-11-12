@@ -8,10 +8,10 @@ Singleton
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || home + "/.config"
     readonly property string cacheHome: Quickshell.env("XDG_CACHE_HOME") || home + "/.cache"
     readonly property string shellDir: String(Quickshell.shellDir).replace(/\/+$/, "")
-    readonly property string runtimeScriptsDir: shellDir + "/scripts/runtime"
+    readonly property string command: shellDir + "/scripts/bloodyShell"
+    function commandFor(domain, args = []) { return ["python3", command, "internal", domain].concat(args) }
     readonly property string installDir: configHome + "/quickshell/bloodyShell"
     readonly property string settingsDir: configHome + "/bloodyShell"
     readonly property string stateDir: cacheHome + "/bloodyShell"
     readonly property string niriDir: configHome + "/niri/bloodyShell"
-    readonly property string niriHelper: runtimeScriptsDir + "/niri-config"
 }

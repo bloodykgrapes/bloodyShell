@@ -48,7 +48,7 @@ SettingsPage
 
             SettingsCombo
             {
-                width: 220
+                preferredWidth: 220
                 options: [
                     { label: Tr.tr("settings.power.minute").arg(1), value: 60 },
                     { label: Tr.tr("settings.power.minutes").arg(2), value: 120 },
@@ -69,7 +69,7 @@ SettingsPage
 
             SettingsCombo
             {
-                width: 220
+                preferredWidth: 220
                 options: [
                     { label: Tr.tr("settings.power.minute").arg(1), value: 60 },
                     { label: Tr.tr("settings.power.minutes").arg(2), value: 120 },
@@ -94,7 +94,7 @@ SettingsPage
 
             SettingsCombo
             {
-                width: 220
+                preferredWidth: 220
                 options: [
                     { label: Tr.tr("settings.power.minutes").arg(5), value: 300 },
                     { label: Tr.tr("settings.power.minutes").arg(10), value: 600 },

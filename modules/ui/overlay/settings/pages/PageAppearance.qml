@@ -36,11 +36,7 @@ SettingsPage
             {
                 id: themeCards
 
-                readonly property var themes:
-                [
-                    { label: Tr.tr("settings.appearance.light"), value: Enums.ThemeLight },
-                    { label: Tr.tr("settings.appearance.dark"), value: Enums.ThemeDark }
-                ]
+                readonly property var themes: Registry.themeOptions
                 width: parent.width
                 spacing: 10
 
@@ -60,7 +56,7 @@ SettingsPage
                         readonly property color mark: Config.themeAccent ? Theme.accentBase : ink
 
                         width: Math.min(150, (themeCards.width - themeCards.spacing) / 2)
-                        height: preview.height + 22
+                        height: preview.height + themeCaption.implicitHeight + 8
 
                         scale: cardArea.pressed ? 0.96 : cardArea.containsMouse ? 1.03 : 1
                         Spring on scale {}
@@ -130,7 +126,11 @@ SettingsPage
 
                         ShellText
                         {
+                            id: themeCaption
                             anchors { horizontalCenter: parent.horizontalCenter; top: preview.bottom; topMargin: 6 }
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.Wrap
                             label: themeCard.modelData.label
                             size: 11
                             color: themeCard.current ? Theme.text1 : Theme.text3
@@ -172,41 +172,16 @@ SettingsPage
         }
         SettingsRow
         {
-            label: Tr.tr("settings.appearance.border")
-            Toggle { checked: Config.themeBorder; onToggled: value => Config.set("themeBorder", value) }
-        }
-        SettingsRow
-        {
-            label: Tr.tr("common.scale")
-            SettingsStepper
-            {
-                value: Config.themeScale
-                from: 0.8; to: 1.5; step: 0.05; decimals: 2; suffix: "×"
-                onEdited: value => Config.set("themeScale", value)
-            }
-        }
-        SettingsRow
-        {
             label: Tr.tr("settings.appearance.animations")
             description: Tr.tr("settings.appearance.animationsHint")
             stacked: true
 
-            Row
+            SettingsStyleChoices
             {
-                spacing: 10
-                Repeater
-                {
-                    model: [{ label: Tr.tr("settings.appearance.minimal"), value: Enums.AnimationsDisabled }, { label: Tr.tr("settings.appearance.standard"), value: Enums.AnimationsStandard }, { label: Tr.tr("settings.appearance.fluid"), value: Enums.AnimationsFluid }]
-                    SettingsStyleCard
-                    {
-                        required property var modelData
-                        kind: "animation"
-                        value: modelData.value
-                        label: modelData.label
-                        current: Config.themeAnimations === modelData.value
-                        onClicked: Config.set("themeAnimations", modelData.value)
-                    }
-                }
+                kind: "animation"
+                options: Registry.animationOptions
+                current: Config.themeAnimations
+                onSelected: value => Config.set("themeAnimations", value)
             }
         }
         SettingsRow
@@ -215,7 +190,7 @@ SettingsPage
             description: Tr.tr("settings.appearance.equalizerStyleHint")
             stacked: true
 
-            Row
+            Flow
             {
                 id: equalizerStyles
                 width: parent.width
@@ -280,6 +255,39 @@ SettingsPage
                 }
             }
         }
+        SettingsRow
+        {
+            label: Tr.tr("settings.appearance.wallpaperTransition")
+            SettingsCombo
+            {
+                objectName: "wallpaperTransitionSelector"
+                options: [
+                    {label: Tr.tr("common.off"), value: "none"},
+                    {label: Tr.tr("settings.appearance.wallpaperSimple"), value: "simple"},
+                    {label: Tr.tr("settings.appearance.wallpaperFade"), value: "fade"},
+                    {label: Tr.tr("settings.appearance.wallpaperLeft"), value: "left"},
+                    {label: Tr.tr("settings.appearance.wallpaperRight"), value: "right"},
+                    {label: Tr.tr("settings.appearance.wallpaperTop"), value: "top"},
+                    {label: Tr.tr("settings.appearance.wallpaperBottom"), value: "bottom"},
+                    {label: Tr.tr("settings.appearance.wallpaperWipe"), value: "wipe"},
+                    {label: Tr.tr("settings.appearance.wallpaperWave"), value: "wave"},
+                    {label: Tr.tr("settings.appearance.wallpaperGrow"), value: "grow"},
+                    {label: Tr.tr("settings.appearance.wallpaperCenter"), value: "center"},
+                    {label: Tr.tr("settings.appearance.wallpaperAny"), value: "any"},
+                    {label: Tr.tr("settings.appearance.wallpaperShrink"), value: "outer"},
+                    {label: Tr.tr("settings.appearance.wallpaperRandom"), value: "random"}
+                ]
+                current: Config.wallpaperTransition
+                onSelected: value => Config.set("wallpaperTransition", value)
+            }
+        }
+        ShellText
+        {
+            width: parent.width
+            label: ServiceAppearance.wallpaperError
+            color: Theme.colorCritical
+            wrapMode: Text.Wrap
+        }
     }
 
     SettingsGroup
@@ -294,60 +302,6 @@ SettingsPage
             badge: Tr.tr("common.error")
             badgeColor: Theme.colorCritical
             description: ServiceAppearance.error
-        }
-        SettingsRow
-        {
-            label: Tr.tr("settings.appearance.gtkTheme")
-            SettingsCombo
-            {
-                options: pageAppearance.withCurrent(ServiceAppearance.gtkThemes, ServiceAppearance.gtkTheme)
-                current: ServiceAppearance.gtkTheme
-                onSelected: value => ServiceAppearance.setGtkTheme(value)
-            }
-        }
-        SettingsRow
-        {
-            objectName: "qtThemeRow"
-            label: Tr.tr("settings.appearance.qtTheme")
-            Row
-            {
-                spacing: 8
-
-                SettingsCombo
-                {
-                    objectName: "qtThemeSelector"
-                    readonly property string selectedTheme: ServiceAppearance.qtThemes.find(name => name.toLowerCase() === ServiceAppearance.qtTheme.toLowerCase()) || ServiceAppearance.qtTheme
-                    width: enableQt.visible ? 160 : implicitWidth
-                    enabled: ServiceAppearance.qt6ct
-                    options: pageAppearance.withCurrent(ServiceAppearance.qtThemes, selectedTheme)
-                    current: selectedTheme
-                    onSelected: value => ServiceAppearance.setQtTheme(value)
-                }
-                SettingsButton
-                {
-                    id: enableQt
-                    objectName: "enableQtTheme"
-                    visible: ServiceAppearance.qt6ct && !ServiceAppearance.qtActive && !ServiceAppearance.qtConfigured
-                    text: Tr.tr("common.enable")
-                    onClicked: ServiceAppearance.setQtTheme(ServiceAppearance.qtTheme)
-                }
-            }
-        }
-        SettingsPortals { id: portals }
-        SettingsRow
-        {
-            objectName: "installedPortals"
-            label: Tr.tr("settings.portals.installed")
-            description: ServiceAppearance.portalBackends.length > 0
-                ? ServiceAppearance.portalBackends.map(backend => portals.backendLabel(backend.id)).join(", ")
-                : Tr.tr("settings.portals.empty")
-            SettingsButton
-            {
-                objectName: "refreshPortals"
-                text: Tr.tr("common.refresh")
-                enabled: !ServiceAppearance.busy
-                onClicked: ServiceAppearance.refresh(false)
-            }
         }
         SettingsRow
         {

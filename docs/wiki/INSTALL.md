@@ -38,13 +38,12 @@ existing initial selections. Without gum, numbered menus remain available.
 Setup shows an installation plan before making changes. The shell installs into
 `~/.config/quickshell/bloodyShell`, and the `bloodyShell` command installs into
 `~/.local/bin`. `XDG_CONFIG_HOME` and `XDG_BIN_HOME` override these locations.
-When the command directory is missing from `PATH`, setup prepares it for new
-Bash, Zsh, or Fish terminals. Existing startup files and replaced commands are
-backed up. Reopen your terminal afterward, or use the command printed by setup
-to update the current terminal's `PATH`.
+When the command directory is missing from `PATH`, setup prints a command to add
+it. Shell startup files are preserved; replaced launcher commands are backed up.
 
-Optional app configs replace selected directories after backing them up.
-Bundled wallpapers are imported into `~/Pictures/Wallpapers`. Existing files
+Optional app configs are backed up before replacement. Niri imports refresh managed
+defaults while preserving user/input/output fragments; see [niri config ownership](../NIRI.md).
+Bundled wallpapers can be imported explicitly into `~/Pictures/Wallpapers`. Existing files
 are kept; different images with the same name receive a new filename. This is
 also the default wallpaper folder in settings.
 The bundled niri config starts bloodyShell and awww. To retain your own niri
@@ -134,7 +133,8 @@ current graphical session.
 
 After installation, `bloodyShell update` accepts the same options.
 Updates stage the download before replacing the shell. App configs are not
-reapplied. Backups live under `~/bloodyShell.bak/<timestamp>/`.
+reapplied. Backups live under `$XDG_STATE_HOME/bloodyShell/backups/<timestamp>/`
+(default: `~/.local/state/bloodyShell/backups/<timestamp>/`).
 To roll back, stop the shell, restore the previous directory to
 `~/.config/quickshell/bloodyShell`, then start it again.
 Update the greeter explicitly with `./setup greetd`.
@@ -156,6 +156,7 @@ custom wallpaper folders stay unchanged.
 ## Commands
 
 - `./setup install`: packages, shell, optional configs, optional greetd.
+- `./setup uninstall`: preview removal; `--apply` stops and removes unchanged installed files.
 - `./setup update`: download a release and update the shell.
 - `./setup doctor`: read-only diagnostics (`--json` for machine-readable output).
 - `./setup configs`: choose app configs to apply.
@@ -164,12 +165,18 @@ custom wallpaper folders stay unchanged.
 
 ## Desktop command
 
+Uninstall preserves personal settings and backups. Use `./setup uninstall --apply
+--restore` to restore unchanged tracked user integrations before removal. Modified
+and untracked files are reported and retained; packages and privileged integrations
+are kept. See [ownership and uninstall](../OWNERSHIP.md) for details.
+
 `bloodyShell` is an executable wrapper, like iNiR's `inir` command. The terminal
 finds it in `PATH`; it starts Quickshell or forwards a request to the running
 shell's IPC interface. It works from any directory and does not require keeping
 the original source checkout. Installation and updates refresh the wrapper.
-Runtime backends live in `scripts/runtime/`; installation and diagnostics helpers
-live in `scripts/setup/`. Development utilities and tests remain in the source
+All backend commands go through `bloodyShell internal DOMAIN ...`; their grouped
+implementations live in `scripts/lib/`. Installation preserves shell startup files.
+See [ownership and cleanup](../OWNERSHIP.md) for opt-in integrations and restoration. Development utilities and tests remain in the source
 checkout and are excluded from installed copies.
 
 ```sh

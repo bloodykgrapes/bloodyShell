@@ -22,9 +22,10 @@ Item
     readonly property int currentIndex: options.findIndex(o => String(valueOf(o)) === String(current))
     property bool open: false
 
-    implicitWidth: 240
-    width: implicitWidth
-    height: 34
+    property real preferredWidth: 240
+    implicitWidth: Math.round(preferredWidth)
+    width: Theme.controlWidth(settingsCombo, implicitWidth)
+    height: Theme.settingsControlHeight
     opacity: enabled ? 1 : 0.4
     activeFocusOnTab: enabled
     onEnabledChanged: if (!enabled) open = false
@@ -61,11 +62,18 @@ Item
         return p ? p.popupLayer : null;
     }
 
-    Component.onDestruction: if (open) OverlayState.settingsPopup = false
+    function syncModalState() { OverlayState.setPopupActive(settingsCombo, open && !OverlayState.popupsSuspended); }
+    Component.onDestruction: OverlayState.setPopupActive(settingsCombo, false)
+
+    Connections
+    {
+        target: OverlayState
+        function onPopupsSuspendedChanged() { settingsCombo.syncModalState(); }
+    }
 
     onOpenChanged:
     {
-        OverlayState.settingsPopup = open;
+        syncModalState();
         if (!open)
         {
             if (list.activeFocus && enabled && activity.active) forceActiveFocus(Qt.PopupFocusReason);
@@ -221,6 +229,8 @@ Item
                 boundsBehavior: Flickable.StopAtBounds
                 model: settingsCombo.options
                 currentIndex: -1
+
+                SmoothScroll { view: list }
 
                 highlightFollowsCurrentItem: true
                 highlightMoveDuration: Config.animationsEnabled ? 160 : 0

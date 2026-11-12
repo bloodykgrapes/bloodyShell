@@ -15,6 +15,10 @@ Singleton
     property var watchClients: []
     readonly property int watchers: watchClients.length
     readonly property bool watching: watchers > 0
+    property var mouseWatchClients: []
+    readonly property int mouseWatchers: mouseWatchClients.length
+    readonly property bool mouseWatching: watching || mouseWatchers > 0
+    onMouseWatchingChanged: if (mouseWatching && !watching) refreshMouse()
     onWatchingChanged:
     {
         if (watching) refresh();
@@ -26,10 +30,120 @@ Singleton
         watchClients = Clients.update(watchClients, client, active);
     }
 
+    function setMouseWatching(client, active)
+    {
+        mouseWatchClients = Clients.update(mouseWatchClients, client, active);
+    }
+
     function refresh()
     {
         usbReader.running = true;
         printersReader.running = true;
+        refreshMouse();
+    }
+
+    property var mouse: ({speed: 0, profile: "adaptive", naturalScroll: false, leftHanded: false,
+        scrollHorizontal: 1, scrollVertical: 1, middleEmulation: false})
+    property bool mouseLoaded: false
+    property bool mouseAvailable: false
+    property string mouseError: ""
+    property var pendingMouse: ({})
+    property int mouseRevision: 0
+    readonly property bool mouseBusy: mouseWriter.busy || mouseFlush.running
+
+    function refreshMouse()
+    {
+        // A full-device subscription can refresh before mouseWatching's binding updates.
+        if ((!watching && mouseWatchClients.length === 0) || mouseBusy) return;
+        if (mouseReader.busy) { mouseReader.again = true; return; }
+        mouseReader.again = false;
+        mouseReader.revision = mouseRevision;
+        mouseReader.run(Paths.commandFor("niri-config", ["mouse-read"]));
+    }
+    function receiveMouse(text)
+    {
+        const data = JSON.parse(text);
+        mouseAvailable = data.available;
+        mouse = Object.assign({}, data.mouse, pendingMouse);
+        mouseLoaded = true;
+    }
+    function setMouse(key, value)
+    {
+        if (!mouseLoaded || !mouseAvailable || mouse[key] === undefined) return;
+        if (typeof value === "number") value = Math.round(value * 1000) / 1000;
+        if (mouse[key] === value) return;
+        mouseRevision++;
+        mouse = Object.assign({}, mouse, {[key]: value});
+        pendingMouse = Object.assign({}, pendingMouse, {[key]: value});
+        mouseError = "";
+        mouseFlush.restart();
+    }
+    Timer
+    {
+        id: mouseFlush
+        interval: 350
+        onTriggered:
+        {
+            if (mouseWriter.busy) { restart(); return; }
+            if (Object.keys(serviceDevices.pendingMouse).length === 0) return;
+            const changes = serviceDevices.pendingMouse;
+            serviceDevices.pendingMouse = {};
+            mouseWriter.run(Paths.commandFor("niri-config", ["mouse", JSON.stringify(changes)]));
+        }
+    }
+    FileView
+    {
+        path: Paths.niriDir + "/06-user-input.kdl"
+        printErrors: false
+        watchChanges: serviceDevices.mouseWatching
+        onFileChanged: { reload(); serviceDevices.refreshMouse(); }
+    }
+    CommandProcess
+    {
+        id: mouseReader
+        property bool again: false
+        property int revision: 0
+        stdout: StdioCollector { id: mouseReadResult }
+        onCompleted: code =>
+        {
+            if (!serviceDevices.mouseBusy && revision === serviceDevices.mouseRevision)
+            {
+                if (code === 0)
+                {
+                    try
+                    {
+                        if (!serviceDevices.mouseAvailable) serviceDevices.mouseError = "";
+                        serviceDevices.receiveMouse(mouseReadResult.text);
+                    }
+                    catch (error) { serviceDevices.mouseError = String(error); }
+                }
+                else
+                {
+                    serviceDevices.mouseAvailable = false;
+                    serviceDevices.mouseLoaded = true;
+                    serviceDevices.mouseError = errorMessage(Tr.tr("service.devices.mouseReadFailed"));
+                }
+            }
+            if (again) serviceDevices.refreshMouse();
+        }
+    }
+    CommandProcess
+    {
+        id: mouseWriter
+        stdout: StdioCollector { id: mouseWriteResult }
+        onCompleted: code =>
+        {
+            if (code === 0)
+            {
+                try { serviceDevices.receiveMouse(mouseWriteResult.text); }
+                catch (error) { serviceDevices.mouseError = String(error); }
+            }
+            else
+            {
+                serviceDevices.mouseError = errorMessage(Tr.tr("service.devices.mouseSaveFailed"));
+            }
+            serviceDevices.refreshMouse();
+        }
     }
 
     property var usb: []

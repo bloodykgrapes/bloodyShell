@@ -27,7 +27,7 @@ SettingsPage
             label: Tr.tr("common.position")
             SettingsChoices
             {
-                options: [{ label: Tr.tr("common.top"), value: Enums.EdgeTop }, { label: Tr.tr("common.bottom"), value: Enums.EdgeBottom }, { label: Tr.tr("common.left"), value: Enums.EdgeLeft }, { label: Tr.tr("common.right"), value: Enums.EdgeRight }]
+                options: Registry.edgeOptions
                 current: Config.dockSide
                 onSelected: value => Config.set("dockSide", value)
             }
@@ -74,27 +74,13 @@ SettingsPage
             label: Tr.tr("common.dock")
             description: Tr.tr("settings.frame.styleHint")
             stacked: true
-            Row
+            SettingsStyleChoices
             {
-                id: styleCards
-                width: parent.width
-                spacing: 10
-
-                Repeater
-                {
-                    model: [Enums.InFrame, Enums.OutFrame, Enums.Filled, Enums.Islands]
-                    SettingsStyleCard
-                    {
-                        required property int modelData
-                        objectName: "frameStyle-dock-" + modelData
-                        kind: "frame"
-                        width: Math.min(150, (styleCards.width - styleCards.spacing * 3) / 4)
-                        value: modelData
-                        label: Tr.tr(modelData === Enums.InFrame ? "settings.frame.inFrame" : modelData === Enums.OutFrame ? "settings.frame.outFrame" : modelData === Enums.Filled ? "settings.frame.filled" : "settings.frame.islands")
-                        current: Config.dockType === modelData
-                        onClicked: Config.set("dockType", modelData)
-                    }
-                }
+                kind: "frame"
+                options: Registry.frameOptions
+                namePrefix: "frameStyle-dock-"
+                current: Config.dockType
+                onSelected: value => Config.set("dockType", value)
             }
         }
         SettingsRow

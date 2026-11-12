@@ -66,7 +66,7 @@ Column
             color: Theme.text1
             selectionColor: Theme.colorSelection
             font.family: Theme.fontText
-            font.pixelSize: Math.round(12 * Config.themeScale)
+            font.pixelSize: 12
             echoMode: field.conceal ? TextInput.Password : TextInput.Normal
             inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText | (field.conceal ? Qt.ImhSensitiveData : 0)
             onAccepted: field.accepted()

@@ -20,7 +20,7 @@ Item
     readonly property real shown: Math.max(0, Math.min(1, pointer.pressed ? pointer.dragValue : value))
     readonly property color fillColor: muted ? Theme.colorLine : Theme.colorAccent
     readonly property color fillText: Theme.lightForeground(fillPaint.color) ? "#ffffff" : "#000000"
-    readonly property real iconWidth: Math.max(36, appIcon !== "" ? Math.round(22 * Config.themeScale) + 16 : Math.round(18 * Config.themeScale) + 20)
+    readonly property real iconWidth: 38
     property real fraction: shown
 
     signal moved(real value)
@@ -30,7 +30,7 @@ Item
     {
         id: percentMetrics
         font.family: Theme.fontText
-        font.pixelSize: Math.round(12 * Config.themeScale)
+        font.pixelSize: 12
         font.weight: Font.DemiBold
         text: "100%"
     }

@@ -13,6 +13,16 @@ Item
     property var options: []
     property var current
     property bool wrap: false
+    readonly property var optionWidths:
+    {
+        // advanceWidth() does not register changes to the metrics' font.
+        optionMetrics.font;
+        return options.map(option => Math.ceil(optionMetrics.advanceWidth(labelOf(option))) + 24);
+    }
+    readonly property real preferredWidth: optionWidths.reduce((width, optionWidth) => width + optionWidth, 0) + Math.max(0, options.length - 1) * 2 + inset * 2
+    readonly property bool flowing: wrap || preferredWidth > width
+
+    FontMetrics { id: optionMetrics; font.family: Theme.fontText; font.pixelSize: 12; font.weight: Font.DemiBold }
 
     signal selected(var value)
 
@@ -21,18 +31,15 @@ Item
 
     readonly property int selectedIndex: options.findIndex(option => String(valueOf(option)) === String(current))
     readonly property real inset: 4
-    readonly property real segmentHeight: 28
-    readonly property color selectedColor: Theme.accentShell
-        ? Qt.hsla(Math.max(0, Theme.accent.hslHue), Theme.accent.hslSaturation, Theme.light ? 0.26 : 0.72, 1)
-        : Theme.text1
-    readonly property color selectedTextColor: Theme.lightForeground(selectedColor) ? "#ffffff" : "#000000"
+    readonly property real segmentHeight: Theme.settingsControlHeight - inset * 2
+    readonly property color selectedColor: Theme.accentShell ? Theme.colorSelection : Theme.colorRaised
 
-    implicitWidth: wrap ? 400 : segments.implicitWidth + inset * 2
-    implicitHeight: (wrap ? flow.implicitHeight : segmentHeight) + inset * 2
-    width: wrap && parent ? parent.width : implicitWidth
+    implicitWidth: wrap ? 400 : preferredWidth
+    implicitHeight: (flowing ? flow.implicitHeight : segmentHeight) + inset * 2
+    width: Theme.controlWidth(settingsChoices, implicitWidth)
     height: implicitHeight
     opacity: enabled ? 1 : 0.4
-    activeFocusOnTab: true
+    activeFocusOnTab: enabled && options.length > 0
 
     function move(offset)
     {
@@ -53,6 +60,13 @@ Item
 
     Rectangle
     {
+        anchors.fill: parent
+        radius: Theme.radiusMedium
+        color: Theme.colorField
+    }
+
+    Rectangle
+    {
         id: pill
 
         readonly property var target: settingsChoices.selectedIndex >= 0 && settingsChoices.selectedIndex < segmentRepeater.count
@@ -60,9 +74,9 @@ Item
         property bool settled: false
         Component.onCompleted: Qt.callLater(() => pill.settled = true)
 
-        visible: !settingsChoices.wrap && target !== null
+        visible: !settingsChoices.flowing && target !== null
         x: target ? segments.x + target.x : settingsChoices.inset
-        y: settingsChoices.inset + (Config.animationsFluid && target && target.hovered ? -1 : 0)
+        y: settingsChoices.inset
         width: target ? target.width : 0
         height: settingsChoices.segmentHeight
         radius: Theme.radiusMedium - 2
@@ -76,14 +90,13 @@ Item
             enabled: Config.animationsEnabled && pill.settled
             curve: Config.animationsFluid ? [0.2, 1.15, 0.3, 1.0, 1.0, 1.0] : Theme.easingEmphasized
         }
-        Glide on y { duration: Theme.animationDurationControl }
         Glide on width { enabled: Config.animationsEnabled && pill.settled }
     }
 
     Row
     {
         id: segments
-        visible: !settingsChoices.wrap
+        visible: !settingsChoices.flowing
         x: settingsChoices.inset
         y: settingsChoices.inset
         spacing: 2
@@ -91,7 +104,7 @@ Item
         Repeater
         {
             id: segmentRepeater
-            model: settingsChoices.wrap ? [] : settingsChoices.options
+            model: settingsChoices.flowing ? [] : settingsChoices.options
             delegate: option
         }
     }
@@ -99,7 +112,7 @@ Item
     Flow
     {
         id: flow
-        visible: settingsChoices.wrap
+        visible: settingsChoices.flowing
         x: settingsChoices.inset
         y: settingsChoices.inset
         width: Math.max(0, settingsChoices.width - settingsChoices.inset * 2)
@@ -107,7 +120,7 @@ Item
 
         Repeater
         {
-            model: settingsChoices.wrap ? settingsChoices.options : []
+            model: settingsChoices.flowing ? settingsChoices.options : []
             delegate: option
         }
     }
@@ -119,29 +132,25 @@ Item
         Item
         {
             id: segment
+            required property int index
             required property var modelData
-            readonly property bool hovered: area.containsMouse
             readonly property bool pressed: area.pressed
             readonly property bool isCurrent: String(settingsChoices.valueOf(modelData)) === String(settingsChoices.current)
 
-            width: settingsChoices.wrap ? Math.min(text.implicitWidth + 24, flow.width) : text.implicitWidth + 24
+            readonly property real preferredWidth: settingsChoices.optionWidths[index] || 24
+            width: settingsChoices.flowing ? Math.min(preferredWidth, flow.width) : preferredWidth
             height: settingsChoices.segmentHeight
             Item
             {
-                id: visual
                 anchors.fill: parent
-                scale: area.pressed ? 0.95 : Config.animationsFluid && area.containsMouse ? 1.025 : 1
+                scale: area.pressed ? 0.97 : 1
                 Spring on scale {}
-
-                property real lift: Config.animationsFluid && area.containsMouse ? -1 : 0
-                transform: Translate { y: visual.lift }
-                Glide on lift { duration: Theme.animationDurationControl }
 
                 Rectangle
                 {
                     anchors.fill: parent
                     radius: Theme.radiusMedium - 2
-                    color: area.pressed ? Theme.colorPressed : Theme.colorHoverStrong
+                    color: area.pressed ? Theme.colorPressed : Theme.colorHover
                     opacity: !segment.isCurrent && (area.pressed || area.containsMouse) ? 1 : 0
                     Smooth on opacity {}
                     Tint on color {}
@@ -152,7 +161,7 @@ Item
                     anchors.fill: parent
                     radius: Theme.radiusMedium - 2
                     color: settingsChoices.selectedColor
-                    visible: settingsChoices.wrap
+                    visible: settingsChoices.flowing
                     opacity: segment.isCurrent ? 1 : 0
                     scale: Config.animationsFluid ? 0.9 + 0.1 * opacity : 1
                     Smooth on opacity { duration: Theme.animationDurationControl }
@@ -166,7 +175,8 @@ Item
                     width: Math.max(0, parent.width - 20)
                     horizontalAlignment: Text.AlignHCenter
                     label: settingsChoices.labelOf(segment.modelData)
-                    color: segment.isCurrent ? settingsChoices.selectedTextColor : Theme.text2
+                    color: segment.isCurrent ? Theme.text1 : Theme.text2
+                    font.weight: segment.isCurrent ? Font.DemiBold : Font.Normal
                     scale: area.pressed ? 0.96 : 1
                     Spring on scale {}
                     Tint on color {}
@@ -181,7 +191,7 @@ Item
                 cursorShape: Qt.PointingHandCursor
                 onClicked:
                 {
-                    settingsChoices.forceActiveFocus();
+                    settingsChoices.forceActiveFocus(Qt.MouseFocusReason);
                     settingsChoices.selected(settingsChoices.valueOf(segment.modelData));
                 }
             }

@@ -20,7 +20,7 @@ Item
     signal clicked()
 
     width: parent ? parent.width : 200
-    height: 34
+    height: 36
     activeFocusOnTab: enabled
     Keys.onSpacePressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
     Keys.onReturnPressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
@@ -83,6 +83,7 @@ Item
     ShellText
     {
         id: trailingLabel
+        width: Math.min(implicitWidth, menuItem.width * 0.4)
         anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
         label: menuItem.trailing
         color: Theme.text3

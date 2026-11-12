@@ -58,13 +58,15 @@ Column
 
     Column
     {
-        x: 4
-        width: parent.width - 8
-        spacing: 3
+        visible: settingsGroup.title !== "" || settingsGroup.subtitle !== ""
+        width: parent.width
+        spacing: 4
 
         ShellText
         {
+            width: parent.width
             label: settingsGroup.title
+            wrapMode: Text.Wrap
             size: 13
             color: Theme.text1
             font.weight: Font.DemiBold

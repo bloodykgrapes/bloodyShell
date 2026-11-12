@@ -16,6 +16,15 @@ Item
     signal moved(real value)
 
     readonly property real shown: area.pressed ? area.dragValue : value
+    property real fraction: ratio(shown)
+    property bool settled: false
+
+    Component.onCompleted: Qt.callLater(() => settled = true)
+    Glide on fraction
+    {
+        enabled: Config.animationsEnabled && settingsSlider.settled && !area.pressed
+        duration: Theme.animationDurationControl
+    }
 
     function ratio(v) { return to > from ? Math.max(0, Math.min(1, (v - from) / (to - from))) : 0 }
     function adjust(v)
@@ -25,9 +34,10 @@ Item
         if (next !== value) moved(next);
     }
 
-    implicitWidth: 240
-    width: implicitWidth
-    height: 28
+    property real preferredWidth: 240
+    implicitWidth: Math.round(preferredWidth)
+    width: Theme.controlWidth(settingsSlider, implicitWidth)
+    height: Theme.settingsControlHeight
     opacity: enabled ? 1 : 0.4
     activeFocusOnTab: enabled
     Keys.onRightPressed: adjust(value + step)
@@ -51,35 +61,75 @@ Item
     {
         id: track
 
-        anchors { left: parent.left; right: percent.left; rightMargin: 12; verticalCenter: parent.verticalCenter }
-        height: 6
+        readonly property real inset: Math.min(9, width / 2)
+        readonly property real travel: Math.max(0, width - inset * 2)
+        readonly property real position: inset + travel * settingsSlider.fraction
+
+        anchors { left: parent.left; right: readout.left; rightMargin: 12; verticalCenter: parent.verticalCenter }
+        height: 8
 
         Rectangle
         {
             anchors.fill: parent
             radius: height / 2
-            color: Theme.colorLine
+            color: Theme.colorField
         }
 
         Rectangle
         {
-            width: parent.width * settingsSlider.ratio(settingsSlider.shown)
+            width: track.position
             height: parent.height
             radius: height / 2
             color: Theme.colorAccent
+        }
 
-            Glide on width { enabled: Config.animationsEnabled && !area.pressed }
+        Rectangle
+        {
+            x: track.position - width / 2
+            anchors.verticalCenter: parent.verticalCenter
+            width: 32
+            height: width
+            radius: width / 2
+            color: Theme.colorAccent
+            opacity: area.pressed ? 0.18 : area.containsMouse || settingsSlider.activeFocus ? 0.1 : 0
+            scale: area.pressed || area.containsMouse || settingsSlider.activeFocus ? 1 : 0.7
+
+            Smooth on opacity {}
+            Smooth on scale {}
+        }
+
+        Rectangle
+        {
+            x: track.position - width / 2
+            anchors.verticalCenter: parent.verticalCenter
+            width: 18
+            height: width
+            radius: width / 2
+            color: Theme.colorAccent
+            scale: area.pressed ? 0.9 : area.containsMouse ? 1.1 : 1
+
+            Smooth on scale {}
         }
     }
 
-    ShellText
+    Rectangle
     {
-        id: percent
+        id: readout
         anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-        width: Math.round(36 * Config.themeScale)
-        horizontalAlignment: Text.AlignRight
-        label: Math.round(settingsSlider.ratio(settingsSlider.shown) * 100) + "%"
-        font.family: Theme.fontMono
+        width: 48
+        height: 30
+        radius: Theme.radiusMedium
+        color: Theme.colorField
+
+        ShellText
+        {
+            anchors.centerIn: parent
+            label: Math.round(settingsSlider.ratio(settingsSlider.shown) * 100) + "%"
+            color: area.pressed || settingsSlider.activeFocus ? Theme.text1 : Theme.text2
+            font.family: Theme.fontMono
+
+            Tint on color {}
+        }
     }
 
     MouseArea
@@ -90,14 +140,15 @@ Item
 
         function update(x)
         {
-            if (track.width <= 0 || settingsSlider.to <= settingsSlider.from) return;
-            dragValue = settingsSlider.from + Math.max(0, Math.min(1, x / track.width)) * (settingsSlider.to - settingsSlider.from);
+            if (track.travel <= 0 || settingsSlider.to <= settingsSlider.from) return;
+            dragValue = settingsSlider.from + Math.max(0, Math.min(1, (x - track.inset) / track.travel)) * (settingsSlider.to - settingsSlider.from);
             settingsSlider.moved(dragValue);
         }
 
         x: track.x
         width: track.width
         height: parent.height
+        hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         preventStealing: true
 

@@ -32,12 +32,8 @@ Item
     {
         id: slotA
         side: barMenu.side
-        anchors.top: barMenu.side === Enums.EdgeTop ? parent.top : undefined
-        anchors.bottom: barMenu.side === Enums.EdgeBottom ? parent.bottom : undefined
-        anchors.left: barMenu.side === Enums.EdgeLeft ? parent.left : undefined
-        anchors.right: barMenu.side === Enums.EdgeRight ? parent.right : undefined
-        x: barMenu.horizontal ? barMenu.alongPos(width) : 0
-        y: barMenu.horizontal ? 0 : barMenu.alongPos(height)
+        x: barMenu.horizontal ? barMenu.alongPos(width) : barMenu.side === Enums.EdgeRight ? barMenu.width - width : 0
+        y: barMenu.horizontal ? (barMenu.side === Enums.EdgeBottom ? barMenu.height - height : 0) : barMenu.alongPos(height)
         enabled: barMenu.front === slotA && barMenu.active
         z: barMenu.front === slotA ? 1 : 0
     }
@@ -46,25 +42,11 @@ Item
     {
         id: slotB
         side: barMenu.side
-        anchors.top: barMenu.side === Enums.EdgeTop ? parent.top : undefined
-        anchors.bottom: barMenu.side === Enums.EdgeBottom ? parent.bottom : undefined
-        anchors.left: barMenu.side === Enums.EdgeLeft ? parent.left : undefined
-        anchors.right: barMenu.side === Enums.EdgeRight ? parent.right : undefined
-        x: barMenu.horizontal ? barMenu.alongPos(width) : 0
-        y: barMenu.horizontal ? 0 : barMenu.alongPos(height)
+        x: barMenu.horizontal ? barMenu.alongPos(width) : barMenu.side === Enums.EdgeRight ? barMenu.width - width : 0
+        y: barMenu.horizontal ? (barMenu.side === Enums.EdgeBottom ? barMenu.height - height : 0) : barMenu.alongPos(height)
         enabled: barMenu.front === slotB && barMenu.active
         z: barMenu.front === slotB ? 1 : 0
     }
-
-    function alignSlots()
-    {
-        for (const slot of [slotA, slotB])
-        {
-            if (horizontal) slot.x = Qt.binding(() => barMenu.horizontal ? barMenu.alongPos(slot.width) : 0);
-            else slot.y = Qt.binding(() => barMenu.horizontal ? 0 : barMenu.alongPos(slot.height));
-        }
-    }
-    onSideChanged: Qt.callLater(alignSlots)
 
     function sync()
     {

@@ -13,8 +13,8 @@ OverlayView
     Content.HelperContent
     {
         anchors.centerIn: parent
-        width: Math.min(720, parent.width - 48)
-        height: Math.min(600, parent.height - 48)
+        width: Math.max(0, Math.min(800, parent.width - 48))
+        height: Math.max(0, Math.min(640, parent.height - 48))
         opacity: helper.reveal
         scale: 1 - 0.05 * helper.settle
         transform: Translate { y: helper.lift }

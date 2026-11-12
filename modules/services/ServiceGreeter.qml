@@ -16,11 +16,22 @@ Singleton
         animations: Config.themeAnimations,
         language: Config.shellLanguage,
         clock24: Config.barWidgetClock24,
-        avatar: ServiceUser.avatar
+        avatar: ServiceUser.avatar,
+        keyboardLayouts: ServiceKeyboard.layouts
     })
 
     onAppearanceChanged: if (Config.initialized) update.restart()
     Component.onCompleted: if (Config.initialized) update.restart()
+
+    Connections
+    {
+        target: Config
+        function onGreeterSyncChanged()
+        {
+            if (Config.initialized) update.restart();
+            else update.stop();
+        }
+    }
 
     Timer
     {
@@ -28,8 +39,10 @@ Singleton
         interval: 700
         onTriggered:
         {
+            if (!Config.initialized) return;
             if (exporter.busy) { restart(); return; }
-            exporter.run(["python3", Paths.runtimeScriptsDir + "/greeter-settings", Config.file, "/var/lib/bloodyShell", "--if-configured"]);
+            const layouts = ServiceKeyboard.layouts.length ? ServiceKeyboard.layouts : [{layout: "us", variant: ""}];
+            exporter.run(Paths.commandFor("greeter-settings", [Config.file, "/var/lib/bloodyShell", "--if-configured", "--keyboard-layouts", JSON.stringify(layouts)]));
         }
     }
 

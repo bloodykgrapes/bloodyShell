@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix="bloodyshell-island-") as temporary:
     stub(base, "core", "Icon", 'property string bell: ""')
     stub(base, "services", "ServiceLock", 'property bool locked: false')
     stub(base, "services", "ServiceMedia", 'property bool playing: false\nproperty string title: "Track"\nproperty string artist: "Artist"\nproperty string art: ""')
-    stub(base, "services", "ServiceCompositor", 'property string focusedOutput: "A"')
+    stub(base, "services", "ServiceCompositor", 'property string focusedOutput: "A"; property var fullscreenOutputs: []; function fullscreenOnOutput(name) { return fullscreenOutputs.includes(name); }')
     stub(base, "services", "ServiceOSD", '''
     property bool active: false
     property string text: "72%"
@@ -82,6 +82,8 @@ ShellRoot
                         tests.check(ServiceIsland.view("A").kind === "", "Idle island was visible");
                         ServiceMedia.playing = true;
                         tests.check(ServiceIsland.view("A").kind === "media", "Playing media missing");
+                        ServiceCompositor.fullscreenOutputs = ["A"];
+                        tests.check(ServiceIsland.view("A").kind === "" && ServiceIsland.view("B").kind === "media", "Fullscreen did not suppress only its own music widget");
                         ServiceOSD.show();
                         tests.check(ServiceIsland.view("A").kind === "osd" && ServiceIsland.view("B").kind === "media", "Value event routing or priority failed");
                         ServiceNotifications.notificationReceived(a); ServiceNotifications.notificationReceived(b);
@@ -91,6 +93,7 @@ ShellRoot
                         tests.check(ServiceIsland.notice.notification === a, "Hidden notification expired behind a value event");
                         ServiceOSD.hide();
                         tests.check(ServiceIsland.view("A").kind === "notification", "Notification did not resume after OSD");
+                        ServiceCompositor.fullscreenOutputs = [];
                         break;
                     case 11: tests.check(ServiceIsland.notice && ServiceIsland.notice.notification === b, "Notification queue did not advance"); break;
                     case 15:
@@ -141,7 +144,7 @@ ShellRoot
     }
 }
 ''')
-    env = dict(os.environ, QT_QPA_PLATFORM="offscreen", XDG_RUNTIME_DIR=str(base / "runtime"), XDG_CACHE_HOME=str(base / "cache"))
+    env = dict(os.environ, QT_QPA_PLATFORM="offscreen", XDG_RUNTIME_DIR=str(base / "runtime"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"))
     env.pop("WAYLAND_DISPLAY", None)
     result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=10)
     print(result.stdout)

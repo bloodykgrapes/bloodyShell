@@ -7,6 +7,39 @@ Singleton
 {
     id: registry
 
+    readonly property var edgeOptions: [
+        {label: Tr.tr("common.top"), value: Enums.EdgeTop}, {label: Tr.tr("common.bottom"), value: Enums.EdgeBottom},
+        {label: Tr.tr("common.left"), value: Enums.EdgeLeft}, {label: Tr.tr("common.right"), value: Enums.EdgeRight}
+    ]
+    readonly property var frameOptions: [
+        {label: Tr.tr("settings.frame.inFrame"), value: Enums.InFrame}, {label: Tr.tr("settings.frame.outFrame"), value: Enums.OutFrame},
+        {label: Tr.tr("settings.frame.filled"), value: Enums.Filled}, {label: Tr.tr("settings.frame.islands"), value: Enums.Islands}
+    ]
+    readonly property var animationOptions: [
+        {label: Tr.tr("settings.appearance.minimal"), value: Enums.AnimationsDisabled},
+        {label: Tr.tr("settings.appearance.standard"), value: Enums.AnimationsStandard},
+        {label: Tr.tr("settings.appearance.fluid"), value: Enums.AnimationsFluid}
+    ]
+    readonly property var themeOptions: [
+        {label: Tr.tr("settings.appearance.light"), value: Enums.ThemeLight},
+        {label: Tr.tr("settings.appearance.dark"), value: Enums.ThemeDark}
+    ]
+    readonly property var menuOptions: [
+        {label: Tr.tr("common.default"), value: Enums.MenuDefault},
+        {label: Tr.tr("common.floating"), value: Enums.MenuFloating}
+    ]
+    readonly property var layoutShortcutOptions: [
+        {label: Tr.tr("settings.timeLanguage.superSpace"), value: "grp:win_space_toggle"},
+        {label: Tr.tr("settings.timeLanguage.altShift"), value: "grp:alt_shift_toggle"},
+        {label: Tr.tr("settings.timeLanguage.ctrlShift"), value: "grp:ctrl_shift_toggle"},
+        {label: Tr.tr("settings.timeLanguage.altSpace"), value: "grp:alt_space_toggle"},
+        {label: Tr.tr("settings.timeLanguage.ctrlSpace"), value: "grp:ctrl_space_toggle"},
+        {label: Tr.tr("settings.timeLanguage.capsLock"), value: "grp:caps_toggle"},
+        {label: Tr.tr("settings.timeLanguage.bothShifts"), value: "grp:shifts_toggle"},
+        {label: Tr.tr("settings.timeLanguage.rightAlt"), value: "grp:toggle"},
+        {label: Tr.tr("common.none"), value: ""}
+    ]
+
     readonly property var windows:
     [
         "launcher",
@@ -58,7 +91,6 @@ Singleton
         { id: "bar",           group: 2, title: Tr.tr("common.bar"),                icon: Icon.settingsBar,          page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageBar.qml") },
         { id: "dock",          group: 2, title: Tr.tr("common.dock"),               icon: Icon.settingsDock,         page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageDock.qml") },
         { id: "island",        group: 2, title: Tr.tr("shell.dynamicIsland"),                 icon: Icon.settingsOSD,          page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageIsland.qml") },
-        { id: "compositor",    group: 2, title: Tr.tr("settings.about.compositor"), icon: Icon.settingsCompositor,   page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageCompositor.qml") },
         { id: "shortcuts",     group: 2, title: Tr.tr("settings.shortcuts.title"), icon: Icon.keyboard,             page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageShortcuts.qml") },
 
         { id: "updates",       group: 3, title: Tr.tr("common.updates"),            icon: Icon.settingsUpdates,      page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageUpdates.qml") },

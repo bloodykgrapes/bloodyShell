@@ -10,7 +10,6 @@ Item
 
     property string wallpaper: Config.wallpaperCurrent
     signal clicked()
-    RenderActivity { id: activity; target: preview }
 
     implicitWidth: 344
     implicitHeight: 172
@@ -35,12 +34,12 @@ Item
             size: 28
             opacity: 0.4
         }
-        Image
+        WallpaperImage
         {
             id: picture
             objectName: "wallpaperPreviewImage"
             anchors.fill: parent
-            source: activity.active && preview.wallpaper !== "" ? "file://" + String(preview.wallpaper).replace(/^file:\/\//, "") : ""
+            wallpaper: preview.wallpaper
             sourceSize: Qt.size(720, 360)
             fillMode: Image.PreserveAspectCrop
             asynchronous: true

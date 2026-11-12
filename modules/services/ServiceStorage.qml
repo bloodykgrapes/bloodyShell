@@ -41,7 +41,7 @@ Singleton
     property string pkexecCommand: ""
     property bool pythonAvailable: false
     readonly property bool persistentAvailable: pkexecCommand !== "" && pythonAvailable
-    readonly property string helper: Paths.runtimeScriptsDir + "/storage"
+    readonly property var helper: Paths.commandFor("storage")
     property string mountMode: "once"
     property string mountPoint: ""
     property string activeMode: "once"
@@ -220,7 +220,7 @@ Singleton
         activeMode = request.mode;
         if (request.mode === "persistent")
         {
-            mountWriter.run([pkexecCommand, helper, "mount", request.path, request.uuid, request.filesystem, request.target]);
+            mountWriter.run([pkexecCommand].concat(helper, ["mount", request.path, request.uuid, request.filesystem, request.target]));
             return;
         }
         const command = [udisksCommand, "mount", "--block-device", device.path];

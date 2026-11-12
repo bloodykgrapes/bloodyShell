@@ -23,7 +23,7 @@ SettingsPage
     component AccountInput: SettingsInput
     {
         required property string field
-        width: 300
+        preferredWidth: 300
         enabled: ServiceUser.loaded && !ServiceUser.busy && !ServiceUser.confirming
         text: String(ServiceUser.draft[field] || "")
         onTextEdited: value => ServiceUser.edit(field, value)
@@ -129,7 +129,7 @@ SettingsPage
             label: Tr.tr("settings.user.loginShell")
             SettingsCombo
             {
-                width: 300
+                preferredWidth: 300
                 enabled: ServiceUser.loaded && !ServiceUser.busy && !ServiceUser.confirming
                 options: ServiceUser.shells.map(shell => ({ label: shell, value: shell }))
                 current: ServiceUser.draft.loginShell || ""
@@ -168,40 +168,18 @@ SettingsPage
         }
     }
 
-    SettingsGroup
+    SettingsConfirmation
     {
-        visible: ServiceUser.confirming
+        objectName: "accountConfirmation"
+        host: pageUser
+        visible: pageUser.active && ServiceUser.confirming
         title: Tr.tr("settings.user.confirmChanges")
-        subtitle: Tr.tr("settings.user.confirmHint")
-
-        Repeater
-        {
-            model: ServiceUser.confirmationChanges
-            SettingsRow
-            {
-                required property var modelData
-                label: modelData.label
-                description: (modelData.before || Tr.tr("common.empty")) + " → " + (modelData.after || Tr.tr("common.empty"))
-            }
-        }
-        SettingsRow
-        {
-            label: Tr.tr("settings.user.readyToApply")
-            Row
-            {
-                spacing: 8
-                SettingsButton
-                {
-                    text: Tr.tr("common.cancel")
-                    onClicked: ServiceUser.cancelApply()
-                }
-                SettingsButton
-                {
-                    text: Tr.tr("settings.user.confirmApply")
-                    onClicked: ServiceUser.confirmApply()
-                }
-            }
-        }
+        description: Tr.tr("settings.user.confirmHint") + "\n\n" + ServiceUser.confirmationChanges.map(change =>
+            change.label + ":\n" + (change.before || Tr.tr("common.empty")) + " → " + (change.after || Tr.tr("common.empty"))).join("\n\n")
+        acceptText: Tr.tr("settings.user.confirmApply")
+        acceptEnabled: !ServiceUser.busy
+        onAccepted: ServiceUser.confirmApply()
+        onRejected: ServiceUser.cancelApply()
     }
 
     SettingsRow

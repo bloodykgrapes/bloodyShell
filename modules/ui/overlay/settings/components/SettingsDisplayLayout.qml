@@ -4,6 +4,7 @@ import "../../../../animations"
 import "../../../../common"
 import "../../../../core"
 import "../../../../services"
+import "../../../../src/DisplayLayout.js" as DisplayLayout
 
 Item
 {
@@ -12,53 +13,64 @@ Item
     property string selected: ""
     signal picked(string name)
 
-    width: 520
+    implicitWidth: 520
+    width: parent ? parent.width : implicitWidth
     height: 220
+    clip: true
 
-    readonly property var screens: ServiceDisplay.outputs.filter(o => o.logical).map(o => ({
-        name: o.name, x: o.logical.x, y: o.logical.y, w: o.logical.width, h: o.logical.height,
-        label: o.name, detail: o.current_mode !== null && o.modes[o.current_mode] ? o.modes[o.current_mode].width + " × " + o.modes[o.current_mode].height : ""
-    }))
+    readonly property var screens: ServiceDisplay.outputs.filter(output => output.logical).map(output =>
+    {
+        const mode = output.current_mode !== null ? output.modes[output.current_mode] : null;
+        return {
+            name: output.name,
+            x: output.logical.x, y: output.logical.y,
+            w: output.logical.width, h: output.logical.height,
+            detail: mode ? mode.width + " × " + mode.height : ""
+        };
+    })
 
     readonly property real pad: 18
-    property var frame: fit(screens)
-    function fit(list)
-    {
-        if (list.length === 0) return { s: 1, ox: 0, oy: 0 };
-        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-        for (const m of list) { x0 = Math.min(x0, m.x); y0 = Math.min(y0, m.y); x1 = Math.max(x1, m.x + m.w); y1 = Math.max(y1, m.y + m.h) }
-
-        const s = Math.min((width - pad * 2) / ((x1 - x0) * 1.6), (height - pad * 2) / ((y1 - y0) * 1.6));
-        return { s: s, ox: width / 2 - (x0 + x1) / 2 * s, oy: height / 2 - (y0 + y1) / 2 * s };
-    }
-    property bool dragging: false
-
+    readonly property var positions: screens.map(m => Object.assign({}, m, moved[m.name] || {}))
+    readonly property var frame: dragging ? drag.frame : DisplayLayout.fit(positions, width, height, pad)
+    readonly property bool dragging: drag !== null
+    readonly property var preview: dragging ? drag.position : null
+    readonly property string geometry: JSON.stringify(screens)
+    property var drag: null
     property var moved: ({})
-    onScreensChanged: { moved = {}; if (!dragging) frame = fit(screens) }
 
-    function snap(name, x, y, w, h)
+    onScreensChanged: moved = {}
+    onGeometryChanged: cancelDrag()
+    onWidthChanged: cancelDrag()
+    onHeightChanged: cancelDrag()
+    onVisibleChanged: if (!visible) cancelDrag()
+    onEnabledChanged: if (!enabled) cancelDrag()
+
+    function beginDrag(name)
     {
-        const others = screens.filter(m => m.name !== name);
-        if (others.length === 0) return { x: Math.round(x), y: Math.round(y) };
-        const near = 0.12;
-        let best = null, bestD = Infinity;
-        for (const r of others)
-        {
-            const alignY = v => { for (const t of [r.y, r.y + r.h - h, r.y + (r.h - h) / 2]) if (Math.abs(v - t) < h * near) return t; return Math.max(r.y - h + 1, Math.min(r.y + r.h - 1, v)) };
-            const alignX = v => { for (const t of [r.x, r.x + r.w - w, r.x + (r.w - w) / 2]) if (Math.abs(v - t) < w * near) return t; return Math.max(r.x - w + 1, Math.min(r.x + r.w - 1, v)) };
-            const options = [
-                { x: r.x - w,   y: alignY(y) },
-                { x: r.x + r.w, y: alignY(y) },
-                { x: alignX(x), y: r.y - h },
-                { x: alignX(x), y: r.y + r.h },
-            ];
-            for (const o of options)
-            {
-                const d = Math.hypot(o.x - x, o.y - y);
-                if (d < bestD) { bestD = d; best = o; }
-            }
-        }
-        return { x: Math.round(best.x), y: Math.round(best.y) };
+        drag = { name: name, frame: frame, position: null };
+    }
+
+    function updatePreview(name, x, y, w, h)
+    {
+        if (!dragging || drag.name !== name) return;
+        const moving = { name: name, x: (x - frame.ox) / frame.s, y: (y - frame.oy) / frame.s, w: w, h: h };
+        drag = Object.assign({}, drag, { position: DisplayLayout.snap(positions, moving, 8 / frame.s) });
+    }
+
+    function cancelDrag()
+    {
+        drag = null;
+    }
+
+    function finishDrag(name)
+    {
+        if (!dragging || drag.name !== name) return;
+        const p = preview;
+        const before = positions.find(m => m.name === name);
+        const changed = p && before && (p.x !== before.x || p.y !== before.y);
+        if (changed) moved = Object.assign({}, moved, { [name]: p });
+        cancelDrag();
+        if (changed) ServiceDisplay.change(name, "position", p);
     }
 
     Rectangle
@@ -68,47 +80,83 @@ Item
         color: Theme.colorField
     }
 
+    Rectangle
+    {
+        readonly property var screen: settingsDisplayLayout.dragging ? settingsDisplayLayout.screens.find(m => m.name === settingsDisplayLayout.drag.name) : undefined
+        visible: settingsDisplayLayout.preview !== null && screen !== undefined
+        x: settingsDisplayLayout.frame.ox + (settingsDisplayLayout.preview ? settingsDisplayLayout.preview.x : 0) * settingsDisplayLayout.frame.s
+        y: settingsDisplayLayout.frame.oy + (settingsDisplayLayout.preview ? settingsDisplayLayout.preview.y : 0) * settingsDisplayLayout.frame.s
+        width: screen ? screen.w * settingsDisplayLayout.frame.s : 0
+        height: screen ? screen.h * settingsDisplayLayout.frame.s : 0
+        radius: Theme.radiusMedium
+        color: Qt.rgba(Theme.colorAccent.r, Theme.colorAccent.g, Theme.colorAccent.b, 0.12)
+        border.width: 2
+        border.color: Theme.colorAccent
+    }
+
     Repeater
     {
-        model: settingsDisplayLayout.screens
+        model: settingsDisplayLayout.screens.length
 
         Rectangle
         {
             id: tile
 
-            required property var modelData
+            required property int index
+            readonly property var modelData: settingsDisplayLayout.screens[index] || { name: "", x: 0, y: 0, w: 0, h: 0, detail: "" }
             readonly property bool current: modelData.name === settingsDisplayLayout.selected
+            readonly property bool moving: settingsDisplayLayout.dragging && settingsDisplayLayout.drag.name === modelData.name
+            objectName: "displayTile-" + modelData.name
 
-            property real dragX: 0
-            property real dragY: 0
             readonly property var at: settingsDisplayLayout.moved[modelData.name] || modelData
-            x: area.drag.active ? dragX : settingsDisplayLayout.frame.ox + at.x * settingsDisplayLayout.frame.s
-            y: area.drag.active ? dragY : settingsDisplayLayout.frame.oy + at.y * settingsDisplayLayout.frame.s
+            x: moving ? dragProxy.x : settingsDisplayLayout.frame.ox + at.x * settingsDisplayLayout.frame.s
+            y: moving ? dragProxy.y : settingsDisplayLayout.frame.oy + at.y * settingsDisplayLayout.frame.s
             width: Math.max(24, modelData.w * settingsDisplayLayout.frame.s)
             height: Math.max(16, modelData.h * settingsDisplayLayout.frame.s)
-            z: area.drag.active ? 2 : current ? 1 : 0
+            z: moving ? 2 : current ? 1 : 0
+            opacity: moving ? 0.65 : 1
 
             radius: Theme.radiusMedium
             color: current ? Theme.colorSelection : Theme.colorHover
             border.width: current ? 2 : 1
             border.color: current ? Theme.colorAccent : Theme.colorLine
             Tint on color {}
-            Behavior on x { enabled: Config.animationsEnabled && !area.drag.active; NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-            Behavior on y { enabled: Config.animationsEnabled && !area.drag.active; NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            Smooth on x { duration: 220; enabled: Config.animationsEnabled && !settingsDisplayLayout.dragging }
+            Smooth on y { duration: 220; enabled: Config.animationsEnabled && !settingsDisplayLayout.dragging }
 
             Column
             {
                 anchors.centerIn: parent
+                width: Math.max(0, parent.width - 12)
                 spacing: 2
-                ShellText { anchors.horizontalCenter: parent.horizontalCenter; label: tile.modelData.label; size: 12; color: Theme.text1; font.weight: Font.DemiBold }
-                ShellText { anchors.horizontalCenter: parent.horizontalCenter; label: tile.modelData.detail; size: 10; color: Theme.text3 }
+                ShellText
+                {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
+                    label: tile.modelData.name
+                    size: 12
+                    color: Theme.text1
+                    font.weight: Font.DemiBold
+                }
+                ShellText
+                {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
+                    label: tile.modelData.detail
+                    size: 10
+                    color: Theme.text3
+                }
             }
 
             MouseArea
             {
                 id: area
+                objectName: "displayDrag-" + tile.modelData.name
                 anchors.fill: parent
                 cursorShape: drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+                preventStealing: true
 
                 drag.target: settingsDisplayLayout.screens.length > 1 ? dragProxy : null
                 drag.threshold: 4
@@ -118,32 +166,26 @@ Item
                     settingsDisplayLayout.picked(tile.modelData.name);
                     dragProxy.x = tile.x;
                     dragProxy.y = tile.y;
-                    tile.dragX = tile.x;
-                    tile.dragY = tile.y;
                 }
                 drag.onActiveChanged:
                 {
-                    if (drag.active) { settingsDisplayLayout.dragging = true; return; }
-
-                    const s = settingsDisplayLayout.frame.s;
-                    const p = settingsDisplayLayout.snap(tile.modelData.name, (tile.dragX - settingsDisplayLayout.frame.ox) / s, (tile.dragY - settingsDisplayLayout.frame.oy) / s, tile.modelData.w, tile.modelData.h);
-                    settingsDisplayLayout.dragging = false;
-                    if (p.x !== tile.modelData.x || p.y !== tile.modelData.y)
+                    if (drag.active)
                     {
-                        const m = Object.assign({}, settingsDisplayLayout.moved);
-                        m[tile.modelData.name] = p;
-                        settingsDisplayLayout.moved = m;
-                        ServiceDisplay.change(tile.modelData.name, "position", p);
+                        settingsDisplayLayout.beginDrag(tile.modelData.name);
+                        dragProxy.updatePreview();
                     }
                 }
+                onReleased: settingsDisplayLayout.finishDrag(tile.modelData.name)
+                onCanceled: settingsDisplayLayout.cancelDrag()
             }
 
             Item
             {
                 id: dragProxy
                 parent: settingsDisplayLayout
-                onXChanged: if (area.drag.active) tile.dragX = x
-                onYChanged: if (area.drag.active) tile.dragY = y
+                function updatePreview() { settingsDisplayLayout.updatePreview(tile.modelData.name, x, y, tile.modelData.w, tile.modelData.h); }
+                onXChanged: updatePreview()
+                onYChanged: updatePreview()
             }
         }
     }

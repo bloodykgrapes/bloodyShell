@@ -27,7 +27,6 @@ Singleton
     readonly property var  style: styles[light ? Enums.ThemeLight : Enums.ThemeDark]
     readonly property bool light: Config.themeStyle === Enums.ThemeLight
 
-    readonly property real ink: light ? 0 : 1
     function inkAlpha(a) { return Qt.rgba(text1.r, text1.g, text1.b, a) }
 
     readonly property color colorSolid: style[0]
@@ -68,8 +67,6 @@ Singleton
     readonly property color colorCritical:  light ? "#b42332" : "#ff6b6b"
     readonly property color colorAttention: light ? "#874500" : "#ff9f0a"
 
-    readonly property int borderWidth: Config.themeBorder ? 1 : 0
-
     readonly property color frameColor: tinted(light ? "#f5f5f7" : accentShell ? "#08080a" : "#000000", 0.24)
     readonly property int frameThickness: Math.max(0, Math.min(8, Config.frameThickness))
     readonly property int frameRadius: 24
@@ -84,7 +81,6 @@ Singleton
     readonly property real barThickness:     44
     readonly property real barVerticalWidth: 38
     readonly property int  barPadding:       10
-    readonly property int  barMargin:        10
     readonly property int  barRadius:        22
     readonly property int  barSpacing:       10
     readonly property int  barReveal:        4
@@ -95,7 +91,6 @@ Singleton
     readonly property int barWidgetRadius:  barWidgetHeight / 2
 
     readonly property int barGroupThickness:  barWidgetHeight + 4
-    readonly property int barGroupRadius:     barGroupThickness / 2
 
     readonly property int titleMaxWidth: 200
 
@@ -120,8 +115,21 @@ Singleton
 
     readonly property int settingsWidth:   1080
     readonly property int settingsHeight:  720
-    readonly property int settingsSidebar: 232
+    readonly property int settingsSidebar: 224
     readonly property int settingsRadius:  24
+    readonly property int settingsControlHeight: 36
+    readonly property int settingsRowHeight: 64
+    readonly property int settingsRowInset: 20
+    readonly property int settingsRowGap: 24
+    readonly property int settingsSectionGap: 24
+    readonly property int settingsTabHeight: 36
+
+    function controlWidth(item, preferred)
+    {
+        for (let parent = item.parent; parent; parent = parent.parent)
+            if (parent.controlAvailableWidth !== undefined) return Math.min(preferred, parent.controlAvailableWidth);
+        return preferred;
+    }
 
     readonly property color settingsColorBackground: colorSolid
     readonly property color settingsColorSidebar:    style[1]

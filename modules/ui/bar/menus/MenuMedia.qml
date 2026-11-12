@@ -1,11 +1,9 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Shapes
 import Quickshell.Services.Mpris
 import Quickshell.Widgets
 
-import "../../../src/Visualizer.js" as Visualizer
 import "../../../animations"
 import "../../../common"
 import "../../../core"
@@ -15,7 +13,23 @@ Menu
 {
     id: menuMedia
 
-    implicitWidth: 320
+    implicitWidth: 360
+    centerOnWidget: true
+    spacing: 10
+
+    function focusControl(item)
+    {
+        if (MenuState.menuActive)
+        {
+            for (let owner = menuMedia; owner; owner = owner.parent)
+            {
+                if (owner !== MenuState.menuOwner) continue;
+                MenuState.menuKeyboard = true;
+                break;
+            }
+        }
+        item.forceActiveFocus(Qt.MouseFocusReason);
+    }
 
     readonly property bool visualizerWanted: menuMedia.active && Config.animationsEnabled
     readonly property bool positionWanted: menuMedia.active && ServiceMedia.length > 0
@@ -32,158 +46,139 @@ Menu
         ServiceMedia.setPositionActive(menuMedia, false);
     }
 
-    ClippingRectangle
-    {
-        id: spectrum
-
-        parent: menuMedia
-        z: -1
-        anchors.fill: parent
-        anchors.bottomMargin: 9
-        radius: 9
-        color: "transparent"
-
-        readonly property bool live: menuMedia.visualizerWanted && ServiceMedia.levels.length > 0
-        opacity: live ? 1 : 0
-        Smooth on opacity { duration: 500 }
-        visible: opacity > 0
-
-        Equalizer
-        {
-            anchors {
-                left: parent.left
-                right: parent.right
-                bottom: parent.bottom
-            }
-
-            radius: 1
-            height: Math.round(parent.height * 0.6)
-            barWidth: 6
-
-            active: menuMedia.visualizerWanted
-        }
-    }
-
     RevealSection
     {
         shown: menuMedia.presented
         order: 0
 
-        Item
+        ClippingRectangle
         {
             width: parent.width
-            height: 100
+            height: Math.max(112, info.implicitHeight + 32)
+            radius: Theme.radiusLarge
+            color: Theme.colorField
 
-            Shape
+            Equalizer
             {
-                id: blob
-
-                readonly property real size: 116
-                width: size
-                height: size
-                x: cover.x + cover.width / 2 - size / 2
-                y: cover.y + cover.height / 2 - size / 2
-                preferredRendererType: Shape.CurveRenderer
-
-                readonly property real bass:
-                {
-                    if (!menuMedia.visualizerWanted) return 0;
-                    const l = ServiceMedia.levels;
-                    if (l.length === 0) return 0;
-                    let sum = 0;
-                    for (let i = 0; i < 6; i++) sum += l[i] || 0;
-                    return sum / 6;
-                }
-                property real energy: bass
-                Behavior on energy { enabled: menuMedia.visualizerWanted; NumberAnimation { duration: 90; easing.type: Easing.OutQuad } }
-
-                property real phase: 0
-                readonly property bool live: menuMedia.visualizerWanted && ServiceMedia.levels.length > 0
-                opacity: live ? 1 : 0
-                Smooth on opacity { duration: 500 }
-                visible: opacity > 0
-
-                FrameAnimation
-                {
-                    running: blob.visible && menuMedia.visualizerWanted
-                    onTriggered: blob.phase += frameTime * (0.6 + blob.energy * 1.6)
-                }
-
-                readonly property var points: Visualizer.points(size / 2, cover.width / 2 + 8 + energy * 14, 2.5 + energy * 8, phase)
-
-                ShapePath
-                {
-                    strokeWidth: 0
-                    strokeColor: "transparent"
-                    fillColor: Theme.accentShell ? Theme.accentAlpha(0.4) : Theme.inkAlpha(0.16)
-                    PathPolyline { path: blob.points }
-                }
+                anchors.fill: parent
+                anchors.topMargin: parent.height * 0.45
+                active: menuMedia.visualizerWanted
+                opacity: menuMedia.visualizerWanted && ServiceMedia.levels.length > 0 ? 0.45 : 0
+                Smooth on opacity { duration: 200 }
+                barWidth: 5
+                radius: 2
             }
 
             ClippingRectangle
             {
                 id: cover
+                objectName: "mediaArtwork"
 
-                x: 20
+                x: 16
                 anchors.verticalCenter: parent.verticalCenter
-                width: 64
-                height: 64
-                radius: Theme.radiusLarge
+                width: 80
+                height: 80
+                radius: Theme.radiusMedium
                 color: Theme.colorField
 
-                scale: coverMouse.pressed ? 0.94
-                     : coverMouse.containsMouse ? 1.08 : 1
+                scale: coverMouse.pressed ? 0.98
+                     : coverMouse.containsMouse ? 1.025 : 1
 
-                Spring on scale {}
+                Smooth on scale { duration: 240 }
+
+                property bool showingA: true
+                property string requested: ""
+                property real blend: 0
+                readonly property Image currentImage: showingA ? artA : artB
+                readonly property Image incomingImage: showingA ? artB : artA
+                readonly property bool incomingReady: incomingImage.status === Image.Ready
+
+                function show(url)
+                {
+                    requested = String(url || "");
+                    if (!reveal.running) loadRequested();
+                }
+                function loadRequested()
+                {
+                    if (reveal.running) return;
+                    if (requested === String(currentImage.source) && (requested === "" || currentImage.status === Image.Ready))
+                    {
+                        incomingImage.source = "";
+                        return;
+                    }
+                    incomingImage.source = requested;
+                    if (requested === "" || incomingImage.status === Image.Ready || incomingImage.status === Image.Error)
+                        beginReveal();
+                }
+                function loaded(image)
+                {
+                    if (image === incomingImage && !reveal.running && String(image.source) === requested
+                        && (image.status === Image.Ready || image.status === Image.Error)) beginReveal();
+                }
+                function beginReveal()
+                {
+                    if (reveal.running) return;
+                    if (Config.animationsEnabled && menuMedia.active) reveal.start();
+                    else finishReveal();
+                }
+                function finishReveal()
+                {
+                    showingA = !showingA;
+                    blend = 0;
+                    incomingImage.source = "";
+                    if (requested !== String(currentImage.source)) Qt.callLater(loadRequested);
+                }
+
+                Component.onCompleted: show(ServiceMedia.art)
+                Connections { target: ServiceMedia; function onArtChanged() { cover.show(ServiceMedia.art) } }
+                Connections
+                {
+                    target: Config
+                    function onAnimationsEnabledChanged() { if (!Config.animationsEnabled && reveal.running) reveal.complete() }
+                }
 
                 ShellIcon
                 {
                     anchors.centerIn: parent
-                    visible: front.status !== Image.Ready && back.status !== Image.Ready
+                    opacity: cover.currentImage.status === Image.Ready
+                        ? (cover.incomingReady ? 0 : cover.blend)
+                        : (cover.incomingReady ? 1 - cover.blend : 1)
                     icon: Icon.music
                     size: 24
-                    opacity: 0.6
                 }
 
                 Image
                 {
-                    id: back
+                    id: artA
                     anchors.fill: parent
-                    sourceSize: Qt.size(128, 128)
+                    sourceSize: Qt.size(160, 160)
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
+                    z: cover.showingA ? 0 : 1
+                    opacity: cover.showingA ? (cover.incomingReady ? 1 : 1 - cover.blend) : cover.blend
+                    scale: Config.animationsFluid && !cover.showingA ? 1.025 - 0.025 * cover.blend : 1
+                    onStatusChanged: cover.loaded(artA)
                 }
                 Image
                 {
-                    id: front
+                    id: artB
                     anchors.fill: parent
-                    sourceSize: Qt.size(128, 128)
+                    sourceSize: Qt.size(160, 160)
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
-                    opacity: 0
-                    scale: Config.animationsFluid ? 1.08 - 0.08 * opacity : 1
-
-                    onStatusChanged: if (status === Image.Ready) reveal.restart()
+                    z: cover.showingA ? 1 : 0
+                    opacity: cover.showingA ? cover.blend : (cover.incomingReady ? 1 : 1 - cover.blend)
+                    scale: Config.animationsFluid && cover.showingA ? 1.025 - 0.025 * cover.blend : 1
+                    onStatusChanged: cover.loaded(artB)
                 }
                 NumberAnimation
                 {
                     id: reveal
-                    target: front; property: "opacity"; from: 0; to: 1
-                    duration: Config.animationsEnabled ? 360 : 0
-                    easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized
+                    target: cover; property: "blend"; from: 0; to: 1
+                    duration: Config.animationsFluid ? 520 : 400
+                    easing.type: Easing.InOutCubic
+                    onFinished: cover.finishReveal()
                 }
-
-                function show(url)
-                {
-                    if (url === String(front.source)) return;
-                    back.source = front.opacity > 0.5 ? front.source : back.source;
-                    reveal.stop();
-                    front.opacity = 0;
-                    front.source = url;
-                    if (url === "") back.source = "";
-                }
-                Component.onCompleted: show(ServiceMedia.art)
-                Connections { target: ServiceMedia; function onArtChanged() { cover.show(ServiceMedia.art) } }
 
                 MouseArea
                 {
@@ -213,11 +208,11 @@ Menu
                 id: info
 
                 anchors.left: cover.right
-                anchors.leftMargin: 26
+                anchors.leftMargin: 16
                 anchors.right: parent.right
-                anchors.rightMargin: 6
+                anchors.rightMargin: 16
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 3
+                spacing: 4
 
                 property real shift: 0
                 transform: Translate { x: info.shift }
@@ -237,8 +232,18 @@ Menu
                 ShellText
                 {
                     width: parent.width
+                    label: ServiceMedia.app
+                    size: 10
+                    color: Theme.text3
+                    font.weight: Font.Medium
+                }
+                ShellText
+                {
+                    width: parent.width
                     label: ServiceMedia.title
-                    size: 14
+                    size: 15
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
                     color: Theme.text1
                     font.weight: Font.DemiBold
                 }
@@ -269,16 +274,35 @@ Menu
         {
             visible: ServiceMedia.length > 0
             width: parent.width
-            height: 34
+            height: 40
 
             Item
             {
                 id: track
+                objectName: "mediaSeek"
+                enabled: ServiceMedia.canSeek
+                activeFocusOnTab: enabled
+                Accessible.role: Accessible.Slider
+                Accessible.name: Tr.tr("menu.media.seek")
+                Accessible.onIncreaseAction: seekBy(5)
+                Accessible.onDecreaseAction: seekBy(-5)
+                function seekBy(seconds)
+                {
+                    if (ServiceMedia.canSeek)
+                        ServiceMedia.seekTo(Math.max(0, Math.min(1, (position + seconds) / ServiceMedia.length)));
+                }
+                Keys.onLeftPressed: seekBy(-5)
+                Keys.onRightPressed: seekBy(5)
+                Keys.onPressed: event =>
+                {
+                    if (event.key === Qt.Key_Home) { ServiceMedia.seekTo(0); event.accepted = true; }
+                    else if (event.key === Qt.Key_End) { ServiceMedia.seekTo(1); event.accepted = true; }
+                }
 
                 x: 6
-                y: 4
+                y: 2
                 width: parent.width - 12
-                height: 14
+                height: 24
 
                 property real basePosition: ServiceMedia.position
                 property real baseTime: Date.now()
@@ -302,20 +326,20 @@ Menu
                 }
 
                 readonly property real shown: seek.pressed ? seek.dragPos
-                    : ServiceMedia.length > 0 ? Math.min(1, position / ServiceMedia.length) : 0
+                    : ServiceMedia.length > 0 ? Math.max(0, Math.min(1, position / ServiceMedia.length)) : 0
 
                 Rectangle
                 {
                     anchors.verticalCenter: parent.verticalCenter
                     width: parent.width
-                    height: seek.containsMouse || seek.pressed ? 6 : 4
+                    height: seek.containsMouse || seek.pressed || track.activeFocus ? 6 : 4
                     radius: height / 2
                     color: Theme.colorField
                     Glide on height {}
 
                     Rectangle
                     {
-                        width: Math.max(parent.height, parent.width * track.shown)
+                        width: parent.width * track.shown
                         height: parent.height
                         radius: parent.radius
                         color: Theme.colorAccent
@@ -323,13 +347,13 @@ Menu
 
                     Rectangle
                     {
-                        x: Math.max(0, parent.width * track.shown - width / 2)
+                        x: Math.max(0, Math.min(parent.width - width, parent.width * track.shown - width / 2))
                         anchors.verticalCenter: parent.verticalCenter
                         width: 12
                         height: 12
                         radius: 6
                         color: Theme.colorAccent
-                        scale: seek.pressed ? 1.15 : seek.containsMouse ? 1 : 0
+                        scale: seek.pressed ? 1.15 : seek.containsMouse || track.activeFocus ? 1 : 0
                         Spring on scale {}
                     }
                 }
@@ -349,7 +373,7 @@ Menu
 
                     function at(mx) { return Math.max(0, Math.min(1, (mx - 6) / track.width)) }
 
-                    onPressed: mouse => dragPos = at(mouse.x)
+                    onPressed: mouse => { menuMedia.focusControl(track); dragPos = at(mouse.x) }
                     onPositionChanged: mouse => { if (pressed) dragPos = at(mouse.x) }
 
                     onReleased: ServiceMedia.seekTo(dragPos)
@@ -386,7 +410,7 @@ Menu
         Item
         {
             width: parent.width
-            height: 60
+            height: 64
 
             Control
             {
@@ -403,7 +427,7 @@ Menu
             Row
             {
                 anchors.centerIn: parent
-                spacing: 10
+                spacing: 8
 
                 Control
                 {
@@ -419,8 +443,9 @@ Menu
                     icon: Icon.mediaPlay
                     altIcon: Icon.mediaPause
                     alt: ServiceMedia.playing
-                    size: 48
-                    iconSize: 20
+                    objectName: "mediaPlayPause"
+                    size: 56
+                    iconSize: 24
                     primary: true
                     enabled: ServiceMedia.player !== null && ServiceMedia.player.canTogglePlaying
                     label: ServiceMedia.playing ? Tr.tr("menu.media.pause") : Tr.tr("menu.media.play")
@@ -494,13 +519,19 @@ Menu
 
         width: size
         height: size
-        radius: size / 2
+        radius: primary ? Theme.radiusLarge : size / 2
+        activeFocusOnTab: enabled
+        border.width: activeFocus ? 2 : 0
+        border.color: Theme.colorAccent
+        Keys.onSpacePressed: clicked()
+        Keys.onReturnPressed: clicked()
+        Keys.onEnterPressed: clicked()
         opacity: enabled ? 1 : 0.35
 
         color: area.pressed ? Theme.colorPressed
              : primary ? (area.containsMouse ? Qt.tint(Theme.colorSelection, Theme.inkAlpha(0.1)) : Theme.colorSelection)
              : on ? Theme.colorSelection
-             : area.containsMouse ? Theme.colorHover : "transparent"
+             : area.containsMouse ? Theme.colorHover : Theme.colorField
         Tint on color {}
 
         scale: area.pressed ? 0.92 : area.containsMouse ? 1.06 : 1
@@ -553,10 +584,11 @@ Menu
             hoverEnabled: true
             enabled: control.enabled
             cursorShape: Qt.PointingHandCursor
-            onClicked: control.clicked()
+            onClicked: { menuMedia.focusControl(control); control.clicked() }
         }
 
         Accessible.role: Accessible.Button
         Accessible.name: control.label
+        Accessible.onPressAction: clicked()
     }
 }

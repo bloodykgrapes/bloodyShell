@@ -107,8 +107,6 @@ Item
             clip: true
 
             color: Theme.colorSolid
-            border.color: Theme.colorLine
-            border.width: Theme.borderWidth
 
             MouseArea { anchors.fill: parent }
 
@@ -241,7 +239,7 @@ Item
             {
                 id: headerProbe
                 font.family: Theme.fontText
-                font.pixelSize: Math.round(13 * Config.themeScale)
+                font.pixelSize: 13
                 text: dockPopup.shown && dockPopup.shown.displayName ? dockPopup.shown.displayName : ""
             }
 

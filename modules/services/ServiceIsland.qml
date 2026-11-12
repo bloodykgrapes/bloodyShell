@@ -37,7 +37,7 @@ Singleton
         if (notice && matches(output, notice.output))
             return { kind: "notification", title: notice.title, subtitle: notice.body || notice.app,
                 notification: notice.notification, value: -1, icon: Icon.bell };
-        if (ServiceMedia.playing)
+        if (ServiceMedia.playing && !ServiceCompositor.fullscreenOnOutput(output))
             return mediaView();
         return { kind: "" };
     }

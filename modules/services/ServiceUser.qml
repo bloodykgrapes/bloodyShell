@@ -27,8 +27,6 @@ Singleton
     property var shells: []
     property string usermodCommand: ""
     property string pkexecCommand: ""
-    property string settingsCommand: ""
-    readonly property bool settingsAvailable: settingsCommand !== ""
 
     property bool loading: false
     property bool applying: false
@@ -282,12 +280,6 @@ Singleton
         Qt.callLater(() => serviceUser.avatar = path || "");
     }
 
-    function openSettings()
-    {
-        if (!settingsAvailable) { error = Tr.tr("service.user.settingsMissing"); return; }
-        Quickshell.execDetached([settingsCommand, "user-accounts"]);
-    }
-
     FileView
     {
         id: passwdFile
@@ -360,7 +352,7 @@ Singleton
     {
         id: toolsProbe
         running: true
-        command: ["sh", "-c", 'for name in usermod pkexec gnome-control-center; do path=$(command -v "$name" 2>/dev/null || true); printf "%s=%s\\n" "$name" "$path"; done']
+        command: ["sh", "-c", 'for name in usermod pkexec; do path=$(command -v "$name" 2>/dev/null || true); printf "%s=%s\\n" "$name" "$path"; done']
         stdout: StdioCollector
         {
             onStreamFinished:
@@ -369,7 +361,6 @@ Singleton
                 for (const line of text.split("\n")) { const i = line.indexOf("="); if (i > 0) paths[line.substring(0, i)] = line.substring(i + 1); }
                 serviceUser.usermodCommand = paths.usermod || "";
                 serviceUser.pkexecCommand = paths.pkexec || "";
-                serviceUser.settingsCommand = paths["gnome-control-center"] || "";
                 serviceUser.toolsLoaded = true;
                 serviceUser.finishRefresh();
             }

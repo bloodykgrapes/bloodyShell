@@ -1,6 +1,5 @@
 import QtQuick
 
-import "../../../../common"
 import "../../../../core"
 import "../../../../services"
 import "../components"
@@ -32,7 +31,7 @@ SettingsPage
 
     SettingsGroup
     {
-        title: pageApplications.apps.length + (pageApplications.apps.length === 1 ? " application" : " applications")
+        title: Tr.tr("settings.applications.count").arg(pageApplications.apps.length)
 
         Repeater
         {

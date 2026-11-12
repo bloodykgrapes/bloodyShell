@@ -9,6 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -131,7 +132,7 @@ else:
     module(base, "services")
     shutil.copyfile(ROOT / "scripts/tests/UserRegression.qml", base / "shell.qml")
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen", PATH=str(base / "bin") + os.pathsep + os.environ["PATH"],
-               XDG_RUNTIME_DIR=str(base / "runtime"), XDG_CACHE_HOME=str(base / "cache"), XDG_CONFIG_HOME=str(base / "config"),
+               XDG_RUNTIME_DIR=str(base / "runtime"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"), XDG_CONFIG_HOME=str(base / "config"),
                BLOODYSHELL_TEST_HOME=str(base / "home"), BLOODYSHELL_TEST_BIN=str(base / "bin"))
     env.pop("WAYLAND_DISPLAY", None)
     result = subprocess.run(["qs", "-p", str(base), "--no-color"], cwd=base, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=15)
@@ -158,7 +159,8 @@ def run_storage(base):
     put(base, "src/Clients.js", (ROOT / "modules/src/Clients.js").read_text())
     put(base, "src/ModelSync.js", (ROOT / "modules/src/ModelSync.js").read_text())
     put(base, "common/CommandProcess.qml", (ROOT / "modules/common/CommandProcess.qml").read_text())
-    put(base, "scripts/runtime/storage", (ROOT / "scripts/runtime/storage").read_text())
+    shutil.copytree(ROOT / "scripts/lib", base / "scripts/lib")
+    shutil.copy2(ROOT / "scripts/bloodyShell", base / "scripts/bloodyShell")
     put(base, "fstab", "")
     put(base, "mounts.json", "{}")
     tool = f"#!{sys.executable}\nBASE = {str(base)!r}\n" + r'''
@@ -194,13 +196,14 @@ elif name in ("udisksctl", "pkexec"):
         assert args[2] == "/dev/test-data" and args[3:] == ["--options", "ro"]
         mounts[args[2]] = "/run/media/test/Data"
     else:
-        assert args[0] == str(base / "scripts/runtime/storage")
-        assert args[1] == "mount"
+        assert args[:4] == ["python3", str(base / "scripts/bloodyShell"), "internal", "storage"]
+        args = args[4:]
+        assert args[0] == "mount"
         if args[-1] == "/mnt/Denied":
             sys.exit(126)
-        assert args[2:5] == ["/dev/test-persistent", "PERSISTENT", "ext4"]
-        assert args[5] == "/mnt/Persistent Data"
-        mounts[args[2]] = args[5]
+        assert args[1:4] == ["/dev/test-persistent", "PERSISTENT", "ext4"]
+        assert args[4] == "/mnt/Persistent Data"
+        mounts[args[1]] = args[4]
     (base / "mounts.json").write_text(json.dumps(mounts))
     print("Mounted test device")
 else:
@@ -213,7 +216,7 @@ else:
     module(base, "services")
     shutil.copyfile(ROOT / "scripts/tests/StorageRegression.qml", base / "shell.qml")
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen", PATH=str(base / "bin") + os.pathsep + os.environ["PATH"],
-               XDG_RUNTIME_DIR=str(base / "runtime"), XDG_CACHE_HOME=str(base / "cache"), XDG_CONFIG_HOME=str(base / "config"),
+               XDG_RUNTIME_DIR=str(base / "runtime"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"), XDG_CONFIG_HOME=str(base / "config"),
                BLOODYSHELL_TEST_BIN=str(base / "bin"))
     env.pop("WAYLAND_DISPLAY", None)
     result = subprocess.run(["qs", "-p", str(base), "--no-color"], cwd=base, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=15)
@@ -230,6 +233,7 @@ def run_media(base):
         (base / folder).mkdir(mode=0o700)
     stub(base, "core", "Config", "property bool animationsEnabled: true\nproperty int equalizerStyle: 0")
     put(base, "core/Enums.qml", (ROOT / "modules/core/Enums.qml").read_text())
+    put(base, "core/Paths.qml", (ROOT / "modules/core/Paths.qml").read_text())
     stub(base, "core", "Mpris", "property var players: ({ values: [] })")
     stub(base, "services", "ServiceLock", "property bool locked: false")
     source = (ROOT / "modules/services/ServiceMedia.qml").read_text().replace("import Quickshell.Services.Mpris\n", "")
@@ -238,11 +242,10 @@ def run_media(base):
     put(base, "common/Equalizer.qml", (ROOT / "modules/common/Equalizer.qml").read_text())
     stub(base, "core", "Theme", "property bool accentShell: true\nfunction accentAlpha(alpha) { return Qt.rgba(1, 1, 1, alpha) }\nfunction inkAlpha(alpha) { return Qt.rgba(0, 0, 0, alpha) }")
     put(base, "src/Clients.js", (ROOT / "modules/src/Clients.js").read_text())
-    put(base, "src/Visualizer.js", (ROOT / "modules/src/Visualizer.js").read_text())
     module(base, "core")
     module(base, "services")
     shutil.copyfile(ROOT / "scripts/tests/MediaRegression.qml", base / "shell.qml")
-    env = dict(os.environ, QT_QPA_PLATFORM="offscreen", XDG_RUNTIME_DIR=str(base / "runtime"), XDG_CACHE_HOME=str(base / "cache"), XDG_CONFIG_HOME=str(base / "config"))
+    env = dict(os.environ, QT_QPA_PLATFORM="offscreen", XDG_RUNTIME_DIR=str(base / "runtime"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"), XDG_CONFIG_HOME=str(base / "config"))
     env.pop("WAYLAND_DISPLAY", None)
     result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=10)
     print(result.stdout)
@@ -290,7 +293,7 @@ def main():
         shutil.copyfile(ROOT / "scripts/tests/Regression.qml", base / "shell.qml")
         for path in ("runtime", "cache", "config"):
             (base / path).mkdir(mode=0o700)
-        env = dict(os.environ, QT_QPA_PLATFORM="offscreen", XDG_RUNTIME_DIR=str(base / "runtime"), XDG_CACHE_HOME=str(base / "cache"), XDG_CONFIG_HOME=str(base / "config"))
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen", XDG_RUNTIME_DIR=str(base / "runtime"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"), XDG_CONFIG_HOME=str(base / "config"))
         env.pop("WAYLAND_DISPLAY", None)
         result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=15)
         print(result.stdout)
@@ -304,11 +307,14 @@ def main():
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/optimization_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/storage_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/installer_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/uninstall_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/command_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/program_choices_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/dependency_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/update_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/updates_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/resource_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/niri_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/network_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/notifications_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/screenshot_checks.py")], check=True)
@@ -326,6 +332,13 @@ def main():
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/overlay_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/menu_geometry_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/island_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/ownership_checks.py")], check=True)
+        if shutil.which("pkg-config") and subprocess.run(["pkg-config", "--exists", "Qt6Quick"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0 and shutil.which("c++"):
+            subprocess.run([sys.executable, str(ROOT / "scripts/tests/keyboard_checks.py")], check=True)
+            if shutil.which("wayland-scanner") and subprocess.run(["pkg-config", "--exists", "wayland-client", "wayland-server", "xkbcommon"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+                subprocess.run([sys.executable, str(ROOT / "scripts/tests/virtual_keyboard_checks.py")], check=True)
+        else:
+            print("SKIP native keyboard check: Qt 6 development tools and C++ compiler are required")
     print("Source checks and isolated QML regressions passed.")
 
 

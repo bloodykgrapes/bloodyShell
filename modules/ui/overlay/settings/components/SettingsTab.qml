@@ -17,7 +17,7 @@ Item
     readonly property bool hovered: enabled && (area.containsMouse || activeFocus)
 
     width: parent ? parent.width : 200
-    height: 32
+    height: Math.max(Theme.settingsTabHeight, titleText.implicitHeight + 16)
     activeFocusOnTab: enabled
     Keys.onSpacePressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
     Keys.onReturnPressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
@@ -60,9 +60,11 @@ Item
         }
         ShellText
         {
+            id: titleText
             anchors.verticalCenter: parent.verticalCenter
             width: Math.max(0, parent.width - glyph.width - parent.spacing)
             label: settingsTab.title
+            wrapMode: Text.Wrap
             size: 13
             color: settingsTab.selected ? Theme.text1 : Theme.text2
             Tint on color { duration: 200 }

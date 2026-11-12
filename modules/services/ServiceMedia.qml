@@ -107,17 +107,11 @@ Singleton
     readonly property bool visualizerRunning: visualizerUsers > 0 && playing && Config.animationsEnabled && !ServiceLock.locked
     property bool cavaMissing: false
 
-    readonly property string cavaConfig: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/bloodyShell-cava.conf"
-
     Process
     {
         id: cava
         running: serviceMedia.visualizerRunning && !serviceMedia.cavaMissing
-        command: ["sh", "-c",
-            "command -v cava > /dev/null || exit 127; "
-            + "printf '[general]\\nbars = %s\\nframerate = 30\\nsleep_timer = 1\\n[output]\\nmethod = raw\\nraw_target = /dev/stdout\\n"
-            + "data_format = ascii\\nascii_max_range = 1000\\nbar_delimiter = 59\\nframe_delimiter = 10\\n[smoothing]\\nnoise_reduction = 70\\n' "
-            + "\"$1\" > \"$2\" && exec cava -p \"$2\"", "sh", String(serviceMedia.bars), serviceMedia.cavaConfig]
+        command: Paths.commandFor("visualizer", [String(serviceMedia.bars)])
         stdout: SplitParser
         {
             onRead: line =>

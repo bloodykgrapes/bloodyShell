@@ -37,4 +37,18 @@ Menu
             }
         }
     }
+
+    RevealSection
+    {
+        visible: Config.virtualKeyboardEnabled
+        shown: menuLayout.presented && visible
+        order: ServiceCompositor.keyboardLayouts.length
+
+        MenuItem
+        {
+            icon: Icon.keyboard
+            text: ServiceVirtualKeyboard.visible ? Tr.tr("keyboard.hide") : Tr.tr("keyboard.show")
+            onClicked: { ServiceVirtualKeyboard.toggle(); MenuState.close(); }
+        }
+    }
 }

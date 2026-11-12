@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def run_checks():
-    api = runpy.run_path(str(ROOT / "scripts/runtime/dependencies"))
+    api = runpy.run_path(str(ROOT / "scripts/lib/management.py"))
     entries = api["catalog"]()
     assert len(entries) > 20 and len({entry["tool"] for entry in entries}) == len(entries)
     plan = api["plan"]

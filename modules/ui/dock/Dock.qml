@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 
+import "../../common"
 import "../../core"
 import "../../services"
 import "components"
@@ -49,21 +50,26 @@ Item
         Region { item: popupMask }
     }
 
-    readonly property bool revealWanted: !Config.dockHideAuto
+    readonly property bool fullscreen: screen !== null && ServiceCompositor.fullscreenOnOutput(screen.name)
+    readonly property bool autoHide: Config.dockHideAuto || fullscreen
+    readonly property bool revealWanted: !fullscreen && (!autoHide
         || triggerHover.hovered || dockHover.hovered || content.hovered || popup.hovered
         || content.view.dragActive || popup.mode === "menu"
-        || (Config.dockHideSmart && ServiceCompositor.focusedWorkspaceEmpty)
+        || (Config.dockHideSmart && screen !== null && ServiceCompositor.workspaceEmptyOnOutput(screen.name)))
+    enabled: !fullscreen
+    onFullscreenChanged: if (fullscreen) Qt.callLater(() => { if (dock.fullscreen) dock.popupClose(); })
 
-    property bool revealed: true
-    onRevealWantedChanged:
+    property alias revealed: visibility.revealed
+    PanelReveal
     {
-        if (revealWanted) { hideDelay.stop(); revealed = true }
-        else hideDelay.restart();
+        id: visibility
+        wanted: dock.revealWanted
+        ready: dock.initialized
+        delay: Theme.dockHideDelay
     }
-    Timer { id: hideDelay; interval: Theme.dockHideDelay; onTriggered: dock.revealed = dock.revealWanted }
 
     property bool initialized: false
-    Component.onCompleted: Qt.callLater(() => { dock.initialized = true; if (!dock.revealWanted) hideDelay.restart() })
+    Component.onCompleted: Qt.callLater(() => dock.initialized = true)
 
     readonly property real zoomScale: 1.25
 
@@ -176,10 +182,11 @@ Item
     {
         id: trigger
 
+        readonly property real size: dock.fullscreen ? 0 : Theme.dockReveal
         x: dock.side === Enums.EdgeRight ? dock.width - width : 0
         y: dock.side === Enums.EdgeBottom ? dock.height - height : 0
-        width:  dock.isHorizontal ? dock.width : Theme.dockReveal
-        height: dock.isHorizontal ? Theme.dockReveal : dock.height
+        width:  dock.isHorizontal ? dock.width : size
+        height: dock.isHorizontal ? size : dock.height
 
         HoverHandler { id: triggerHover }
     }

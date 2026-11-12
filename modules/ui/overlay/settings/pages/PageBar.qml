@@ -24,7 +24,7 @@ SettingsPage
             label: Tr.tr("common.position")
             SettingsChoices
             {
-                options: [{ label: Tr.tr("common.top"), value: Enums.EdgeTop }, { label: Tr.tr("common.bottom"), value: Enums.EdgeBottom }, { label: Tr.tr("common.left"), value: Enums.EdgeLeft }, { label: Tr.tr("common.right"), value: Enums.EdgeRight }]
+                options: Registry.edgeOptions
                 current: Config.barSide
                 onSelected: value => Config.set("barSide", value)
             }
@@ -34,27 +34,13 @@ SettingsPage
             label: Tr.tr("common.style")
             description: Tr.tr("settings.frame.styleHint")
             stacked: true
-            Row
+            SettingsStyleChoices
             {
-                id: styleCards
-                width: parent.width
-                spacing: 10
-
-                Repeater
-                {
-                    model: [Enums.InFrame, Enums.OutFrame, Enums.Filled, Enums.Islands]
-                    SettingsStyleCard
-                    {
-                        required property int modelData
-                        objectName: "frameStyle-bar-" + modelData
-                        kind: "frame"
-                        width: Math.min(150, (styleCards.width - styleCards.spacing * 3) / 4)
-                        value: modelData
-                        label: Tr.tr(modelData === Enums.InFrame ? "settings.frame.inFrame" : modelData === Enums.OutFrame ? "settings.frame.outFrame" : modelData === Enums.Filled ? "settings.frame.filled" : "settings.frame.islands")
-                        current: Config.barType === modelData
-                        onClicked: Config.set("barType", modelData)
-                    }
-                }
+                kind: "frame"
+                options: Registry.frameOptions
+                namePrefix: "frameStyle-bar-"
+                current: Config.barType
+                onSelected: value => Config.set("barType", value)
             }
         }
         SettingsRow
@@ -62,27 +48,13 @@ SettingsPage
             label: Tr.tr("settings.bar.menu")
             description: Tr.tr("settings.bar.menuStyleHint")
             stacked: true
-            Row
+            SettingsStyleChoices
             {
-                id: menuCards
-                width: parent.width
-                spacing: 10
-
-                Repeater
-                {
-                    model: [Enums.MenuDefault, Enums.MenuFloating]
-                    SettingsStyleCard
-                    {
-                        required property int modelData
-                        objectName: "menuStyle-" + modelData
-                        kind: "menu"
-                        width: Math.min(150, (menuCards.width - menuCards.spacing) / 2)
-                        value: modelData
-                        label: Tr.tr(modelData === Enums.MenuDefault ? "common.default" : "common.floating")
-                        current: Config.barMenu === modelData
-                        onClicked: Config.set("barMenu", modelData)
-                    }
-                }
+                kind: "menu"
+                options: Registry.menuOptions
+                namePrefix: "menuStyle-"
+                current: Config.barMenu
+                onSelected: value => Config.set("barMenu", value)
             }
         }
         SettingsRow

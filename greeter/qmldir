@@ -1,4 +1,0 @@
-# Экран входа bloodyShell для greetd — отдельная конфигурация Quickshell (qs -p greeter/shell.qml):
-# shell.qml — вход и экран, Widgets.qml — детали, Theme.qml — настройки, цвета, значки, питание
-singleton Theme 1.0 Theme.qml
-Widgets 1.0 Widgets.qml

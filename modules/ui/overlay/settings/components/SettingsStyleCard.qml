@@ -33,8 +33,9 @@ Item
     readonly property bool previewing: (animationStyle || equalizerStyle) && activity.active && (area.containsMouse || activeFocus)
     RenderActivity { id: activity; target: settingsStyleCard }
 
-    width: 150
-    height: preview.height + 22
+    implicitWidth: 150
+    width: parent ? Math.min(implicitWidth, parent.width) : implicitWidth
+    height: preview.height + caption.implicitHeight + 8
     activeFocusOnTab: true
     Keys.onSpacePressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
     Keys.onReturnPressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
@@ -297,7 +298,11 @@ Item
 
     ShellText
     {
+        id: caption
         anchors { horizontalCenter: parent.horizontalCenter; top: preview.bottom; topMargin: 6 }
+        width: parent.width
+        horizontalAlignment: Text.AlignHCenter
+        wrapMode: Text.Wrap
         label: settingsStyleCard.label
         size: 11
         color: settingsStyleCard.current ? Theme.text1 : Theme.text3

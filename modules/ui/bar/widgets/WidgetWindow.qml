@@ -49,7 +49,7 @@ Widget
 
             color: Theme.text2
 
-            font.pixelSize: Math.round(12 * Config.themeScale)
+            font.pixelSize: 12
             font.family: Theme.fontText
 
             property real fade: 1

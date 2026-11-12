@@ -112,14 +112,14 @@ def checks():
         base = Path(temporary)
         env = prepare(base)
         env.pop('WAYLAND_DISPLAY', None)
-        api = runpy.run_path(str(ROOT / 'scripts/runtime/screenshot'))
+        api = runpy.run_path(str(ROOT / 'scripts/lib/screenshot.py'))
         with patch.dict(os.environ, WAYLAND_DISPLAY='wayland-current', XDG_RUNTIME_DIR=str(base / 'runtime')), patch('pathlib.Path.is_socket', return_value=True), patch('shutil.which', return_value='/usr/bin/wl-copy'), patch('subprocess.run') as command:
             command.return_value.returncode = 0
             api['copy_image'](base / 'fixture.png')
             arguments = command.call_args.args[0]
             assert '--service-type=forking' in arguments and '--setenv=WAYLAND_DISPLAY=wayland-current' in arguments
             assert '--setenv=XDG_RUNTIME_DIR=' + str(base / 'runtime') in arguments
-        helper = [sys.executable, str(ROOT / 'scripts/runtime/screenshot')]
+        helper = [sys.executable, str(ROOT / 'scripts/lib/screenshot.py')]
         result = subprocess.run(helper + ['capture', 'test', '800', '600'], env=env, capture_output=True, text=True, check=True)
         shot = json.loads(result.stdout)
         assert (shot['width'], shot['height']) == (800, 600)
@@ -141,13 +141,16 @@ import Quickshell
 import "modules/core"
 import "modules/services"
 import "modules/ui/overlay"
+import "modules/ui/overlay/settings/components"
 ShellRoot
 {
     id: tests
     property var savedPage: null
     property var savedInput: null
+    property var autostart: null
     property var paths: []
     property int completions: 0
+    property int popupRejections: 0
     function check(ok, message) { if (!ok) throw new Error(message) }
     function find(item, name) {
         if (item.objectName === name) return item;
@@ -167,6 +170,11 @@ ShellRoot
         id: window
         width: 800; height: 600; visible: true
         OverlayFixture { id: overlay; anchors.fill: parent }
+        SettingsConfirmation {
+            id: dialog; host: overlay
+            title: "Pending setting"; description: "Screenshot must preserve this confirmation."; acceptText: "Apply"
+            onRejected: tests.popupRejections++
+        }
         TestCase { id: events; name: "ScreenshotInput"; when: false; optional: true }
     }
     Timer
@@ -186,11 +194,14 @@ ShellRoot
                     case 1:
                         if (waitFor(overlay.testPage.item !== null)) return;
                         tests.savedPage = overlay.testPage.item;
+                        dialog.open();
+                        tests.check(dialog.visible && dialog.modal && dialog.opacity === 1, "Popup did not open before screenshot capture");
                         overlay.takeScreenshot();
-                        tests.check(ServiceScreenshot.phase === "capturing" && !ServiceScreenshot.active && overlay.testPage.item === tests.savedPage, "Settings hidden before capture completed"); break;
+                        tests.check(ServiceScreenshot.phase === "capturing" && !ServiceScreenshot.active && overlay.testPage.item === tests.savedPage && dialog.opacity === 1, "Settings or popup hidden before capture completed"); break;
                     case 2:
                         if (waitFor(ServiceScreenshot.phase === "ready" && tests.shot() && tests.shot().ready)) return;
                         tests.check(OverlayState.current === "settings" && overlay.testPage.item === tests.savedPage && !overlay.activeFor("settings"), "Settings was replaced instead of suspended");
+                        tests.check(dialog.suspended && dialog.opacity === 0 && !dialog.modal && !dialog.enabled && !OverlayState.settingsPopup && tests.popupRejections === 0, "Popup remained above the screenshot or cancelled its pending confirmation: " + JSON.stringify([dialog.visible, dialog.suspended, dialog.opacity, dialog.modal, dialog.enabled, OverlayState.settingsPopup, tests.popupRejections]));
                         const modes = tests.find(tests.shot(), "screenshotModes"), destination = tests.find(tests.shot(), "screenshotDestination");
                         modes.selected(Enums.ScreenshotScreen); destination.selected(true);
                         tests.check(Config.screenshotMode === Enums.ScreenshotScreen && Config.screenshotSave === true && tests.shot().selectionItem.region.width === 800, "Screenshot selectors do not persist or update geometry");
@@ -225,6 +236,7 @@ ShellRoot
                     case 3:
                         if (waitFor(ServiceScreenshot.phase === "idle")) return;
                         tests.restored(); tests.check(tests.paths.length === 1, "Area export failed");
+                        tests.check(dialog.visible && !dialog.suspended && dialog.opacity === 1 && dialog.modal && OverlayState.settingsPopup && tests.popupRejections === 0, "Screenshot did not restore the open popup: " + JSON.stringify([dialog.visible, dialog.suspended, dialog.opacity, dialog.modal, OverlayState.settingsPopup, tests.popupRejections, dialog.opened, dialog.contentItem.visible]));
                         overlay.takeScreenshot(Enums.ScreenshotScreen); break;
                     case 4:
                         if (waitFor(ServiceScreenshot.phase === "ready" && tests.shot() && tests.shot().ready)) return;
@@ -258,7 +270,10 @@ ShellRoot
                         events.keyClick(Qt.Key_Escape); break;
                     case 11:
                         if (waitFor(ServiceScreenshot.phase === "idle")) return;
-                        tests.restored(); overlay.takeScreenshot(); break;
+                        tests.restored();
+                        tests.check(dialog.visible && dialog.modal && tests.popupRejections === 0, "Screenshot Escape also dismissed the suspended popup");
+                        dialog.close();
+                        overlay.takeScreenshot(); break;
                     case 12:
                         if (waitFor(ServiceScreenshot.phase === "ready")) return;
                         ServiceLock.locked = true; break;
@@ -287,6 +302,35 @@ ShellRoot
                         tests.check(overlay.testPage.item === tests.savedPage && OverlayState.current === "launcher", "Launcher was not restored");
                         events.keyClick(Qt.Key_X);
                         tests.check(tests.savedInput.text === "screenshot statex", "Keyboard focus did not return to the launcher input");
+                        OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "applications");
+                        OverlayState.show("settings"); break;
+                    case 19:
+                        tests.autostart = tests.find(overlay.testPage.item, "autostartSection");
+                        if (waitFor(tests.autostart !== null)) return;
+                        tests.autostart.expanded = true;
+                        tests.autostart.picker.open(); break;
+                    case 20:
+                        if (waitFor(tests.autostart.picker.opened)) return;
+                        const search = tests.find(tests.autostart.picker.contentItem, "autostartSearch");
+                        search.text = "pending search";
+                        tests.autostart.query = search.text;
+                        tests.savedInput = tests.input(search);
+                        tests.savedInput.cursorPosition = tests.savedInput.text.length;
+                        tests.savedInput.forceActiveFocus(); break;
+                    case 21: overlay.takeScreenshot(); break;
+                    case 22:
+                        if (waitFor(ServiceScreenshot.phase === "ready" && tests.shot() && tests.shot().ready)) return;
+                        tests.check(tests.autostart.picker.suspended && tests.autostart.picker.opacity === 0 && !OverlayState.settingsPopup, "Autostart popup remained active over the screenshot");
+                        tests.check(tests.autostart.query === "pending search", "Screenshot reset the popup search");
+                        events.keyClick(Qt.Key_Escape); break;
+                    case 23:
+                        if (waitFor(ServiceScreenshot.phase === "idle")) return;
+                        tests.check(tests.autostart.picker.visible && tests.autostart.picker.modal && OverlayState.settingsPopup, "Screenshot Escape dismissed the autostart popup");
+                        events.keyClick(Qt.Key_X);
+                        tests.check(tests.savedInput.text === "pending searchx" && tests.autostart.query === "pending searchx", "Popup search or keyboard focus was not restored");
+                        tests.autostart.picker.close(); break;
+                    case 24:
+                        if (waitFor(!OverlayState.settingsPopup)) return;
                         console.log("SCREENSHOT_PATHS", JSON.stringify(tests.paths));
                         console.log("SCREENSHOTS_PASSED"); Qt.quit(); break;
                 }
@@ -310,8 +354,8 @@ ShellRoot
         assert (width, height) == (800, 600), (width, height)
         assert pixel(400, 40) == (20, 180, 40) and pixel(400, 565) == (20, 40, 220), 'Screen export contains screenshot controls'
         assert (base / 'copied.png').read_bytes() == Path(paths[1]).read_bytes(), 'Copy differs from the saved frozen image'
-        assert int((base / 'captures').read_text()) == 8, 'Selection or export recaptured the desktop'
-        assert not list((base / 'runtime').glob('bloodyShell-captures-*/capture-*')), 'Screenshot sessions leaked'
+        assert int((base / 'captures').read_text()) == 9, 'Selection or export recaptured the desktop'
+        assert not list((base / 'runtime').glob('bloodyShell/captures/capture-*')), 'Screenshot sessions leaked'
         settings = json.loads((base / 'config/bloodyShell/settings.json').read_text())
         assert isinstance(settings['screenshotMode'], int) and isinstance(settings['screenshotSave'], bool)
     print('Frozen capture, scale-correct crops, clipboard/save retry, mode selection, preserved pages, cancellation and cleanup passed.')

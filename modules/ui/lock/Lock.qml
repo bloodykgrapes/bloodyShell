@@ -1,10 +1,12 @@
 import QtQuick
+import QtQuick.Window
 import Quickshell.Widgets
 
 import "../../common"
 import "../../core"
 import "../../services"
 import "components"
+import "../keyboard"
 
 Item
 {
@@ -12,6 +14,9 @@ Item
 
     property real intro: Config.animationsEnabled ? 0 : 1
     readonly property real introBack: Config.animationsEnabled ? intro : 1
+    readonly property bool keyboardOpened: Config.virtualKeyboardEnabled && ServiceVirtualKeyboard.visible && ServiceVirtualKeyboard.output === (lock.Window.window && lock.Window.window.screen ? lock.Window.window.screen.name : "")
+    property real keyboardReveal: keyboardOpened ? 1 : 0
+    Behavior on keyboardReveal { enabled: Config.animationsEnabled; NumberAnimation { duration: Theme.animationDurationControl; easing.type: Easing.OutCubic } }
 
     NumberAnimation
     {
@@ -54,7 +59,7 @@ Item
             id: content
             objectName: "lockContent"
             anchors.centerIn: parent
-            width: Math.round(380 * Config.themeScale)
+            width: 380
             spacing: 28
             scale: Math.max(0.1, Math.min(1, contentArea.width / width, contentArea.height / implicitHeight))
 
@@ -108,7 +113,7 @@ Item
                         {
                             id: avatar
                             anchors.horizontalCenter: parent.horizontalCenter
-                            width: Math.round(88 * Config.themeScale)
+                            width: 88
                             height: width
                             radius: width / 2
                             color: "transparent"
@@ -196,7 +201,7 @@ Item
     {
         id: footer
         objectName: "lockFooter"
-        anchors { right: parent.right; bottom: parent.bottom; margins: Math.round(28 * Config.themeScale) }
+        anchors { right: parent.right; bottom: parent.bottom; margins: 28; bottomMargin: 28 + (keyboardContent.height + 20) * lock.keyboardReveal }
         width: actions.implicitWidth
         order: 5
         enabled: !ServiceLock.leaving && !ServiceLock.preparingForSleep
@@ -206,9 +211,33 @@ Item
             id: actions
             spacing: 8
 
+            LockButton
+            {
+                objectName: "lockKeyboardButton"
+                visible: Config.virtualKeyboardEnabled
+                icon: Icon.keyboard; label: Tr.tr("keyboard.title")
+                onClicked:
+                {
+                    ServiceVirtualKeyboard.toggle(lock.Window.window && lock.Window.window.screen ? lock.Window.window.screen.name : "");
+                    field.focusInput();
+                }
+            }
             LockButton { icon: Icon.computerSleep;    label: Tr.tr("power.sleep"); onClicked: ServicePower.run("suspend") }
             LockButton { icon: Icon.computerReboot;   label: Tr.tr("power.restart"); onClicked: ServicePower.run("reboot") }
             LockButton { icon: Icon.computerPowerOff; label: Tr.tr("power.shutDown"); onClicked: ServicePower.run("poweroff") }
         }
+    }
+
+    Loader
+    {
+        id: keyboardContent
+        active: Config.virtualKeyboardEnabled
+        visible: lock.keyboardReveal > 0.001
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.max(1, Math.min(840, lock.width - 32))
+        height: item ? item.implicitHeight : 0
+        y: lock.height - (height + 16) * lock.keyboardReveal
+        opacity: lock.keyboardReveal
+        sourceComponent: KeyboardContent { enabled: lock.keyboardOpened && !ServiceLock.checking && !ServiceLock.leaving && !ServiceLock.preparingForSleep }
     }
 }
