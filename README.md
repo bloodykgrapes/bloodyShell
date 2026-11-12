@@ -103,10 +103,6 @@ Run `./setup uninstall --apply` (or `bloodyShell uninstall --apply`) to stop and
 remove the installed copy. Add `--restore` to restore unchanged tracked integrations
 first. Personal settings, backups, imported files and system packages are kept.
 
-The system color scheme follows the shell theme. Sharing images with the login
-screen is opt-in. See [data ownership and cleanup](docs/OWNERSHIP.md) for storage locations,
-restoration, migration limits, and commands that apply changes.
-
 See the [installation guide](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL) for details.
 
 ## Keybinds
