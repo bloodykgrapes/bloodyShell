@@ -34,7 +34,7 @@ input {
         scroll-method "two-finger"
 
         tap-button-map "left-right-middle"
-        click-method "clickfinger"
+        click-method "button-areas"
 
         disabled-on-external-mouse
     }

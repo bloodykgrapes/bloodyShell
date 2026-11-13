@@ -1,4 +1,4 @@
-# Project structure
+<h1 align="center">ARCHITECTURE</h1>
 
 `assets/` holds fonts, icons, shaders, application assets, and source wallpapers. `dots/` contains optional application configurations; the standalone login theme lives in `greeter/`. These optional resources are excluded from installed shell files. Wallpapers are imported into `~/Pictures/Wallpapers`, independently of shell updates.
 

@@ -79,43 +79,25 @@ At present, I am physically unable to implement support for additional composers
 
 ## Installation
 
+Arch, Debian, Fedora, Ubuntu:
+
 ```bash
 git clone https://github.com/bloodykgrapes/bloodyShell.git
 cd bloodyShell
 ./setup install
 ```
 
-Setup installs the `bloodyShell` command. If its directory is outside `PATH`, setup
-prints the command to add it; your terminal startup files are preserved.
+Setup installs the `bloodyShell` command.
 
 ```bash
 bloodyShell             # launch the shell
 bloodyShell update      # check and install update
 bloodyShell doctor      # diagnostic
 bloodyShell restart     # reload shell
-bloodyShell footprint   # inspect owned data and integrations
-bloodyShell cleanup     # preview disposable data cleanup
-bloodyShell restore     # preview restoration of tracked settings
-bloodyShell uninstall   # preview removal of installed files
 ```
 
-Run `./setup uninstall --apply` (or `bloodyShell uninstall --apply`) to stop and
-remove the installed copy. Add `--restore` to restore unchanged tracked integrations
-first. Personal settings, backups, imported files and system packages are kept.
 
 See the [installation guide](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL) for details.
-
-## Keybinds
-
-| Key | Action |
-|---|---|
-| <kbd>Super</kbd> + <kbd>Number</kbd> | Change workspace |
-| <kbd>Super</kbd> + <kbd>Arrow</kbd>  | Change focus     |
-| <kbd>Super</kbd> + <kbd>Tab</kbd>    | Overview         |
-| <kbd>Super</kbd> + <kbd>D</kbd>      | Launcher         |
-| <kbd>Super</kbd> + <kbd>Y</kbd>      | Wallpapers       |
-| <kbd>Super</kbd> + <kbd>I</kbd>      | Settings         |
-| <kbd>Super</kbd> + <kbd>P</kbd>      | Power            |
 
 ## Documentation
 

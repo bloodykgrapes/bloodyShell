@@ -1,48 +1,38 @@
-# Default keybindings
+<h1 align="center">KEYBINDS</h1>
 
-These bindings come with the optional niri config. `Mod` is Super unless
-changed in niri.
+> <kbd>Super</kbd> is the Meta key.
 
-Settings → Shell → Shortcuts lists the bundled bindings in three groups:
-window management, overlays, and shell/application actions. It is a read-only
-reference, including workspace ranges, monitor controls, mouse gestures, and
-media keys.
+---
 
-| Shortcut | Action |
-| --- | --- |
-| Super + D | Launcher |
-| Super + I | Settings |
-| Super + P | Power menu |
-| Super + Y | Wallpaper selector |
-| Super + L | Lock |
-| Alt + Tab / Alt + Shift + Tab | Next/previous recent window |
-| Super + Tab | niri overview |
-| Super + T | Kitty |
-| Super + E | Nautilus |
-| Super + B | btop in Kitty |
-| Super + Q | Close window |
-| Print | Screenshot overlay with the remembered selection mode |
-| Ctrl + Print | Screen screenshot |
+### Window Management
 
-Screenshot bindings use `allow-inhibiting=false` so they also work over Settings
-and Launcher. The overlay freezes the current monitor before taking input.
-Shell bindings call the `bloodyShell` command, which finds the newest running
-bloodyShell instance in the current session. No checkout path is stored in the
-bindings. For example, Print runs `bloodyShell screenshot`, and Ctrl+Print runs
-`bloodyShell screenshot screen`.
-All shell shortcuts live in `dots/niri/bloodyShell/06-binds.kdl`; shell startup
-does not generate or rewrite shortcut files.
+| Key | Action |
+| --- | ------ |
+| <kbd>Super</kbd> + <kbd>Number</kbd> | Change workspace |
+| <kbd>Super</kbd> + <kbd>Arrow</kbd>  | Change focus     |
+| <kbd>Super</kbd> + <kbd>Q</kbd>      | Close window     |
+| <kbd>Super</kbd> + <kbd>Tab</kbd>    | Overview         |
 
-For configurations that still include the old generated `09-alt-tab.kdl`, remove
-its include from `~/.config/niri/config.kdl` before deleting that file. Alt+Tab
-and the native switcher disable setting are both in `06-binds.kdl`.
-Area selections can be moved and resized with the mouse. Arrow keys move the area;
-Ctrl+Arrow resizes it, and Shift makes either adjustment ten times larger.
-Switching to Screen and back preserves the area. Screen selects the whole monitor. Enter or Capture
-performs the selected Copy/Save action, and Escape cancels. Save writes a PNG
-to the XDG Pictures directory's `Screenshots` folder.
+---
 
-`Config.screenshotMode` stores Area (0) or Screen (2).
-`Config.screenshotSave` is false for Copy and true for Save.
-The command `bloodyShell screenshot` opens the overlay; optional arguments
-`show`, `screen`, and `hide` open it, select the screen, or cancel it.
+### Special
+
+| Key | Action |
+| --- | ------ |
+| <kbd>Print</kbd> | Screenshot |
+| <kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> | Screenshot |
+| <kbd>Super</kbd> + <kbd>L</kbd> | Lock screen |
+
+---
+
+### Applications & Overlays
+
+| Key | Action |
+| --- | ------ |
+| <kbd>Super</kbd> + <kbd>W</kbd> | Application: Browser  |
+| <kbd>Super</kbd> + <kbd>E</kbd> | Application: Explorer |
+| <kbd>Super</kbd> + <kbd>T</kbd> | Application: Terminal |
+| <kbd>Super</kbd> + <kbd>D</kbd> | Overlay: Launcher     |
+| <kbd>Super</kbd> + <kbd>Y</kbd> | Overlay: Wallpapers   |
+| <kbd>Super</kbd> + <kbd>I</kbd> | Overlay: Settings     |
+| <kbd>Super</kbd> + <kbd>P</kbd> | Overlay: Power        |
