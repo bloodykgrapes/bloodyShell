@@ -23,7 +23,7 @@ SettingsPopup
     x: (parent.width - width) / 2
     y: Math.max(16, (parent.height - height) / 2)
 
-    onOpened: cancel.forceActiveFocus(Qt.PopupFocusReason)
+    onOpened: cancel.focusFor(keyboardNavigation ? Qt.TabFocusReason : Qt.MouseFocusReason)
     onAboutToHide: rejected()
 
     contentItem: Column

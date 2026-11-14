@@ -54,11 +54,11 @@ Singleton
     function refreshMouse()
     {
         // A full-device subscription can refresh before mouseWatching's binding updates.
-        if ((!watching && mouseWatchClients.length === 0) || mouseBusy) return;
+        if (!ServiceCompositor.supports("mouse") || (!watching && mouseWatchClients.length === 0) || mouseBusy) return;
         if (mouseReader.busy) { mouseReader.again = true; return; }
         mouseReader.again = false;
         mouseReader.revision = mouseRevision;
-        mouseReader.run(Paths.commandFor("niri-config", ["mouse-read"]));
+        mouseReader.run(ServiceCompositor.configuration(["mouse-read"]));
     }
     function receiveMouse(text)
     {
@@ -88,12 +88,12 @@ Singleton
             if (Object.keys(serviceDevices.pendingMouse).length === 0) return;
             const changes = serviceDevices.pendingMouse;
             serviceDevices.pendingMouse = {};
-            mouseWriter.run(Paths.commandFor("niri-config", ["mouse", JSON.stringify(changes)]));
+            mouseWriter.run(ServiceCompositor.configuration(["mouse", JSON.stringify(changes)]));
         }
     }
     FileView
     {
-        path: Paths.niriDir + "/06-user-input.kdl"
+        path: ServiceCompositor.configFiles.input || ""
         printErrors: false
         watchChanges: serviceDevices.mouseWatching
         onFileChanged: { reload(); serviceDevices.refreshMouse(); }

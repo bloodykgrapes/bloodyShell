@@ -35,10 +35,14 @@ PanelWindow
 
     Equalizer
     {
+        objectName: "desktopEqualizer"
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         height: Math.round(parent.height / 2)
         active: Config.desktopEqualizer
         visible: Config.desktopEqualizer
+        opacity: Config.desktopEqualizerOpacity
+        topColor: Theme.colorAccent
+        bottomColor: topColor
 
         bars: 100
 

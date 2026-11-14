@@ -59,12 +59,6 @@ SettingsPage
 
         SettingsRow
         {
-            label: Tr.tr("settings.general.greeterSync")
-            description: Tr.tr("settings.general.greeterSyncHint")
-            Toggle { checked: Config.greeterSync; onToggled: value => Config.set("greeterSync", value) }
-        }
-        SettingsRow
-        {
             label: Tr.tr("settings.general.debugLogging")
             description: Tr.tr("settings.general.debugLoggingHint")
 

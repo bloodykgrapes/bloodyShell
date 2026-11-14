@@ -6,17 +6,18 @@ import Quickshell.Io
 
 import "../common"
 import "../core"
-import "../src/Kdl.js" as Kdl
 
 Singleton
 {
     id: serviceDisplay
 
-    readonly property var helper: Paths.commandFor("niri-config")
+    readonly property var helper: ServiceCompositor.configuration([])
 
-    property var    outputs: []
-    property bool   loaded: false
-    property string error: ""
+    readonly property var outputs: ServiceCompositor.backend ? ServiceCompositor.backend.outputs : []
+    readonly property bool loaded: ServiceCompositor.backend ? ServiceCompositor.backend.outputsLoaded : false
+    property string writeError: ""
+    readonly property string error: writeError || (ServiceCompositor.backend ? ServiceCompositor.backend.outputsError : "")
+    readonly property bool busy: writer.busy || writeAgain.running
 
     property var pending: null
     property int countdown: 0
@@ -24,7 +25,7 @@ Singleton
 
     readonly property var riskyKeys: ["mode", "transform", "enabled"]
 
-    function refresh() { reader.running = true }
+    function refresh() { if (ServiceCompositor.supports("displays")) ServiceCompositor.backend.refreshOutputs(); }
 
     function output(name) { return outputs.find(o => o.name === name) || null }
 
@@ -53,6 +54,7 @@ Singleton
 
     function change(name, key, value)
     {
+        if (!ServiceCompositor.supports("displays")) return;
         if (confirming) keep();
 
         const before = stateOf(name);
@@ -105,18 +107,8 @@ Singleton
 
     function applyLive(name, key, state)
     {
-        let args;
-        switch (key)
-        {
-            case "mode":      args = ["mode", state.mode || "auto"]; break;
-            case "scale":     args = ["scale", String(state.scale)]; break;
-            case "transform": args = ["transform", state.transform]; break;
-            case "enabled":   args = [state.enabled ? "on" : "off"]; break;
-            case "vrr":       args = state.vrr === "on-demand" ? ["vrr", "on", "--on-demand"] : ["vrr", state.vrr]; break;
-            case "position":  args = state.position ? ["position", "set", String(state.position.x), String(state.position.y)] : ["position", "auto"]; break;
-            default: return;
-        }
-        Quickshell.execDetached(["niri", "msg", "output", name].concat(args));
+        if (!ServiceCompositor.supports("displays")) return;
+        ServiceCompositor.backend.applyOutput(name, key, state);
         refreshSoon.restart();
     }
 
@@ -129,7 +121,7 @@ Singleton
 
     function savePositions(name, position)
     {
-        // Pin neighbouring outputs so niri's automatic placement keeps them in place.
+        // Keep neighbouring outputs at their current positions.
         const all = Object.assign({}, Config.displays || {});
         for (const output of outputs.filter(output => output.logical))
         {
@@ -147,35 +139,12 @@ Singleton
         write(all);
     }
 
-    function number(v) { return String(Math.round(v * 1000) / 1000) }
-
-    function render(all)
-    {
-        const lines = [];
-        for (const name of Object.keys(all).sort())
-        {
-            const d = all[name];
-            lines.push("", "output " + Kdl.quote(name) + " {");
-            if (d.enabled === false) lines.push("    off");
-            else
-            {
-                if (d.mode) lines.push("    mode " + Kdl.quote(d.mode));
-                lines.push("    scale " + number(d.scale || 1));
-                lines.push("    transform " + Kdl.quote(d.transform || "normal"));
-                if (d.position) lines.push("    position x=" + Math.round(d.position.x) + " y=" + Math.round(d.position.y));
-                if (d.vrr === "on") lines.push("    variable-refresh-rate");
-                else if (d.vrr === "on-demand") lines.push("    variable-refresh-rate on-demand=true");
-            }
-            lines.push("}");
-        }
-        return lines.join("\n");
-    }
-
     function write(all)
     {
         if (writer.busy) { writeAgain.restart(); return; }
-        error = "";
-        writer.run(helper.concat(["write", "07-user-output.kdl", render(all)]));
+        if (!ServiceCompositor.supports("displays")) return;
+        writeError = "";
+        writer.run(helper.concat(ServiceCompositor.backend.outputWriteArgs(all)));
     }
     Timer { id: writeAgain; interval: 200; onTriggered: serviceDisplay.write(Config.displays || {}) }
 
@@ -184,31 +153,12 @@ Singleton
         id: writer
         onCompleted: code =>
         {
-            if (code !== 0) serviceDisplay.error = writer.errorMessage(Tr.tr("service.display.saveFailed"));
+            if (code !== 0) serviceDisplay.writeError = writer.errorMessage(Tr.tr("service.display.saveFailed"));
             refreshSoon.restart();
         }
     }
 
     Timer { id: refreshSoon; interval: 600; onTriggered: serviceDisplay.refresh() }
-
-    Process
-    {
-        id: reader
-        command: ["niri", "msg", "-j", "outputs"]
-        stdout: StdioCollector
-        {
-            onStreamFinished:
-            {
-                try
-                {
-                    const all = JSON.parse(text);
-                    serviceDisplay.outputs = Object.keys(all).sort().map(k => all[k]);
-                    serviceDisplay.loaded = true;
-                }
-                catch (e) { serviceDisplay.error = Tr.tr("service.display.readFailed") }
-            }
-        }
-    }
 
     property string brightnessDevice: ""
     property int    brightnessMax: 0

@@ -21,7 +21,7 @@ def checks():
         def stub(folder, name, body):
             (base / f"modules/{folder}/{name}.qml").write_text("pragma Singleton\nimport QtQuick\nimport Quickshell\nSingleton {\n" + body + "\n}\n")
 
-        stub("core", "Config", 'property bool debug: false; property bool initialized: true; property bool dockMerge: true; property var dockPinned: []; property bool notificationsEnabled: true; property bool notificationsRememberDnd: false; property bool notificationsDnd: false; function set(key, value) { this[key] = value; }')
+        stub("core", "Config", 'property bool debug: false; property bool initialized: true; property bool dockMerge: true; property var dockPinned: []; property bool notificationsEnabled: true; property var notificationsBlockedApps: []; property bool notificationsRememberDnd: false; property bool notificationsDnd: false; property double notificationsDndUntil: 0; function set(key, value) { this[key] = value; }')
         stub("core", "OverlayState", 'property bool active: false; property bool inhibited: false; property string current: ""; function close() { active = false; current = ""; }')
         stub("core", "MenuState", 'function close() {}')
         stub("services", "ServiceLock", 'property bool locked: false')
@@ -48,8 +48,6 @@ def checks():
             source = path.read_text()
             if 'import "../core"' not in source:
                 source = source.replace("import QtQuick", 'import QtQuick\nimport "../core"', 1)
-            if name == "ServiceCompositor":
-                source = source[:source.index('    Process\n    {\n        id: stream')] + "}\n"
             source = source.replace("Quickshell.execDetached", "TestMetrics.execDetached")
             if name == "ServiceApplications":
                 source = source.replace("DesktopEntries.applications.values || []", "TestMetrics.catalog")
@@ -62,20 +60,30 @@ def checks():
                 end = source.index("    function received(n)", start)
                 source = source[:start] + '    QtObject { id: server; property var trackedNotifications: ({values:TestMetrics.notifications}) }\n\n' + source[end:]
             (base / f"modules/services/{name}.qml").write_text(source)
+        adapter = base / "modules/compositors/Niri.qml"
+        source = adapter.read_text()
+        source = source[:source.index('    Process\n    {\n        id: stream')] + "}\n"
+        source = source.replace("Quickshell.execDetached", "TestMetrics.execDetached")
+        adapter.write_text(source)
         sync = base / "modules/src/ModelSync.js"
         source = sync.read_text().replace("model.get(", "readRow(model, ")
         source = source.replace(".pragma library", ".pragma library\n\nvar reads = 0;\nfunction readRow(model, index) { reads++; return model.get(index); }")
         sync.write_text(source)
+        identity = base / "modules/src/AppIdentity.js"
+        source = identity.read_text().replace(".pragma library", ".pragma library\n\nvar matchCalls = 0;")
+        source = source.replace("function matchKey(value)\n{", "function matchKey(value)\n{\n    matchCalls++;")
+        identity.write_text(source)
         (base / "shell.qml").write_text('''import QtQuick
 import Quickshell
 import "modules/core"
 import "modules/services"
 import "modules/src/ModelSync.js" as ModelSync
+import "modules/src/AppIdentity.js" as AppIdentity
 
 ShellRoot
 {
     id: tests
-    property bool optimized: Quickshell.env("BLOODYSHELL_OPT_BASELINE") === ""
+    property bool optimized: !Quickshell.env("BLOODYSHELL_OPT_BASELINE")
     property int histories: 0
     property int windowChanges: 0
     property int altHistories: 0
@@ -91,11 +99,11 @@ ShellRoot
             TestMetrics.catalog = Array.from({length:4000}, (_, index) => ({id:"org.example.App" + String(index).padStart(4,"0"),name:"Application " + String(index).padStart(4,"0"),generic:"Editor",comment:"A useful application",keywords:["tools"],noDisplay:false}));
             Config.dockPinned = ["org.example.App0000", "org.example.App0001"];
             const list = Array.from({length:180}, (_, id) => ({id:id,app_id:"org.example.App" + String(Math.floor(id/3)).padStart(4,"0"),title:"Window " + id,workspace_id:1,is_focused:id===0,is_urgent:false}));
-            ServiceCompositor.windowsApply(list);
+            ServiceCompositor.backend.windowsApply(list);
             check(ServiceDock.model.count === 61, "Merged dock lost applications or its separator");
             TestMetrics.serializations = 0; ModelSync.reads = 0; histories = 0;
             const start = Date.now();
-            for (let i = 0; i < 40; i++) ServiceCompositor.windowUpsert(Object.assign({}, ServiceCompositor.windowList[3], {title:"Changed " + i}));
+            for (let i = 0; i < 40; i++) ServiceCompositor.backend.windowUpsert(Object.assign({}, ServiceCompositor.windowList[3], {title:"Changed " + i}));
             const dockMs = Date.now() - start;
             const serialized = TestMetrics.serializations, reads = ModelSync.reads, historyWrites = histories;
             check(JSON.parse(ServiceDock.model.get(1).windows)[0].title === "Changed 39", "Incremental dock lost changed titles");
@@ -105,17 +113,17 @@ ShellRoot
                 check(reads === 0, "A title-only dock update still scans native model rows: " + reads);
                 check(historyWrites === 0, "Title updates invalidate window focus history");
                 const before = windowChanges;
-                ServiceCompositor.windowsApply(ServiceCompositor.windowList);
+                ServiceCompositor.backend.windowsApply(ServiceCompositor.windowList);
                 check(windowChanges === before, "Identical compositor snapshots invalidate every subscriber");
             }
-            ServiceCompositor.windowFocus(5);
+            ServiceCompositor.backend.windowFocus(5);
             check(ServiceDock.model.get(1).is_focused && ServiceDock.model.get(1).focused_index === 2
                 && !ServiceDock.model.get(0).is_focused, "Incremental focus lost the selected dock window");
-            ServiceCompositor.windowSet(3, "is_urgent", true);
+            ServiceCompositor.backend.windowSet(3, "is_urgent", true);
             check(ServiceDock.model.get(1).is_urgent && JSON.parse(ServiceDock.model.get(1).windows)[0].urgent, "Urgency did not invalidate the cached dock group");
-            ServiceCompositor.windowSet(3, "is_urgent", false);
+            ServiceCompositor.backend.windowSet(3, "is_urgent", false);
             check(!ServiceDock.model.get(1).is_urgent, "Cleared urgency stayed cached");
-            ServiceCompositor.windowFocus(0);
+            ServiceCompositor.backend.windowFocus(0);
             const moved = ServiceDock.model.get(3).key;
             ServiceDock.move(3, 5);
             check(ServiceDock.model.get(5).key === moved, "Unpinned ordering was not preserved");
@@ -155,6 +163,34 @@ ShellRoot
                 check(ServiceApplications.searchMemo.results.size <= 16, "Search memo grows without bounds");
                 for (let i = 0; i < 180; i++) ServiceApplications.findEntry("unknown-" + i);
                 check(ServiceApplications.entryMemo.entries.size <= 128, "Desktop entry memo grows without bounds");
+                for (let i = 0; i < 400; i++) ServiceApplications.appTokens("unknown-token-" + i);
+                check(ServiceApplications.tokenCache.size <= 128, "Application identity cache grows without bounds");
+                check(ServiceApplications.notificationFrom({desktopEntry:"__proto__"},"__proto__"), "Prototype-named application breaks notification matching");
+                check(ServiceApplications.notificationFrom({appName:"constructor"},"constructor"), "Constructor-named application breaks notification matching");
+                check(ServiceApplications.trayIcon("image://icon/%E0%A4%A", "fallback") === "fallback", "Malformed tray icon URL did not use its fallback");
+            }
+
+            let launchMatches = 0, previousLaunchMatches = 0;
+            if (optimized)
+            {
+                const pending = Object.create(null);
+                for (let i = 0; i < 20; i++) pending["unmatched-launch-" + i] = Date.now();
+                pending["ORG.EXAMPLE.APP0001.desktop"] = Date.now();
+                pending["__proto__"] = Date.now();
+                ServiceApplications.launching = pending;
+                AppIdentity.matchCalls = 0;
+                const expected = Object.keys(pending).filter(key => !list.some(window => AppIdentity.sameApp(window.app_id || "", key)));
+                previousLaunchMatches = AppIdentity.matchCalls;
+                AppIdentity.matchCalls = 0;
+                ServiceApplications.updateLaunching();
+                launchMatches = AppIdentity.matchCalls;
+                check(Object.keys(ServiceApplications.launching).join(",") === expected.join(","), "Indexed launch matching changed application identity handling");
+                check(launchMatches <= list.length + Object.keys(pending).length && launchMatches < previousLaunchMatches, "Launch matching still repeats window scans: " + launchMatches);
+                ServiceApplications.launching = Object.create(null);
+                check(!ServiceApplications.isLaunching("constructor"), "Prototype key was already marked as launching");
+                ServiceApplications.markLaunching("constructor");
+                check(ServiceApplications.isLaunching("constructor"), "Prototype key cannot be tracked as launching");
+                ServiceApplications.launching = Object.create(null);
             }
 
             function notification(id, app)
@@ -203,7 +239,7 @@ ShellRoot
                 const id = list[i].id;
                 Object.defineProperty(tracked[i], "id", {get: () => { TestMetrics.counters.idReads++; return id; }, enumerable:true});
             }
-            ServiceCompositor.windowList = tracked;
+            ServiceCompositor.backend.windowList = tracked;
             ServiceAltTab.history = tracked.map(window => window.id).reverse();
             ServiceAltTab.remember();
             TestMetrics.counters.idReads = 0; altHistories = 0;
@@ -218,12 +254,12 @@ ShellRoot
             ServiceAltTab.cycle(1);
             check(ServiceAltTab.active && ServiceAltTab.windows.length === 180 && ServiceAltTab.windows[ServiceAltTab.selected].id === 179, "MRU switching order changed");
             ServiceAltTab.cancel();
-            ServiceCompositor.windowRemove(179);
+            ServiceCompositor.backend.windowRemove(179);
             check(!ServiceAltTab.history.includes(179), "Closed window stayed in Alt+Tab history");
-            ServiceCompositor.focusedOutput = "test-output";
+            ServiceCompositor.backend.focusedOutput = "test-output";
             ServiceCompositor.focusWorkspace("test-output", 2);
             if (optimized) check(TestMetrics.actions[TestMetrics.actions.length-1][0] === "niri", "Same-output workspace action still starts a shell");
-            console.log("OPTIMIZATION_METRICS", JSON.stringify({dockMs:dockMs,dockSerializations:serialized,nativeModelReads:reads,historyWrites:historyWrites,searchMs:searchMs,searchScores:scored,desktopLookups:lookups,altMs:altMs,altIdReads:altReads,altHistoryWrites:altWrites}));
+            console.log("OPTIMIZATION_METRICS", JSON.stringify({dockMs:dockMs,dockSerializations:serialized,nativeModelReads:reads,historyWrites:historyWrites,searchMs:searchMs,searchScores:scored,desktopLookups:lookups,launchMatches:launchMatches,previousLaunchMatches:previousLaunchMatches,altMs:altMs,altIdReads:altReads,altHistoryWrites:altWrites}));
             console.log("OPTIMIZATIONS_PASSED dock roles/order/pinning, compositor snapshots, bounded application caches, notification cleanup/grouping, MRU switching, and direct workspace actions");
         }
         catch (error) { console.error("OPTIMIZATIONS_FAILED", error); }

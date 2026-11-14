@@ -17,7 +17,7 @@ ACTIONS = {
     "alt-tab": ("next", ("next", "previous")),
     "lock": ("", ())
 }
-MAINTENANCE = ("setup", "install", "uninstall", "update", "doctor", "configs", "sddm")
+MAINTENANCE = ("setup", "install", "update", "doctor", "configs", "sddm")
 LIFECYCLE = ("start", "run", "restart", "stop", "status")
 
 
@@ -181,6 +181,20 @@ def ipc(target, function, *args):
     execute([command, "ipc", "--id", instance["id"], "call", "--", target, function, *args])
 
 
+def action_runtime():
+    command = shutil.which("qs") or shutil.which("quickshell")
+    if command:
+        try:
+            instance = active_instance(command)
+        except (OSError, RuntimeError, subprocess.SubprocessError):
+            instance = None
+        if instance and isinstance(instance.get("config_path"), str):
+            config = Path(instance["config_path"])
+            if config.is_file() and config.name == "shell.qml" and (config.parent / "scripts/lib/backend.py").is_file():
+                return config.resolve().parent
+    return runtime_path()
+
+
 def action_usage(action):
     modes = ACTIONS[action][1]
     return action + (" [" + "|".join(modes) + "]" if modes else "")
@@ -217,7 +231,7 @@ def stop(command, path, quiet=False):
 
 def start(command, path, foreground=False, args=()):
     if not os.environ.get("WAYLAND_DISPLAY"):
-        raise RuntimeError("Start bloodyShell inside your niri Wayland session.")
+        raise RuntimeError("Start bloodyShell inside your Wayland session.")
     options = [command, "--no-duplicate", "--path", str(path)]
     if not foreground:
         options.append("--daemonize")
@@ -239,22 +253,22 @@ Usage: bloodyShell [command] [options]
 
 {actions}
 
+  open <type>           Open the default browser, file-manager, or terminal
   setup                 Open the setup menu
   install               Install or repair using setup
-  uninstall [options]   Preview removal; --apply removes unchanged installed files
+  uninstall [options]   Preview removal; --apply asks about SDDM and shell settings
   update [options]      Update using setup
   doctor [--json]       Check the installation
   configs [names]       Apply optional app configurations
+  cli                   Refresh the CLI and PATH
   sddm                  Configure the login screen
-  footprint             List owned data and external integrations
-  cleanup [--apply]     Preview or remove disposable owned data
-  restore [--apply]     Preview or undo tracked external settings
   path                  Print the runtime directory
   version               Print the installed version
   help                  Show this help
 
 Start with ./setup install when using a fresh source checkout.
 Startup applications are managed in Settings → Applications → Autostart.
+Default applications are managed in Settings → Applications → Default applications.
 Actions and logs target the newest running bloodyShell in this desktop session.""")
 
 
@@ -279,12 +293,15 @@ def control(action, args):
     else:
         if action == "restart":
             if not os.environ.get("WAYLAND_DISPLAY"):
-                raise RuntimeError("Restart bloodyShell inside your niri Wayland session.")
+                raise RuntimeError("Restart bloodyShell inside your Wayland session.")
             stop(command, path, quiet=True)
         start(command, path, foreground=action == "run", args=args)
 
 
 def main():
+    source = Path(__file__).absolute()
+    if source.parent != runtime_path() / "scripts":
+        os.environ["BLOODYSHELL_COMMAND"] = str(source)
     args = sys.argv[1:]
     action = args.pop(0) if args else "start"
     aliases = {"--help": "help", "-h": "help", "--version": "version", "-V": "version"}
@@ -298,6 +315,22 @@ def main():
             print(NAME + " " + (runtime() / "version").read_text().strip())
         else:
             print(runtime())
+    elif action == "open":
+        if len(args) != 1 or args[0] not in ("browser", "file-manager", "terminal"):
+            raise RuntimeError("Usage: bloodyShell open browser/file-manager/terminal")
+        import runpy
+        path = action_runtime()
+        api = runpy.run_path(str(path / "scripts/lib/backend.py"))
+        if "applications" not in api["MODULES"]:
+            raise RuntimeError("This shell version does not support application shortcuts. Update the shell with ./setup install.")
+        return api["dispatch"](["applications", "launch", args[0]], path)
+    elif action in ("cli", "uninstall"):
+        if action == "cli" and args:
+            raise RuntimeError("cli does not take arguments")
+        path = action_runtime() / "setup"
+        if not path.is_file():
+            raise RuntimeError("The setup script is missing from this shell. Run ./setup " + action + " from the source folder.")
+        execute(["bash", str(path), action, *args])
     elif action == "internal":
         if not args:
             raise RuntimeError("Usage: bloodyShell internal DOMAIN [arguments]")
@@ -305,16 +338,6 @@ def main():
         backend = runtime_path() / "scripts/lib/backend.py"
         api = runpy.run_path(str(backend))
         return api["dispatch"](args, runtime_path())
-    elif action in ("footprint", "cleanup", "restore"):
-        if action in ("cleanup", "restore") and "--apply" in args:
-            command = shutil.which("qs") or shutil.which("quickshell")
-            if not command:
-                raise RuntimeError("Cannot verify the shell is stopped: Quickshell is unavailable.")
-            if any(is_shell(entry) for entry in instances(command)):
-                raise RuntimeError("Stop all bloodyShell instances before applying cleanup or restoration.")
-        import runpy
-        api = runpy.run_path(str(runtime() / "scripts/lib/ownership.py"))
-        return api["restore"](args) if action == "restore" else api["main"](action, args)
     elif action in ACTIONS:
         ipc(*action_request(action, args))
     elif action == "logs":

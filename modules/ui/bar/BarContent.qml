@@ -34,5 +34,5 @@ Item
     }
 
     Zone { id: start; align: "start"; widgets: ["workspaces", "window"] }
-    Zone { id: end; align: "end"; widgets: ["tray", "status", "clock", "notifications", "update"] }
+    Zone { id: end; align: "end"; widgets: ["tray", "status", "clock", "update"] }
 }

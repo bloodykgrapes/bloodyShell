@@ -7,7 +7,13 @@
 ## [0.0.3] - 2026-11-14
 
 ### Added
+- **UI:** Recording indicator for dynamic island.
+- **UI:** Application icons in the applications list.
+- **UI:** Application context menu in the applications list.
 - **Settings:** Action popups.
+- **Settings:** Equalizer opacity.
+- **Settings:** `Easy Effects` support.
+- **Settings:** Default applications for keybinds call (Web Browser, Terminal, File Manager)
 - **Settings:** A dedicated keyboard shortcuts page.
 - **Settings:** The ability to import compositor, dotfiles, login screen, and wallpaper files directly from the Update page.
 - **Settings:** Virtual keyboard option when the physical keyboard is not connected.
@@ -18,10 +24,12 @@
 ### Changed
 - **Core:** Replaced the greetd display manager with SDDM.
 - **UI:** The frame now sits atop full-screen windows and will disappear  with animation when the window is maximized to full-screen mode.
+- **UI:** Updated screenshot overlay visual.
 - **UI:** Redesigned menus with a sidebar-style appearance.
-- **UI:** The media menu now replaces the Dynamic Island content, eliminating duplication of the track title and album cover.
+- **UI:** The media menu now replaces the dynamic island content, eliminating duplication of the track title and album cover.
 - **Settings:** The default wallpapers directory has been changed to `~/Pictures/Wallpapers`.
-- **Settings:** Updated placement of the Displays layout section.
+- **Settings:** Updated power profile to two separated stated: on battery and plugged in.
+- **Settings:** Updated placement of the displays layout section.
 - **Wallpapers**: Updated wallpapers overlay to a more compact design.
 
 ### Fixed
@@ -29,7 +37,10 @@
 - **UI:** Sidebars are no longer fixed to the top-left and top-right corners; they now follow the bar position.
 - **UI:** The bar and dock now track the empty workspace independently, on their own display, rather than on the currently focused one.
 - **UI:** Corrected improper sizing of various interface elements.
-- **UI:** Resolved an issue where tray icons did not respond to right-click events.
+- **UI:** The desktop equalizer no longer clips at half the screen.
+- **UI:** Each time the settings were opened, the list of pages was scrolled to the end.
+- **Other:** Resolved an issue where tray icons did not respond to right-click events.
+- **Other**: Calling an overlay not from the main overlay could cause a `quickshell` crash.
 
 ## [0.0.2] - 2026-11-09
 

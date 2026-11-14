@@ -7,12 +7,14 @@ import subprocess
 import sys
 
 MODULES = {
+    "applications": ("desktop.py", "applications_main"),
     "autostart": ("desktop.py", "autostart_main"),
-    "niri-config": ("desktop.py", "niri_main"),
+    "compositor": ("compositors/__init__.py", "main"),
     "tray-menu": ("desktop.py", "tray_menu_main"),
     "build-keyboard-monitor": ("processes.py", "keyboard_main"),
     "build-virtual-keyboard": ("processes.py", "virtual_keyboard_main"),
     "visualizer": ("processes.py", "visualizer_main"),
+    "easyeffects": ("processes.py", "easyeffects_main"),
     "dependencies": ("management.py", "dependencies_main"),
     "doctor": ("management.py", "doctor_main"),
     "install-command": ("management.py", "install_main"),
@@ -57,20 +59,18 @@ def dispatch(args, root):
         raise RuntimeError("Unknown internal command: " + domain)
     filename, entrypoint = MODULES[domain]
     module = root / "scripts/lib" / filename
-    ownership = runpy.run_path(str(root / "scripts/lib/ownership.py"))
-    with ownership["track"](domain, arguments):
-        if module.suffix == ".sh":
-            return supervise(["bash", str(module), *arguments], timeout=60)
-        previous = sys.argv
-        try:
-            sys.argv = [str(module), *arguments]
-            if entrypoint:
-                api = runpy.run_path(str(module))
-                handler = api.get(entrypoint)
-                if handler is None:
-                    raise RuntimeError("Incomplete backend module: " + filename)
-                return handler()
-            runpy.run_path(str(module), run_name="__main__")
-        finally:
-            sys.argv = previous
+    if module.suffix == ".sh":
+        return supervise(["bash", str(module), *arguments], timeout=60)
+    previous = sys.argv
+    try:
+        sys.argv = [str(module), *arguments]
+        if entrypoint:
+            api = runpy.run_path(str(module))
+            handler = api.get(entrypoint)
+            if handler is None:
+                raise RuntimeError("Incomplete backend module: " + filename)
+            return handler()
+        runpy.run_path(str(module), run_name="__main__")
+    finally:
+        sys.argv = previous
     return 0

@@ -29,7 +29,8 @@ if sys.argv[1:] == ["status"]:
         dict(id="compositor",kind="compositor",name="niri",destination="/tmp/fixture-niri"),
         dict(id="dots",kind="dots",name="dots",programs=["fixture"],destination="/tmp/fixture-config"),
         dict(id="greeter",kind="greeter",name="greeter",destination="/tmp/fixture-greeter"),
-        dict(id="wallpapers",kind="wallpapers",name="wallpapers",destination="/tmp/fixture-wallpapers")
+        dict(id="wallpapers",kind="wallpapers",name="wallpapers",destination="/tmp/fixture-wallpapers"),
+        dict(id="cli",kind="cli",name="cli",destination="/tmp/fixture-bin/bloodyShell")
     ])))
 elif sys.argv[1:] == ["import", "wallpapers"]:
     print(json.dumps(dict(destination="/tmp/fixture-wallpapers",settings={})))
@@ -183,7 +184,7 @@ ShellRoot
     }
     function menuEdges()
     {
-        const names = ["Battery", "Bluetooth", "Clock", "Layout", "Media", "Network", "Notifications", "Tray", "Volume"];
+        const names = ["Battery", "Bluetooth", "Clock", "Layout", "Media", "Network", "Tray", "Volume"];
         for (const style of [Enums.MenuDefault, Enums.MenuFloating])
         {
             Config.set("barMenu", style);
@@ -240,7 +241,7 @@ ShellRoot
                         const inset = Theme.frameThickness + (style === Enums.MenuFloating ? 10 : 0);
                         check(sidebar.progress > 0 && sidebar.progress < 1, "Vertical sidebar reveal snapped");
                         check(panel.width === sidebar.panelWidth && panel.height > 0 && panel.height < sidebar.panelHeight, "Vertical sidebar did not reveal vertically");
-                        check(sidebar.scrollView.height === sidebar.panelHeight - 8 && sidebar.contentBody.width === sidebar.panelWidth - 36, "Vertical sidebar content reflows during reveal");
+                        check(sidebar.scrollView.height === sidebar.panelHeight - sidebar.headerHeight - 8 && sidebar.contentBody.width === sidebar.panelWidth - 36, "Vertical sidebar content reflows during reveal");
                         check(Math.abs((side === "left" ? panel.y : frame.height - panel.y - panel.height) - inset) < 0.01, "Vertical sidebar is not aligned to its top or bottom edge");
                         const contentEdge = sidebar.scrollView.mapToItem(frame, 0, side === "left" ? 0 : sidebar.scrollView.height);
                         check(Math.abs((side === "left" ? contentEdge.y : frame.height - contentEdge.y) - inset - 4) < 1, "Vertical sidebar content slides away from its reveal edge: " + contentEdge.y + " inset=" + inset + " side=" + side + " mode=" + mode);
@@ -372,7 +373,7 @@ ShellRoot
             Repeater
             {
                 id: menuProbes
-                model: ["Battery", "Bluetooth", "Clock", "Layout", "Media", "Network", "Notifications", "Tray", "Volume"]
+                model: ["Battery", "Bluetooth", "Clock", "Layout", "Media", "Network", "Tray", "Volume"]
                 Loader
                 {
                     required property string modelData
@@ -431,9 +432,9 @@ ShellRoot
                     if (step > 0) { tests.geometry(); tests.barInteraction(); }
                     else
                     {
-                        ServiceCompositor.windowList = [{id:1,app_id:"test",title:"A window title"}];
-                        ServiceCompositor.lastWindowId = 1;
-                        ServiceCompositor.focusedWindowId = 1;
+                        ServiceCompositor.backend.windowList = [{id:1,app_id:"test",title:"A window title"}];
+                        ServiceCompositor.backend.lastWindowId = 1;
+                        ServiceCompositor.backend.focusedWindowId = 1;
                     }
                     Config.set("barType", Math.floor(step / 8) % 2);
                     Config.set("barSide", step % 4);
@@ -488,7 +489,7 @@ ShellRoot
                     case 8:
                         tests.check(OverlayState.inhibited && overlay.authenticating, "Authentication did not take priority");
                         OverlayState.show("launcher");
-                        ServiceCompositor.windowList = [{id:1,app_id:"one",title:"One"},{id:2,app_id:"two",title:"Two"}];
+                        ServiceCompositor.backend.windowList = [{id:1,app_id:"one",title:"One"},{id:2,app_id:"two",title:"Two"}];
                         ServiceAltTab.cycle(1);
                         tests.check((OverlayState.current === "settings") && !ServiceAltTab.active, "Authentication was interrupted");
                         overlay.dismiss();
@@ -545,18 +546,29 @@ ShellRoot
                         tests.check(!SidebarState.active, "Authentication did not close the sidebar");
                         overlay.testAgent.isActive = false;
                         tests.check(Registry.widgets.system === undefined && Registry.widgets.user === undefined, "System widget was retained");
-                        const notificationsWidget = tests.find(frame.bar, "notificationsWidget");
-                        tests.check(notificationsWidget !== null, "Notification widget is missing");
-                        const clockSlot = tests.slot(frame.bar, "clock"), notificationsSlot = tests.slot(frame.bar, "notifications");
-                        tests.check(frame.bar.isHorizontal ? notificationsSlot.x > clockSlot.x : notificationsSlot.y > clockSlot.y, "Notifications are not after the clock");
+                        tests.check(Registry.widgets.notifications === undefined && tests.find(frame.bar, "notificationsWidget") === null,
+                            "Removed notification widget remains in the bar");
                         ServiceNotifications.unreadCounter = 3;
-                        events.mouseClick(notificationsWidget, notificationsWidget.width / 2, notificationsWidget.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                        tests.check(MenuState.menuWidget === notificationsWidget && !SidebarState.active && !OverlayState.active && ServiceNotifications.unreadCounter === 0,
-                            "Notification widget did not open its own menu and mark history read");
+                        SidebarState.toggle("right", Quickshell.screens[0].name);
                         ServiceMedia.players = [player]; break;
                     case 27:
-                        tests.check(tests.find(frame.bar, "notificationsMenu") !== null, "Notification history did not load in the bar menu");
-                        MenuState.close();
+                        tests.check(frame.rightSidebar.currentTab === "controls" && ServiceNotifications.unreadCounter === 3,
+                            "Opening Control Center marked notification history read");
+                        const tabs = tests.find(frame.rightSidebar, "rightSidebarTabs");
+                        const notificationsTab = tests.find(tabs, "tab-notifications");
+                        events.mouseClick(notificationsTab, notificationsTab.width / 2, notificationsTab.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
+                        tests.check(frame.rightSidebar.currentTab === "notifications" && tests.find(frame.rightSidebar, "sidebarNotifications") !== null
+                            && ServiceNotifications.unreadCounter === 0 && !MenuState.menuActive,
+                            "Notifications did not open in the sidebar and mark history read");
+                        ServiceNotifications.unreadCounter = 2;
+                        tests.check(ServiceNotifications.unreadCounter === 0, "Visible notification history leaves arrivals unread");
+                        const duration = tests.find(frame.rightSidebar, "notificationsDndDuration");
+                        duration.selected(60);
+                        tests.check(ServiceNotifications.dnd && ServiceNotifications.dndMinutes === 60, "Sidebar lost timed DND");
+                        ServiceNotifications.setDnd(false);
+                        events.keyClick(Qt.Key_Home);
+                        tests.check(frame.rightSidebar.currentTab === "controls", "Keyboard cannot select the Control Center tab");
+                        SidebarState.close();
                         tests.check(tests.find(frame, "dynamicIsland").shown.kind === "media" && frame.surface.centerBody.width > 0, "Playing media did not populate the island");
                         ServiceNotifications.notificationReceived(notification); break;
                     case 28:
@@ -700,13 +712,13 @@ ShellRoot
                     case 46:
                         tests.check(!frame.rightSidebar.floating && frame.rightSidebar.opened, "Changing the menu style dismissed the sidebar");
                         tests.check(frame.rightSidebar.panel.x + frame.rightSidebar.panel.width === frame.width - Theme.frameThickness && frame.surface.rightBody.width > 0, "Default sidebar no longer joins the frame");
-                        ServiceCompositor.lastWindowId = 1; ServiceCompositor.focusedWindowId = null;
+                        ServiceCompositor.backend.lastWindowId = 1; ServiceCompositor.backend.focusedWindowId = null;
                         const clockAfterSidebar = tests.slot(frame.bar, "clock");
                         events.mouseClick(clockAfterSidebar, clockAfterSidebar.width / 2, clockAfterSidebar.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                         tests.check(!SidebarState.active && MenuState.menuActive, "Opening a menu did not replace the sidebar");
-                        ServiceCompositor.focusedWindowId = 1;
+                        ServiceCompositor.backend.focusedWindowId = 1;
                         tests.check(MenuState.menuActive, "Restoring focus after a sidebar dismissed the new menu");
-                        ServiceCompositor.focusedWindowId = 2;
+                        ServiceCompositor.backend.focusedWindowId = 2;
                         tests.check(!MenuState.menuActive, "An actual window switch no longer dismisses menus");
                         player.isPlaying = true; ServiceMedia.players = [player];
                         Config.set("barSide", Enums.EdgeBottom); Config.set("dockSide", Enums.EdgeTop);
@@ -923,7 +935,7 @@ ShellRoot
                                 if (importChecks === 1)
                                 {
                                     if ((ServiceResources.busy || ServiceResources.entries.length === 0) && importWait++ < 20) return;
-                                    tests.check(ServiceResources.entries.map(entry => entry.id).join(",") === "compositor,dots,greeter,wallpapers", "Import catalog did not load");
+                                    tests.check(ServiceResources.entries.map(entry => entry.id).join(",") === "compositor,dots,greeter,wallpapers,cli", "Import catalog did not load");
                                     tests.find(imports, "importResource-dots").clicked();
                                     tests.check(ServiceResources.pending && ServiceResources.pending.id === "dots", "Dots import did not request confirmation");
                                     const confirmation = tests.find(overlay.testPage.item, "resourceConfirmation");
@@ -1102,8 +1114,8 @@ ShellRoot
 
 
 def fullscreen_fixture(base):
-    compositor = base / "modules/services/ServiceCompositor.qml"
-    source = compositor.read_text().replace("id: serviceCompositor", "id: serviceCompositor\n    property var testOutputs: []", 1)
+    compositor = base / "modules/compositors/Niri.qml"
+    source = compositor.read_text().replace("id: niri", "id: niri\n    property var testOutputs: []", 1)
     source = source.replace("fullscreenScreens(Quickshell.screens)", "fullscreenScreens(testOutputs)")
     compositor.write_text(source)
     (base / "shell.qml").write_text(r'''import QtQuick
@@ -1126,10 +1138,12 @@ ShellRoot {
         readonly property alias frame: frameView
         property int windowChanges:0
         property int fullscreenChanges:0
+        property int reservationChanges:0
         Connections { target:ServiceCompositor; function onWindowListChanged() { window.windowChanges++; } }
         Connections { target:ServiceCompositor; function onFullscreenOutputsChanged() { window.fullscreenChanges++; } }
+        Connections { target:frameView; function onReservationsChanged() { window.reservationChanges++; } }
         function check(ok,message) { if(!ok) throw new Error(message); }
-        function send(event) { ServiceCompositor.event(JSON.stringify(event)); }
+        function send(event) { ServiceCompositor.backend.event(JSON.stringify(event)); }
         function tile(width,height,x=null,y=null) { return {tile_size:[width,height],tile_pos_in_workspace_view:x===null || y===null ? null : [x,y],window_size:[width,height]}; }
         function fullscreen(on) { send({WindowLayoutsChanged:{changes:[[1,on ? tile(1280,800) : tile(1000,700,10,10)]]}}); }
         function find(item,name) { if(item.objectName===name) return item; for(const child of item.children || []) { const match=find(child,name); if(match) return match; } return null; }
@@ -1155,7 +1169,16 @@ ShellRoot {
                 const send=event=>window.send(event), tile=(...args)=>window.tile(...args), fullscreen=on=>window.fullscreen(on), find=(...args)=>window.find(...args);
                 Config.set("barHideAuto",false); Config.set("dockHideAuto",false);
                 Config.set("barHideSmart",true); Config.set("dockHideSmart",true);
-                ServiceCompositor.testOutputs=[outputA,outputB];
+                ServiceCompositor.backend.testOutputs=[outputA,outputB];
+                send({CastsChanged:{casts:[{stream_id:1,session_id:10,is_active:true,target:{Output:{name:"A"}}},{stream_id:2,session_id:10,is_active:false,target:{Window:{id:2}}}]}});
+                check(ServiceCompositor.captureStreams.length===2 && ServiceRecording.streams.length===1 && ServiceRecording.outputs[0]==="A", "Cast snapshot was not normalized");
+                send({CastStartedOrChanged:{cast:{stream_id:1,session_id:10,is_active:false,target:{Output:{name:"A"}}}}});
+                check(ServiceCompositor.captureStreams.length===2 && !ServiceRecording.active,"Pausing a cast duplicated it or kept its indicator active");
+                send({CastStartedOrChanged:{cast:{stream_id:2,session_id:10,is_active:true,target:{Window:{id:2}}}}});
+                check(ServiceRecording.active && ServiceRecording.streams[0].windowId===2,"Resuming a window cast failed");
+                send({CastStopped:{stream_id:2}});
+                check(!ServiceRecording.active && ServiceCompositor.captureStreams.length===1,"Stopped cast left stale capture state");
+                send({CastsChanged:{casts:[]}});
                 send({WorkspacesChanged:{workspaces:[
                     {id:10,idx:1,output:"A",is_active:true,is_focused:true,active_window_id:1},
                     {id:11,idx:2,output:"A",is_active:false,is_focused:false,active_window_id:3},
@@ -1192,6 +1215,17 @@ ShellRoot {
                 Config.set("barHideAuto",false); Config.set("dockHideAuto",false);
                 fullscreen(true); wait(30);
                 check(frame.fullscreen && ServiceCompositor.fullscreenOutputs.join(",")==="A,B","Live layout event did not enter fullscreen");
+                ServiceNotifications.setDnd(true,30);
+                send({CastStartedOrChanged:{cast:{stream_id:3,session_id:20,is_active:true,target:{Output:{name:"A"}}}}}); wait(40);
+                const mark=window.find(frame.island,"recordingMark"), island=window.find(frame.island,"dynamicIsland");
+                check(mark && mark.visible && island.active && island.shown.kind==="recording","Fullscreen or DND hid the recording indicator");
+                check(window.find(island,"islandCompactContent").acceptedButtons===Qt.NoButton,"Recording status opens an unrelated media menu");
+                island.toggleMenu(); wait(60);
+                const mediaMark=window.find(frame.island,"mediaRecordingIndicator");
+                check(mediaMark && mediaMark.visible,"Expanded island media menu hid the recording indicator");
+                MenuState.close(); wait(40);
+                send({CastStopped:{stream_id:3}}); ServiceNotifications.setDnd(false); wait(30);
+                check(!ServiceRecording.active && !mark.visible,"Recording indicator stayed visible after capture stopped");
                 const fullscreenState=ServiceCompositor.fullscreenOutputs, fullscreenChanges=window.fullscreenChanges;
                 for(let i=0;i<40;i++) {
                     const record=ServiceCompositor.windowList.find(window=>window.id===1);
@@ -1200,7 +1234,7 @@ ShellRoot {
                 check(ServiceCompositor.fullscreenOutputs===fullscreenState && window.fullscreenChanges===fullscreenChanges,"Title changes republished fullscreen state");
                 const count=window.windowChanges;
                 fullscreen(true); check(window.windowChanges===count,"Geometry updates rebuilt application lists");
-                check(frame.reservations.every(value=>value===0),"Fullscreen retained application margins");
+                check(frame.reservations.every(value=>value>=Theme.frameThickness),"Fullscreen changed the normal work area");
                 send({WindowFocusChanged:{id:null}}); check(frame.fullscreen,"Opening a shell surface cleared fullscreen detection");
                 send({WorkspaceActiveWindowChanged:{workspace_id:10,active_window_id:null}}); check(!frame.fullscreen,"No active window retained fullscreen");
                 send({WorkspaceActiveWindowChanged:{workspace_id:10,active_window_id:1}}); check(frame.fullscreen,"Restoring active window did not restore fullscreen");
@@ -1211,10 +1245,14 @@ ShellRoot {
                     Config.set("themeAnimations",mode);
                     for(const side of [0,1,2,3]) {
                         Config.set("barSide",side); Config.set("dockSide",(side+1)%4);
+                        until(()=>frame.frameReveal===1,"Normal frame did not finish revealing");
+                        const reserved = JSON.stringify(frame.reservations), layoutReserved = JSON.stringify(layout.reservations);
+                        const changesBefore = window.reservationChanges;
                         outside(); fullscreen(true); wait(30);
                         check(frame.bar.autoHide && frame.dock.autoHide,"Fullscreen did not override panel auto-hide settings");
                         until(()=>!frame.bar.revealed && !frame.dock.revealed,"Fullscreen panels did not hide at mode/side " + mode + "/" + side,1800);
                         until(()=>frame.bar.reveal===0 && frame.dock.container.reveal===0 && frame.thickness===0,"Fullscreen animation did not settle",1800);
+                        check(JSON.stringify(frame.reservations)===reserved && JSON.stringify(layout.reservations)===layoutReserved && window.reservationChanges===changesBefore,"Fullscreen hide changed reserved space during animation at mode/side " + mode + "/" + side);
                         check(!frame.inputRegion.regions.includes(frame.bar.inputRegion) && !frame.inputRegion.regions.includes(frame.dock.inputRegion),"Hidden fullscreen panels intercepted application input");
                         check(!frame.island || frame.inputRegion.regions.includes(frame.island.inputRegion),"Fullscreen removed dynamic island input");
                         edge(side); wait(40);
@@ -1226,6 +1264,8 @@ ShellRoot {
                         check(!frame.dock.revealWanted && !frame.dock.revealed && frame.dock.container.reveal===0,"Edge hover revealed the fullscreen dock");
                         fullscreen(false); wait(30);
                         check(frame.bar.revealWanted && frame.dock.revealWanted && !frame.bar.autoHide && !frame.dock.autoHide,"Fullscreen exit changed configured panel behavior");
+                        until(()=>frame.frameReveal===1,"Restored frame did not finish revealing");
+                        check(JSON.stringify(frame.reservations)===reserved && JSON.stringify(layout.reservations)===layoutReserved && window.reservationChanges===changesBefore,"Fullscreen exit resized the work area during animation at mode/side " + mode + "/" + side);
                         Config.set("barHideAuto",true); Config.set("dockHideAuto",true);
                         outside();
                         until(()=>!frame.bar.revealed && !frame.dock.revealed,"Normal auto-hide did not resume",1800);

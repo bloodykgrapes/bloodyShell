@@ -15,6 +15,75 @@ Singleton
 
     readonly property var applications: DesktopEntries.applications.values || []
 
+    property var defaultApplications: ({})
+    property var defaultCurrent: ({})
+    property string defaultsError: ""
+    property bool defaultsRefreshPending: false
+    readonly property bool defaultsBusy: defaultsCommand.busy
+    readonly property var defaultsHelper: Paths.commandFor("applications")
+    readonly property var defaultConfigKeys: ({browser: "applicationBrowser", "file-manager": "applicationFileManager", terminal: "applicationTerminal"})
+
+    function refreshDefaults()
+    {
+        defaultsRefresh.stop();
+        if (defaultsBusy) { defaultsRefreshPending = true; return; }
+        defaultsError = "";
+        defaultsCommand.run(defaultsHelper.concat(["status"]));
+    }
+
+    Timer
+    {
+        id: defaultsRefresh
+        interval: 150
+        onTriggered: serviceApplications.refreshDefaults()
+    }
+
+    function defaultOptions(role)
+    {
+        return (defaultApplications[role] || []).map(app => ({label: app.name, value: app.id}));
+    }
+
+    function defaultSelection(role)
+    {
+        const key = defaultConfigKeys[role];
+        const selected = key ? Config[key] : "";
+        if ((defaultApplications[role] || []).some(app => app.id === selected)) return selected;
+        return defaultCurrent[role] || "";
+    }
+
+    function setDefault(role, appId)
+    {
+        if (!(defaultApplications[role] || []).some(app => app.id === appId)) return false;
+        defaultsError = "";
+        Config.set(defaultConfigKeys[role], appId);
+        return true;
+    }
+
+    CommandProcess
+    {
+        id: defaultsCommand
+        stdout: StdioCollector { id: defaultsResult }
+        onCompleted: code =>
+        {
+            if (code !== 0) serviceApplications.defaultsError = errorMessage(Tr.tr("settings.defaultApplications.failed"));
+            else
+            {
+                try
+                {
+                    const result = JSON.parse(defaultsResult.text);
+                    serviceApplications.defaultApplications = result.applications;
+                    serviceApplications.defaultCurrent = result.current;
+                }
+                catch (error) { serviceApplications.defaultsError = String(error); }
+            }
+            if (serviceApplications.defaultsRefreshPending)
+            {
+                serviceApplications.defaultsRefreshPending = false;
+                if (serviceApplications.autostartWatching) Qt.callLater(() => serviceApplications.refreshDefaults());
+            }
+        }
+    }
+
     property var autostartEntries: []
     property var autostartClients: []
     property string autostartError: ""
@@ -58,8 +127,14 @@ Singleton
 
     onAutostartWatchingChanged:
     {
-        if (autostartWatching) refreshAutostart();
-        else { autostartRefresh.stop(); autostartRefreshPending = false; }
+        if (autostartWatching) { refreshAutostart(); refreshDefaults(); }
+        else
+        {
+            autostartRefresh.stop();
+            defaultsRefresh.stop();
+            autostartRefreshPending = false;
+            defaultsRefreshPending = false;
+        }
     }
 
     Timer
@@ -119,6 +194,22 @@ Singleton
     property var searchMemo: ({ index: null, all: [], results: new Map() })
     property var entryMemo: ({ catalog: null, entries: new Map() })
 
+    function cached(cache, key)
+    {
+        const value = cache.get(key);
+        cache.delete(key);
+        cache.set(key, value);
+        return value;
+    }
+
+    function remember(cache, key, value, limit)
+    {
+        cache.delete(key);
+        cache.set(key, value);
+        if (cache.size > limit) cache.delete(cache.keys().next().value);
+        return value;
+    }
+
     function searchScore(entry, tokens)
     {
         let total = 0;
@@ -146,13 +237,7 @@ Singleton
         }
         const normalizedQuery = (query || "").trim().toLocaleLowerCase().replace(/\s+/g, " ");
         if (!normalizedQuery) return memo.all;
-        if (memo.results.has(normalizedQuery))
-        {
-            const result = memo.results.get(normalizedQuery);
-            memo.results.delete(normalizedQuery);
-            memo.results.set(normalizedQuery, result);
-            return result;
-        }
+        if (memo.results.has(normalizedQuery)) return cached(memo.results, normalizedQuery);
         const tokens = normalizedQuery.split(" ");
 
         const matches = [];
@@ -165,9 +250,7 @@ Singleton
 
         matches.sort((a, b) => (b.score - a.score) || a.order - b.order);
         const result = matches.map(item => item.app);
-        memo.results.set(normalizedQuery, result);
-        if (memo.results.size > 16) memo.results.delete(memo.results.keys().next().value);
-        return result;
+        return remember(memo.results, normalizedQuery, result, 16);
     }
 
     function findEntry(appId)
@@ -180,11 +263,9 @@ Singleton
             memo.catalog = catalog;
             memo.entries.clear();
         }
-        if (memo.entries.has(appId)) return memo.entries.get(appId);
+        if (memo.entries.has(appId)) return cached(memo.entries, appId);
         const entry = DesktopEntries.byId(appId) || DesktopEntries.heuristicLookup(appId);
-        memo.entries.set(appId, entry);
-        if (memo.entries.size > 128) memo.entries.delete(memo.entries.keys().next().value);
-        return entry;
+        return remember(memo.entries, appId, entry, 128);
     }
 
     function appName(appId, fallback)
@@ -221,14 +302,17 @@ Singleton
         if (s === "") return none;
         if (!s.startsWith("image://icon/") || s.indexOf("path=") >= 0) return s;
 
-        const name = decodeURIComponent(s.slice("image://icon/".length).split("?")[0]);
+        let name;
+        try { name = decodeURIComponent(s.slice("image://icon/".length).split("?")[0]); }
+        catch (error) { return none; }
         const found = ServiceAppearance.iconPath(name);
         return found !== "" ? found : none;
     }
 
     function appTokens(appId)
     {
-        if (tokenCache[appId]) return tokenCache[appId];
+        appId = String(appId || "");
+        if (tokenCache.has(appId)) return cached(tokenCache, appId);
 
         const out = [];
         const add = v => { const t = String(v || "").toLowerCase().replace(/\.desktop$/, ""); if (t && !out.includes(t)) out.push(t); };
@@ -238,8 +322,7 @@ Singleton
         const entry = findEntry(appId);
         if (entry) { add(entry.id); add(entry.name); }
 
-        tokenCache[appId] = out;
-        return out;
+        return remember(tokenCache, appId, out, 128);
     }
 
     function notificationFrom(n, appId)
@@ -254,7 +337,7 @@ Singleton
     function markLaunching(appId)
     {
         if (!appId) return;
-        const map = Object.assign({}, launching);
+        const map = Object.assign(Object.create(null), launching);
         map[appId] = Date.now();
         launching = map;
     }
@@ -284,21 +367,26 @@ Singleton
     }
 
     readonly property string fallbackIcon: ServiceAppearance.iconPath("application-x-executable")
-    property var tokenCache: ({})
-    property var launching: ({})
+    property var tokenCache: new Map()
+    property var launching: Object.create(null)
     readonly property int launchTimeoutMs: 15000
 
-    onApplicationsChanged: { tokenCache = ({}); queueAutostartRefresh(); }
+    onApplicationsChanged:
+    {
+        tokenCache = new Map();
+        queueAutostartRefresh();
+        if (autostartWatching) defaultsRefresh.restart();
+    }
 
     function updateLaunching()
     {
         const keys = Object.keys(launching);
         if (keys.length === 0) return;
-        const running = ServiceCompositor.windowList.map(w => w.app_id || "");
+        const running = new Set(ServiceCompositor.windowList.map(w => AppIdentity.matchKey(w.app_id || "")));
         const now = Date.now();
-        const next = {};
+        const next = Object.create(null);
         for (const key of keys)
-            if (!running.some(id => AppIdentity.sameApp(id, key)) && now - launching[key] < launchTimeoutMs)
+            if (!running.has(AppIdentity.matchKey(key)) && now - launching[key] < launchTimeoutMs)
                 next[key] = launching[key];
         if (Object.keys(next).length !== keys.length) launching = next;
     }

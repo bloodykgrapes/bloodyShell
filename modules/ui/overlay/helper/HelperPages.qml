@@ -8,14 +8,15 @@ import "../../../common"
 import "../../../core"
 import "../../../services"
 import "../settings/components"
+import "../settings/components" as Parts
 
 Column
 {
     id: helperPages
 
     property int currentPage: 0
-    readonly property bool inputBusy: ServiceKeyboard.busy || ServiceDevices.mouseBusy
-    readonly property string inputError: [ServiceKeyboard.error, ServiceDevices.mouseError].filter(error => error !== "").join("\n")
+    readonly property bool saving: ServiceDisplay.busy || ServiceDisplay.confirming || ServiceKeyboard.busy || ServiceDevices.mouseBusy
+    readonly property string saveError: [ServiceDisplay.error, ServiceKeyboard.error, ServiceDevices.mouseError].filter(error => error !== "").join("\n")
     signal navigate(int index)
 
     function labelOf(options, value) { return options.find(option => option.value === value)?.label || String(value); }
@@ -32,15 +33,25 @@ Column
         visible: helperPages.currentPage === 0
         width: parent.width
         spacing: 12
-        Tip { objectName: "helperWelcome-1"; icon: Icon.settingsAppearance; title: Tr.tr("common.appearance"); description: Tr.tr("helper.appearanceHint"); onClicked: helperPages.navigate(1) }
-        Tip { objectName: "helperWelcome-2"; icon: Icon.settingsBar; title: Tr.tr("helper.layout"); description: Tr.tr("helper.layoutHint"); onClicked: helperPages.navigate(2) }
-        Tip { objectName: "helperWelcome-3"; icon: Icon.keyboard; title: Tr.tr("helper.input"); description: Tr.tr("helper.inputHint"); onClicked: helperPages.navigate(3) }
+        Tip { objectName: "helperWelcome-1"; icon: Icon.settingsDisplay; title: Tr.tr("common.display"); description: Tr.tr("helper.displayHint"); onClicked: helperPages.navigate(1) }
+        Tip { objectName: "helperWelcome-2"; icon: Icon.settingsAppearance; title: Tr.tr("common.appearance"); description: Tr.tr("helper.appearanceHint"); onClicked: helperPages.navigate(2) }
+        Tip { objectName: "helperWelcome-3"; icon: Icon.settingsBar; title: Tr.tr("helper.layout"); description: Tr.tr("helper.layoutHint"); onClicked: helperPages.navigate(3) }
+        Tip { objectName: "helperWelcome-4"; icon: Icon.keyboard; title: Tr.tr("helper.input"); description: Tr.tr("helper.inputHint"); onClicked: helperPages.navigate(4) }
         ShellText { width: parent.width; label: Tr.tr("helper.reopenHint"); size: 11; color: Theme.text3; wrapMode: Text.Wrap }
+    }
+
+    Loader
+    {
+        objectName: "helperDisplayLoader"
+        active: helperPages.currentPage === 1
+        width: parent.width
+        height: item ? item.implicitHeight : 0
+        sourceComponent: Parts.SettingsDisplayControls { objectName: "helperDisplay"; active: helperPages.currentPage === 1 }
     }
 
     Column
     {
-        visible: helperPages.currentPage === 1
+        visible: helperPages.currentPage === 2
         width: parent.width
         spacing: 2
         SettingsRow
@@ -79,7 +90,7 @@ Column
 
     Column
     {
-        visible: helperPages.currentPage === 2
+        visible: helperPages.currentPage === 3
         width: parent.width
         spacing: 20
         LayoutSection { prefix: "bar"; title: Tr.tr("common.bar") }
@@ -89,7 +100,7 @@ Column
     Loader
     {
         objectName: "helperInputLoader"
-        active: helperPages.currentPage === 3
+        active: helperPages.currentPage === 4
         width: parent.width
         height: item ? item.implicitHeight : 0
         sourceComponent: Content.HelperInput {}
@@ -97,18 +108,35 @@ Column
 
     Column
     {
-        visible: helperPages.currentPage === 4
+        visible: helperPages.currentPage === 5
         width: parent.width
         spacing: 20
-        ShellText { width: parent.width; label: helperPages.inputBusy ? Tr.tr("helper.saving") : Tr.tr("helper.savedHint"); wrapMode: Text.Wrap; color: Theme.text2 }
+        ShellText { width: parent.width; label: helperPages.saving ? Tr.tr("helper.saving") : Tr.tr("helper.savedHint"); wrapMode: Text.Wrap; color: Theme.text2 }
         SettingsRow
         {
-            visible: helperPages.inputError !== ""
+            visible: helperPages.saveError !== ""
             label: Tr.tr("common.actionFailed")
-            description: helperPages.inputError
+            description: helperPages.saveError
             badge: Tr.tr("common.error")
             badgeColor: Theme.colorCritical
-            SettingsButton { text: Tr.tr("helper.reviewInput"); onClicked: helperPages.navigate(3) }
+            SettingsButton { text: Tr.tr(ServiceDisplay.error !== "" ? "helper.reviewDisplay" : "helper.reviewInput"); onClicked: helperPages.navigate(ServiceDisplay.error !== "" ? 1 : 4) }
+        }
+        SettingsGroup
+        {
+            title: Tr.tr("common.display")
+            visible: ServiceDisplay.outputs.length > 0
+            Repeater
+            {
+                model: ServiceDisplay.outputs
+                SettingsRow
+                {
+                    required property var modelData
+                    readonly property var display: ServiceDisplay.stateOf(modelData.name)
+                    objectName: "helperDisplaySummary-" + modelData.name
+                    label: modelData.name
+                    valueText: display.enabled ? display.mode + " · " + display.scale + "×" : Tr.tr("common.off")
+                }
+            }
         }
         SettingsGroup
         {

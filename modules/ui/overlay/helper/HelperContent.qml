@@ -21,13 +21,14 @@ Rectangle
     readonly property int inset: 24
     readonly property var steps: [
         {label: Tr.tr("helper.start"), title: Tr.tr("helper.welcome"), hint: Tr.tr("helper.welcomeHint")},
+        {label: Tr.tr("common.display"), title: Tr.tr("common.display"), hint: Tr.tr("helper.displayHint")},
         {label: Tr.tr("common.appearance"), title: Tr.tr("common.appearance"), hint: Tr.tr("helper.appearanceHint")},
         {label: Tr.tr("helper.layout"), title: Tr.tr("helper.layout"), hint: Tr.tr("helper.layoutHint")},
         {label: Tr.tr("helper.input"), title: Tr.tr("helper.input"), hint: Tr.tr("helper.inputHint")},
         {label: Tr.tr("helper.ready"), title: Tr.tr("helper.ready"), hint: Tr.tr("helper.readyHint")}
     ]
-    readonly property bool inputBusy: pages.inputBusy
-    readonly property string inputError: pages.inputError
+    readonly property bool saving: pages.saving
+    readonly property string saveError: pages.saveError
 
     implicitWidth: 800
     implicitHeight: 640
@@ -53,7 +54,7 @@ Rectangle
 
     function advance()
     {
-        if (currentPage === steps.length - 1) { if (!inputBusy) finished(); }
+        if (currentPage === steps.length - 1) { if (!saving) finished(); }
         else go(currentPage + 1);
     }
 
@@ -251,7 +252,7 @@ Rectangle
             anchors { right: parent.right; verticalCenter: parent.verticalCenter }
             text: helperContent.currentPage === helperContent.steps.length - 1 ? Tr.tr("helper.finish") : Tr.tr("helper.next")
             icon: helperContent.currentPage === helperContent.steps.length - 1 ? Icon.check : Icon.chevronRight
-            enabled: helperContent.currentPage !== helperContent.steps.length - 1 || !helperContent.inputBusy
+            enabled: helperContent.currentPage !== helperContent.steps.length - 1 || !helperContent.saving
             onClicked: helperContent.advance()
         }
     }

@@ -4,11 +4,20 @@ import QtQuick
 
 import "../../../animations"
 import "../../../common"
+import "../../../common" as Common
 import "../../../core"
 
-MouseArea
+Common.InteractiveControl
 {
     id: widgetButton
+
+    readonly property bool containsMouse: enabled && hovered
+    property alias pressed: pointer.pressed
+    property alias acceptedButtons: pointer.acceptedButtons
+    property alias cursorShape: pointer.cursorShape
+    signal clicked(var mouse)
+    signal pointerPressed(var mouse)
+    signal wheel(var wheel)
 
     property bool active: false
 
@@ -22,8 +31,8 @@ MouseArea
         : containsMouse ? Theme.colorHover : "transparent"
 
     property real iconSize: 16
-    property real padding: 7
-    property real spacing: 4
+    padding: 7
+    spacing: 4
 
     readonly property bool hasIcon: icon !== ""
     readonly property bool hasText: text !== ""
@@ -33,7 +42,6 @@ MouseArea
         ? Math.ceil(content.implicitWidth + padding * 2)
         : Math.max(implicitHeight, Math.ceil(content.implicitWidth))
 
-    hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
 
     readonly property bool lit: containsMouse || active
@@ -113,4 +121,15 @@ MouseArea
         font: label.font
         text: widgetButton.textReserve
     }
+    MouseArea
+    {
+        id: pointer
+        objectName: "widgetPointer"
+        anchors.fill: parent
+        hoverEnabled: true
+        onPressed: mouse => { widgetButton.focusFor(Qt.MouseFocusReason); widgetButton.pointerPressed(mouse); }
+        onClicked: mouse => widgetButton.clicked(mouse)
+        onWheel: wheel => { wheel.accepted = false; widgetButton.wheel(wheel); }
+    }
+
 }

@@ -1,11 +1,17 @@
 import QtQuick
+import "." as Common
 
 import "../animations"
 import "../core"
 
-Rectangle
+Common.InteractiveControl
 {
     id: button
+
+    property alias color: surface.color
+    property alias radius: surface.radius
+    property alias border: surface.border
+    background: Rectangle { id: surface }
 
     property string text: ""
     property string icon: ""
@@ -18,7 +24,7 @@ Rectangle
     property real disabledOpacity: 0.4
     property real maximumWidth: 0
     property bool repeated: false
-    readonly property bool hovered: enabled && (area.containsMouse || activeFocus)
+    readonly property bool highlighted: enabled && (hovered || visualFocus)
     readonly property bool pressed: enabled && area.pressed
     signal clicked()
 
@@ -33,7 +39,7 @@ Rectangle
     color: danger ? Qt.rgba(Theme.colorCritical.r, Theme.colorCritical.g, Theme.colorCritical.b, 0.12) : Theme.colorField
     Tint on color {}
 
-    scale: pressed ? pressScale : hovered ? hoverScale : 1
+    scale: pressed ? pressScale : highlighted ? hoverScale : 1
     Spring on scale {}
 
     Keys.onSpacePressed: event => { if (!event.isAutoRepeat || autoRepeat) clicked(); event.accepted = true }
@@ -45,7 +51,7 @@ Rectangle
         anchors.fill: parent
         radius: button.radius
         color: button.danger ? Qt.rgba(Theme.colorCritical.r, Theme.colorCritical.g, Theme.colorCritical.b, 0.12) : Theme.colorHoverStrong
-        opacity: button.hovered && !button.pressed ? 1 : 0
+        opacity: button.highlighted && !button.pressed ? 1 : 0
         Smooth on opacity {}
         Tint on color {}
     }
@@ -102,6 +108,7 @@ Rectangle
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
+        onPressed: button.focusFor(Qt.MouseFocusReason)
         onPressedChanged: if (pressed) { button.repeated = false; repeatTimer.interval = 380 }
         onClicked: if (!button.repeated) button.clicked()
     }

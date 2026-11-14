@@ -106,6 +106,10 @@ input {
     touchpad { tap; }
 }
 ''')
+        (base / "config/niri/bloodyShell/07-user-output.kdl").write_text("")
+        niri = base / "bin/niri"
+        niri.write_text("#!/usr/bin/env python3\nimport json,sys\nif sys.argv[1:] == ['msg','-j','outputs']:\n    print(json.dumps({'A':dict(name='A',make='Test',model='Display',modes=[dict(width=1920,height=1080,refresh_rate=60000,is_preferred=True),dict(width=1280,height=720,refresh_rate=60000,is_preferred=False)],current_mode=0,logical=dict(x=0,y=0,width=1920,height=1080,scale=1,transform='Normal'),vrr_supported=False,vrr_enabled=False)}))\n")
+        niri.chmod(0o700)
         (base / "modules/services/ServiceAppearance.qml").write_text('pragma Singleton\nimport QtQuick\nimport Quickshell\nSingleton { property color accent: "#8ecbff" }\n')
         (base / "shell.qml").write_text('''import QtQuick
 import QtQuick.Window
@@ -135,7 +139,7 @@ ShellRoot {
                 const view=find("helperContentScroll");
                 check(view.height>0 && view.width>0,"Helper has no room for page content");
                 check(helper.pageReveal===1,"Page fade did not settle");
-                for(const name of ["helperBack","helperNext","helperClose","helperStep-0","helperStep-4"]) {
+                for(const name of ["helperBack","helperNext","helperClose","helperStep-0","helperStep-5"]) {
                     const item=find(name), p=item.mapToItem(helper,0,0);
                     check(p.x>=0 && p.y>=0 && p.x+item.width<=helper.width+0.1 && p.y+item.height<=helper.height+0.1,"Helper navigation exceeds the window: "+name);
                     check(item.Accessible.name!=="","Navigation has no accessible name");
@@ -149,7 +153,7 @@ ShellRoot {
             }
             function exercise() {
                 window.requestActivate();
-                check(helper.steps.length===5,"Helper does not have the five requested steps");
+                check(helper.steps.length===6,"Helper does not have the six requested steps");
                 check(!find("helperBack").enabled,"Welcome page allows going backwards");
                 check(ServiceDevices.mouseWatchers===0 && ServiceDevices.watchers===0,"Helper watches devices before opening Input");
                 until(()=>ServiceKeyboard.loaded,"Keyboard settings did not load");
@@ -168,7 +172,18 @@ input {
                 ServiceKeyboard.parse(`input { keyboard { /* options "bad"; */ xkb { layout #"fr"#; options "compose:menu"; }; /- numlock; }; }`);
                 check(ServiceKeyboard.layouts[0].layout==="fr" && ServiceKeyboard.otherOptions.includes("compose:menu") && !ServiceKeyboard.numlock,"Keyboard reader accepts commented/disabled nodes or loses inline values");
                 ServiceKeyboard.refresh(); until(()=>ServiceKeyboard.layouts[0].layout==="us","Keyboard file did not reload");
-                click(find("helperWelcome-2")); check(helper.currentPage===2,"Welcome shortcut opens the wrong step"); wait(40);
+                click(find("helperWelcome-1"));check(helper.currentPage===1,"Display is not the first setup step");
+                until(()=>ServiceDisplay.loaded&&find("helperDisplay")&&find("helperDisplay").selected==="A","Display settings did not load");
+                const monitor=find("helperDisplay"), resolution=find("displayResolution"), scale=find("displayScale");
+                check(resolution.options.length===2,"Display resolutions were not discovered");
+                scale.edited(1.25);until(()=>!ServiceDisplay.busy,"Display scale did not save");
+                check(Config.displays.A.scale===1.25,"Display scale was not saved");
+                resolution.selected("1280x720");until(()=>ServiceDisplay.confirming&&find("displayConfirmation").opened,"Resolution has no recovery popup");
+                find("displayConfirmation").accepted();until(()=>!ServiceDisplay.busy,"Resolution did not save");
+                check(Config.displays.A.mode==="1280x720@60.000","Confirmed resolution did not save");
+                resolution.selected("1920x1080");until(()=>ServiceDisplay.confirming,"Resolution change was not staged");
+                helper.go(0);check(!ServiceDisplay.confirming&&Config.displays.A.mode==="1280x720@60.000","Leaving Display committed an unconfirmed mode");
+                wait(50);reveal(find("helperWelcome-3"));click(find("helperWelcome-3")); check(helper.currentPage===3,"Welcome shortcut opens the wrong step"); wait(40);
                 const view=find("helperContentScroll");
                 for(const prefix of ["bar","dock"]) {
                     const enabled=find("helper-"+prefix+"-enabled"), position=find("helper-"+prefix+"-position");
@@ -182,16 +197,16 @@ input {
                     check(Config[prefix+"Type"]===style,"Component style did not save");
                 }
                 check(!find("helperIsland") && Config.islandEnabled,"Helper changes an unrequested dynamic-island setting");
-                click(find("helperStep-1")); check(helper.currentPage===1,"Step buttons do not navigate"); wait(40);
+                click(find("helperStep-2")); check(helper.currentPage===2,"Step buttons do not navigate"); wait(40);
                 const theme=find("helperTheme"); theme.forceActiveFocus();
-                keyClick(Qt.Key_Home); check(Config.themeStyle===Enums.ThemeLight && helper.currentPage===1,"Theme keyboard input navigates the wizard instead");
-                keyClick(Qt.Key_End); check(Config.themeStyle===Enums.ThemeDark && helper.currentPage===1,"Theme selection did not save");
+                keyClick(Qt.Key_Home); check(Config.themeStyle===Enums.ThemeLight && helper.currentPage===2,"Theme keyboard input navigates the wizard instead");
+                keyClick(Qt.Key_End); check(Config.themeStyle===Enums.ThemeDark && helper.currentPage===2,"Theme selection did not save");
                 const accent=Config.themeAccent; click(find("helperAccent")); check(Config.themeAccent!==accent,"Accent toggle did not save");
                 for(const mode of [0,1,2]) {
                     const card=find("helperAnimation-"+mode); reveal(card); click(card);
                     check(Config.themeAnimations===mode,"Animation preview cannot be selected");
                 }
-                helper.go(3);
+                helper.go(4);
                 until(()=>ServiceKeyboard.loaded && ServiceKeyboard.catalog.some(layout=>layout.code==="de") && ServiceDevices.mouseLoaded && ServiceDevices.mouseAvailable,"Input settings did not load");
                 check(ServiceDevices.mouseWatchers===1 && ServiceDevices.watchers===0,"Input watches unrelated devices or owns duplicate mouse watchers");
                 Config.set("themeAnimations",0); wait(40);
@@ -205,25 +220,26 @@ input {
                 find("helperMouseAcceleration").selected("flat");
                 const natural=find("helperMouseNaturalScroll"); reveal(natural); click(natural);
                 find("helperMouseVerticalScrollSpeed").edited(2.5);
-                helper.go(4);
+                helper.go(5);
                 check(ServiceDevices.mouseWatchers===0 && ServiceDevices.watchers===0,"Leaving Input kept watching devices");
-                check(helper.inputBusy && !find("helperNext").enabled,"Ready does not wait for pending input changes");
+                check(helper.saving && !find("helperNext").enabled,"Ready does not wait for pending input changes");
                 helper.advance(); check(window.finishes===0,"Enter finishes before pending input changes save");
-                until(()=>!helper.inputBusy,"Input saves did not finish");
-                check(helper.inputError==="","Input save failed: "+helper.inputError);
+                until(()=>!helper.saving,"Input saves did not finish");
+                check(helper.saveError==="","Input save failed: "+helper.saveError);
                 check(ServiceDevices.mouse.speed===0.45 && ServiceDevices.mouse.profile==="flat" && ServiceDevices.mouse.naturalScroll && ServiceDevices.mouse.scrollVertical===2.5,"Mouse controls did not save");
+                check(find("helperDisplaySummary-A").valueText.includes("1280x720")&&find("helperDisplaySummary-A").valueText.includes("1.25"),"Ready omits saved display choices");
                 check(find("helperBarSummary").valueText.includes(Tr.tr("common.right")) && find("helperDockSummary").valueText.includes(Tr.tr("common.left")),"Ready does not summarize selected positions");
                 check(find("helperMouseSummary").description.includes("45%") && find("helperMouseSummary").description.includes("2.5"),"Ready omits the saved mouse settings");
-                helper.go(3); until(()=>find("helperLayoutRemove-1"),"Input did not reopen");
+                helper.go(4); until(()=>find("helperLayoutRemove-1"),"Input did not reopen");
                 const remove=find("helperLayoutRemove-1"); reveal(remove); click(remove);
                 check(ServiceKeyboard.layouts.length===1 && !find("helperLayoutRemove-0").enabled,"Last keyboard layout can be removed");
-                helper.go(2); check(helper.pageReveal===1,"Disabled animations still fade pages");
-                Config.set("themeAnimations",2); helper.go(1); check(helper.pageReveal<1,"Page change has no entrance animation");
+                helper.go(3); check(helper.pageReveal===1,"Disabled animations still fade pages");
+                Config.set("themeAnimations",2); helper.go(2); check(helper.pageReveal<1,"Page change has no entrance animation");
                 Config.set("themeAnimations",0); check(helper.pageReveal===1,"Disabling animations leaves a partial page fade");
                 for(const scenario of [{w:800,h:640,language:"en",theme:1,animation:2},{w:520,h:480,language:"ru",theme:0,animation:1},{w:360,h:420,language:"ru",theme:1,animation:0}]) {
                     window.width=scenario.w; window.height=scenario.h;
                     Config.set("shellLanguage",scenario.language); Config.set("themeStyle",scenario.theme); Config.set("themeAnimations",scenario.animation);
-                    for(let page=0;page<5;page++) { helper.go(page); wait(Theme.animationDurationControl+50); inspect(); }
+                    for(let page=0;page<6;page++) { helper.go(page); wait(Theme.animationDurationControl+50); inspect(); }
                 }
                 Config.set("scrollSpeed",1); view.contentY=0;
                 mouseWheel(view,view.width/2,view.height/2,0,-120,Qt.NoButton,Qt.NoModifier,0);
@@ -233,21 +249,21 @@ input {
                 check(view.contentY>normal,"Helper ignores configured scroll speed");
                 Config.set("themeAnimations",2); view.contentY=0;
                 mouseWheel(view,view.width/2,view.height/2,0,-120,Qt.NoButton,Qt.NoModifier,0); wait(20);
-                helper.go(2); wait(400); check(view.contentY===0,"Old page scrolling continues after changing steps");
+                helper.go(3); wait(400); check(view.contentY===0,"Old page scrolling continues after changing steps");
                 helper.forceActiveFocus(); keyClick(Qt.Key_Home); check(helper.currentPage===0,"Home does not return to the first step");
-                keyClick(Qt.Key_End); check(helper.currentPage===4,"End does not open Ready");
-                keyClick(Qt.Key_Left); check(helper.currentPage===3,"Keyboard step navigation is broken");
-                find("helperStep-1").forceActiveFocus(); keyClick(Qt.Key_Space); check(helper.currentPage===1,"Step button cannot be used with the keyboard");
+                keyClick(Qt.Key_End); check(helper.currentPage===5,"End does not open Ready");
+                keyClick(Qt.Key_Left); check(helper.currentPage===4,"Keyboard step navigation is broken");
+                find("helperStep-2").forceActiveFocus(); keyClick(Qt.Key_Space); check(helper.currentPage===2,"Step button cannot be used with the keyboard");
                 Config.set("themeAnimations",0); helper.forceActiveFocus();
-                keyClick(Qt.Key_Return); check(helper.currentPage===2,"Enter does not advance");
-                keyClick(Qt.Key_Return); keyClick(Qt.Key_Return); until(()=>!helper.inputBusy,"Input stayed busy"); keyClick(Qt.Key_Return);
+                keyClick(Qt.Key_Return); check(helper.currentPage===3,"Enter does not advance");
+                keyClick(Qt.Key_Return); keyClick(Qt.Key_Return); until(()=>!helper.saving,"Input stayed busy"); keyClick(Qt.Key_Return);
                 check(window.finishes===1,"Finish does not close the helper once");
                 click(find("helperClose")); keyClick(Qt.Key_Escape); check(window.finishes===3,"Close or Escape does not finish");
                 check(ServiceDevices.mouseWatchers===0 && ServiceDevices.watchers===0,"Helper retained an input watcher");
                 window.width=800; window.height=640; Config.set("shellLanguage","en"); helper.go(0); wait(100);
                 window.contentItem.grabToImage(result=>{
                     result.saveToFile("/tmp/bloodyShell-helper-preview.png");
-                    console.log("HELPER_UI_PASSED five requested steps, bar/dock enable-position-style, appearance, real input saves, primary/add/remove layouts, mouse controls, Ready summaries/save guards, watcher cleanup and compact localized layouts");
+                    console.log("HELPER_UI_PASSED six requested steps, shared display controls and recovery, bar/dock enable-position-style, appearance, real input saves, primary/add/remove layouts, mouse controls, Ready summaries/save guards, watcher cleanup and compact localized layouts");
                     Qt.quit();
                 });
             }

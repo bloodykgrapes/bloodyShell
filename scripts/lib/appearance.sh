@@ -113,15 +113,14 @@ write_cursor()
     mkdir -p "$DATA_HOME/icons/default"
     printf '[Icon Theme]\nName=Default\nInherits=%s\n' "$theme" > "$DATA_HOME/icons/default/index.theme"
 
-    write_niri_cursor "$theme" "$size"
+    write_compositor_cursor "$theme" "$size"
     return 0
 }
 
-write_niri_cursor()
+write_compositor_cursor()
 {
-    [[ -d "$CONFIG_HOME/niri/bloodyShell" ]] || return 0
-    python3 -c 'import runpy,sys; a=runpy.run_path(sys.argv.pop(1)); sys.exit(a["niri_main"]())' "$(dirname "$0")/desktop.py" cursor "$1" "$2" \
-        || fail "niri did not accept the cursor settings; its config was left unchanged"
+    python3 "$(dirname "$0")/../bloodyShell" internal compositor cursor "$1" "$2" \
+        || fail "The compositor did not accept the cursor settings; its config was left unchanged"
 }
 
 cmd_set()

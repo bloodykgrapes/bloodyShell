@@ -13,8 +13,8 @@ OverlayView
     Item
     {
         anchors.centerIn: parent
-        width: Math.min(Theme.settingsWidth, parent.width - 64)
-        height: Math.min(Theme.settingsHeight, parent.height - 64)
+        width: Math.max(0, Math.min(Theme.settingsWidth, parent.width - 64))
+        height: Math.max(0, Math.min(Theme.settingsHeight, parent.height - 64))
 
         opacity: settings.reveal
         scale: 1 - 0.05 * settings.settle

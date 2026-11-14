@@ -231,7 +231,7 @@ else:
             latest = api["wallpaper_preview"](rejected)
             assert latest.is_file() and len(list(poster.parent.glob("*.png"))) == 128, "Video preview cache is unbounded"
             source = base / "source.json"
-            source.write_text(json.dumps(dict(greeterSync=True, wallpaperCurrent=str(video))))
+            source.write_text(json.dumps(dict(wallpaperCurrent=str(video))))
             state = base / "shared"
             state.mkdir()
             with patch("pwd.getpwuid", return_value=SimpleNamespace(pw_dir=str(base / "home"), pw_name="fixture")):
@@ -359,6 +359,10 @@ def desktop_checks():
         base = Path(temporary)
         env = prepare(base)
         env.pop("WAYLAND_DISPLAY", None)
+        desktop = (base / "modules/ui/desktop/Desktop.qml").read_text().replace("PanelWindow\n{", "Item\n{", 1)
+        desktop = desktop.replace("    screen: modelData", "    property var screen: modelData")
+        desktop = re.sub(r'^    (?:WlrLayershell\.|exclusionMode:|color:|anchors \{).*\n', '', desktop, flags=re.M)
+        (base / "modules/ui/desktop/DesktopFixture.qml").write_text(desktop)
         (base / "modules/services/ServiceAppearance.qml").write_text('''pragma Singleton
 import QtQuick
 import Quickshell
@@ -383,12 +387,26 @@ ShellRoot {
         visible: true; width: 800; height: 600
         WallpaperLayer { id: a; anchors.fill: parent; outputName: "A" }
         WallpaperLayer { id: b; width: 400; height: 300; outputName: "B" }
+        DesktopFixture { id: desktop; width: 800; height: 600; modelData: ({name: "A"}) }
         TestCase {
             id: events; when: false; optional: true
             function check(ok, message) { if (!ok) throw new Error(message); }
             function until(test, message) { for(let i=0;i<120;i++) { if(test()) return; wait(20); } throw new Error(message); }
             function send(event) { ServiceCompositor.event(JSON.stringify(event)); }
             function exercise() {
+                const equalizer = findChild(desktop, "desktopEqualizer");
+                equalizer.samples = [2, 1.5, 1];
+                equalizer.bars = 3;
+                wait(20);
+                const peak = findChild(equalizer, "equalizerBar");
+                check(peak && equalizer.height === desktop.height / 2 && peak.height === equalizer.peakHeight,
+                      "Background equalizer does not use half the screen as its maximum height");
+                check(JSON.stringify(equalizer.levels) === "[1,0.75,0.5]", "High background levels lost their relative heights");
+                check(peak.mapToItem(desktop, 0, 0).y > desktop.height / 2, "Background equalizer clips at its upper edge");
+                desktop.height = 400; wait(20);
+                check(equalizer.height === desktop.height / 2 && peak.height === equalizer.peakHeight
+                      && peak.mapToItem(desktop, 0, 0).y > desktop.height / 2, "Background equalizer clips after resizing");
+                equalizer.samples = null;
                 Config.set("wallpaperCurrent", Qt.resolvedUrl("fixture.png").toString().slice(7));
                 const image = findChild(a, "wallpaperBlurImage");
                 check(Config.desktopBlur === Enums.BlurDisabled && a.blurProgress === 0 && image.source.toString() === "", "Blur is not disabled by default");

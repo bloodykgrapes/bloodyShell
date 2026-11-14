@@ -1,12 +1,14 @@
 import QtQuick
+import "../../../../common" as Common
 
 import "../../../../animations"
 import "../../../../common"
 import "../../../../core"
 
-Item
+Common.InteractiveControl
 {
     id: settingsTab
+
 
     property string icon: ""
     property string title: ""
@@ -14,7 +16,7 @@ Item
 
     signal clicked()
 
-    readonly property bool hovered: enabled && (area.containsMouse || activeFocus)
+    readonly property bool highlighted: enabled && (hovered || visualFocus)
 
     width: parent ? parent.width : 200
     height: Math.max(Theme.settingsTabHeight, titleText.implicitHeight + 16)
@@ -28,7 +30,7 @@ Item
     Accessible.selected: selected
     Accessible.onPressAction: if (enabled) clicked()
 
-    scale: area.pressed ? 0.97 : area.containsMouse ? 1.03 : 1
+    scale: area.pressed ? 0.98 : settingsTab.hovered ? 1.015 : 1
     Spring on scale {}
 
     Rectangle
@@ -37,7 +39,7 @@ Item
         radius: Theme.radiusLarge - 2
 
         color: Theme.colorHover
-        opacity: settingsTab.hovered && !settingsTab.selected ? 1 : 0
+        opacity: settingsTab.highlighted && !settingsTab.selected ? 1 : 0
         Smooth on opacity { duration: 160 }
     }
 
@@ -77,6 +79,7 @@ Item
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
+        onPressed: settingsTab.focusFor(Qt.MouseFocusReason)
         onClicked: settingsTab.clicked()
     }
 }

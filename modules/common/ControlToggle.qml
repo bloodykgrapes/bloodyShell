@@ -1,11 +1,13 @@
 import QtQuick
+import "." as Common
 
 import "../animations"
 import "../core"
 
-Item
+Common.InteractiveControl
 {
     id: control
+
 
     property string text: ""
     property string subtitle: ""
@@ -30,9 +32,9 @@ Item
     {
         id: surface
         anchors.fill: parent
-        radius: Config.animationsFluid && area.containsMouse ? 16 : 18
+        radius: Config.animationsFluid && control.hovered ? 16 : 18
         color: control.checked ? Theme.colorAccent : Qt.tint(Theme.frameColor, Theme.colorField)
-        scale: area.pressed ? 0.96 : area.containsMouse && Config.animationsFluid ? 1.02 : 1
+        scale: area.pressed ? 0.96 : control.hovered && Config.animationsFluid ? 1.02 : 1
         Tint on color {}
         Glide on radius { duration: Theme.animationDurationControl }
         Spring on scale {}
@@ -42,7 +44,7 @@ Item
             anchors.fill: parent
             radius: parent.radius
             color: area.pressed ? Theme.colorPressed : Theme.colorHoverStrong
-            opacity: area.pressed || area.containsMouse || control.activeFocus ? 1 : 0
+            opacity: area.pressed || control.hovered || control.visualFocus ? 1 : 0
             Smooth on opacity {}
         }
         Rectangle
@@ -79,7 +81,7 @@ Item
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: { control.forceActiveFocus(Qt.MouseFocusReason); control.toggle() }
+        onClicked: { control.focusFor(Qt.MouseFocusReason); control.toggle() }
     }
 
     Accessible.role: Accessible.CheckBox

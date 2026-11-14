@@ -59,7 +59,7 @@ ShellRoot
                 x: 20; y: 20; width: 600
                 label: "A long translated label that must wrap before it reaches the controls"
                 description: "A description below the label."
-                SettingsButton { id: rowButton; width: 220; text: "Action" }
+                SettingsButton { id: rowButton; width: 220; text: "Action"; onClicked: confirmation.open() }
             }
             SettingsRow
             {
@@ -97,6 +97,7 @@ ShellRoot
             Item { id: popups; anchors.fill: parent; z: 100 }
         }
         SettingsPageSlot { id: slot; visible: false }
+        SettingsConfirmation { id: confirmation; host: host; title: "Confirm action"; acceptText: "Confirm"; onAccepted: close() }
         Item { id: bound; property real goal: 0; width: goal; Glide on width {} }
         Loader { id: powerTest; anchors.centerIn: parent; active: false; sourceComponent: Component { PowerContent {} } }
         TestCase
@@ -118,10 +119,34 @@ ShellRoot
                 chip.forceActiveFocus(); keyClick(Qt.Key_Space);
                 window.check(chips.checked.indexOf("display") >= 0, "Monitor chips cannot be selected with the keyboard");
                 window.check(valueControlRow.vertical && window.find(valueControlRow, item => item.label === valueControlRow.valueText && item.visible), "Stacking controls hid their status value");
+                mouseMove(window.contentItem, 670, 510);
+                rowButton.forceActiveFocus(Qt.PopupFocusReason);
+                window.check(!rowButton.hovered, "Restoring popup focus leaves an action button hovered");
+                toggle.forceActiveFocus(Qt.MouseFocusReason);
+                window.check(!toggle.hovered, "Mouse focus leaves a toggle hovered after the pointer moves away");
+                menu.forceActiveFocus(Qt.PopupFocusReason);
+                window.check(!menu.hovered, "Popup focus leaves a menu action hovered");
 
                 for (const mode of [0, 1, 2])
                 {
                     Config.set("themeAnimations", mode);
+                    mouseMove(rowButton, rowButton.width / 2, rowButton.height / 2);
+                    window.check(rowButton.hovered, "Action button does not react to pointer hover");
+                    mouseClick(rowButton, rowButton.width / 2, rowButton.height / 2);
+                    wait(Theme.animationDurationControl + 30);
+                    window.check(confirmation.visible && !rowButton.hovered, "Opening a modal popup leaves its button hovered");
+                    mouseMove(window.contentItem, 670, 510);
+                    const cancel = window.find(confirmation.contentItem, item => item.objectName === "cancelConfirmation");
+                    mouseClick(cancel, cancel.width / 2, cancel.height / 2);
+                    wait(Theme.animationDurationClose + 30);
+                    mouseMove(window.contentItem, 670, 510);
+                    window.check(rowButton.activeFocus && !rowButton.hovered && !rowButton.highlighted, "Closing a mouse popup leaves its opener highlighted");
+                    rowButton.focusFor(Qt.TabFocusReason);
+                    window.check(rowButton.visualFocus && rowButton.highlighted, "Keyboard button focus is no longer visible");
+                    keyClick(Qt.Key_Space); wait(Theme.animationDurationControl + 30);
+                    window.check(confirmation.keyboardNavigation && cancel.visualFocus, "Keyboard popup lost its initial focus highlight");
+                    keyClick(Qt.Key_Escape); wait(Theme.animationDurationClose + 30);
+                    window.check(rowButton.activeFocus && rowButton.visualFocus, "Keyboard popup did not restore visible keyboard focus");
                     combo.forceActiveFocus(); keyClick(Qt.Key_Space); wait(30);
                     window.check(combo.open && OverlayState.settingsPopup, "Keyboard did not open dropdown");
                     const list = window.find(popups, item => item.count === combo.options.length && item.currentIndex !== undefined);
@@ -291,6 +316,80 @@ ShellRoot {
         assert not re.search(r"SETTINGS_LAYOUT_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|Cannot specify anchors|is not a type|Failed to load configuration", output), output
 
 
+def navigation_checks():
+    import runpy
+
+    prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-settings-navigation-") as temporary:
+        base = Path(temporary)
+        env = prepare(base)
+        (base / "home").mkdir()
+        env.update(HOME=str(base / "home"), XDG_STATE_HOME=str(base / "state"))
+        env.pop("WAYLAND_DISPLAY", None)
+        (base / "shell.qml").write_text('''import QtQuick
+import QtQuick.Window
+import QtTest
+import Quickshell
+import "modules/core"
+import "modules/ui/overlay/settings"
+
+ShellRoot {
+    Window {
+        visible: true; width: 1080; height: 720
+        Item {
+            id: host; width: 0; height: 0
+            Loader { id: loader; anchors.fill: parent; sourceComponent: SettingsContent {} }
+        }
+        TestCase {
+            id: input; when: false; optional: true
+            function check(ok, message) { if (!ok) throw new Error(message); }
+            function find(item, predicate) {
+                if (predicate(item)) return item;
+                for (const child of item.children || []) { const result = find(child, predicate); if (result) return result; }
+                return null;
+            }
+            function inspect() {
+                const navigation = find(loader.item, item => item.objectName === "settingsNavigation");
+                const tab = find(navigation, item => item.selected === true && item.title !== undefined);
+                check(navigation && tab, "Selected settings tab missing");
+                const y = tab.mapToItem(navigation, 0, 0).y;
+                check(y >= -0.5 && y + tab.height <= navigation.height + 0.5,
+                      "Selected tab outside viewport: " + y + "/" + navigation.height + "/" + navigation.contentY);
+                if (OverlayState.settingsPage === 0) check(navigation.contentY < 0.5, "Settings opened scrolled down");
+            }
+            function exercise() {
+                for (const mode of [0, 1, 2]) {
+                    Config.set("themeAnimations", mode);
+                    for (let opening = 0; opening < 2; opening++) {
+                        host.width = 1080; host.height = 720; wait(400); inspect();
+                        OverlayState.settingsPage = Registry.settings.length - 1; wait(400); inspect();
+                        host.height = 480; wait(400); inspect();
+                        loader.active = false; host.width = 0; host.height = 0;
+                        loader.active = true; wait(100);
+                        host.width = 760; host.height = 600; wait(400); inspect();
+                        OverlayState.settingsPage = 0; wait(400); inspect();
+                        loader.active = false; host.width = 0; host.height = 0;
+                        loader.active = true; wait(100);
+                    }
+                }
+                console.log("SETTINGS_NAVIGATION_PASSED initial sizing, reopen, preserved selection, resize and all animation modes");
+                Qt.quit();
+            }
+        }
+        Timer {
+            interval: 150; running: Config.initialized
+            onTriggered: { try { input.exercise(); } catch (error) { console.error("SETTINGS_NAVIGATION_FAILED", error); Qt.quit(); } }
+        }
+    }
+}
+''')
+        result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=25)
+        output = result.stdout + result.stderr
+        print(output)
+        assert result.returncode == 0 and "SETTINGS_NAVIGATION_PASSED" in output, output
+        assert not re.search(r"SETTINGS_NAVIGATION_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|is not a type|Failed to load configuration", output), output
+
+
 def display_checks():
     import runpy
 
@@ -305,8 +404,8 @@ def display_checks():
         output_config.write_text("")
         env.update(HOME=str(base / "home"), XDG_STATE_HOME=str(base / "state"))
         env.pop("WAYLAND_DISPLAY", None)
-        service = base / "modules/services/ServiceDisplay.qml"
-        service.write_text(service.read_text().replace("function refresh() { reader.running = true }", "function refresh() {}"))
+        adapter = base / "modules/compositors/Niri.qml"
+        adapter.write_text(adapter.read_text().replace("function refreshOutputs() { outputsReader.running = true; }", "function refreshOutputs() {}"))
         (base / "shell.qml").write_text('''import QtQuick
 import QtQuick.Window
 import QtTest
@@ -332,7 +431,7 @@ ShellRoot {
             }
             function setOutputs(list) {
                 Config.set("displays", {});
-                ServiceDisplay.outputs = list;
+                ServiceCompositor.backend.outputs = list;
                 wait(260);
             }
             function tile(name) { return findChild(layout, "displayTile-" + name); }
@@ -387,7 +486,7 @@ ShellRoot {
                     const end = startDrag("B",0,55);
                     const preview = {x:layout.preview.x,y:layout.preview.y};
                     const activeTile = tile("B"), activeFrame = layout.frame;
-                    ServiceDisplay.outputs = JSON.parse(JSON.stringify(ServiceDisplay.outputs));
+                    ServiceCompositor.backend.outputs = JSON.parse(JSON.stringify(ServiceDisplay.outputs));
                     wait(30);
                     check(layout.dragging && tile("B") === activeTile && layout.frame === activeFrame, "Output refresh replaces a dragged display or its coordinate frame");
                     check(page.contentY === 0 && Object.keys(Config.displays).length === 0, "Dragging scrolls the page or applies before release");
@@ -402,12 +501,12 @@ ShellRoot {
                     release(cancelled); layout.enabled = true;
                     check(!layout.dragging && Object.keys(Config.displays).length === 0, "Cancelled drag commits a position");
                     const unplugged = startDrag("B",0,45);
-                    ServiceDisplay.outputs = [output("A",0,0,1920,1080)];
+                    ServiceCompositor.backend.outputs = [output("A",0,0,1920,1080)];
                     release(unplugged);
                     check(!layout.dragging && Object.keys(Config.displays).length === 0, "Unplugging a display commits an unfinished drag");
                 }
                 Config.set("displays", {Disconnected:{enabled:false}});
-                ServiceDisplay.outputs = [output("A",0,0,1920,1080), output("B",1920,0,1920,1000)];
+                ServiceCompositor.backend.outputs = [output("A",0,0,1920,1080), output("B",1920,0,1920,1000)];
                 ServiceDisplay.change("B","position",{x:-1920,y:0});
                 check(Config.displays.Disconnected.enabled === false, "Placement discards disconnected display settings");
                 wait(700);
@@ -489,7 +588,7 @@ ShellRoot {
         }
         SettingsPage {
             id: page; x: 300; y: 430; width: 280; height: 180; title: "Scroll test"
-            Rectangle { width: parent.width; height: 1500; color: "#222222" }
+            Rectangle { id: pageBody; width: parent.width; height: 1500; color: "#222222" }
         }
         Loader { id: wallpapers; anchors.fill: parent; active: false; source: "modules/ui/overlay/wallpapers/components/WallpapersContent.qml" }
         TestCase {
@@ -536,6 +635,17 @@ ShellRoot {
                 mouseWheel(horizontal, 120, 40, -120, 0, Qt.NoButton, Qt.NoModifier, 0);
                 near(horizontal.contentX, 48, "Horizontal scrolling ignored speed");
                 turn(page); near(page.contentY, 48, "Settings page ignored wheel speed");
+                const bar = page.children.find(item => item.view === page && item.minimumSize !== undefined);
+                check(bar && bar.visible && bar.width >= 12, "Settings scrollbar lost its grab area");
+                check(bar.visualSize * bar.availableHeight >= 27.5, "Settings scrollbar thumb is too small to grab");
+                const thumbY = bar.topPadding + (bar.visualPosition + bar.visualSize / 2) * bar.availableHeight;
+                mouseDrag(bar, bar.width / 2, thumbY, 0, 60, Qt.LeftButton);
+                check(page.contentY > 100, "Settings scrollbar did not drag the page");
+                page.resetScroll(); near(page.contentY, 0, "Page reset ignored scrollbar dragging");
+                pageBody.visible = false; wait(20);
+                check(!bar.visible, "Short settings page retained a full-height scrollbar");
+                pageBody.visible = true; wait(20);
+                check(bar.visible, "Settings scrollbar did not return after content expanded");
                 outerScroll.scrollTo(0, false); innerScroll.scrollTo(0, false); turn(inner);
                 near(inner.contentY, 48, "Nested list did not scroll"); near(outer.contentY, 0, "Both nested lists scrolled");
                 innerScroll.scrollTo(innerScroll.maximum, false); turn(inner);
@@ -715,7 +825,7 @@ ShellRoot {
             function exercise() {
                 const button = find(menu, "trayApp");
                 check(button, "Tray app was not created");
-                button.pressAndHoldInterval = 40;
+                find(button, "widgetPointer").pressAndHoldInterval = 40;
                 for (const mode of [0, 1, 2]) {
                     Config.set("themeAnimations", mode);
                     MenuState.trayContextItem = null; wait(500);
@@ -781,6 +891,7 @@ ShellRoot {
 }
 ''')
         result = subprocess.run(['qs', '-p', str(base), '--no-color'], env=env, capture_output=True, text=True, timeout=20)
+        assert (base / 'menu-calls').is_file(), result.stdout + result.stderr
         calls = [json.loads(line) for line in (base / 'menu-calls').read_text().splitlines()]
         assert [call for call in calls if call[0] == 'activate'] == [['activate', ':1.42', '/StatusNotifierItem/Menu', '3']] * 4, calls
         output = result.stdout + result.stderr
@@ -789,10 +900,55 @@ ShellRoot {
         assert not re.search(r'TRAY_INPUT_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|Failed to load configuration', output), output
 
 
+def config_validation_checks():
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-config-validation-") as temporary:
+        base = Path(temporary)
+        for name in ("config/bloodyShell", "cache", "runtime"):
+            (base / name).mkdir(parents=True, mode=0o700)
+        settings = base / "config/bloodyShell/settings.json"
+        env = dict(os.environ, XDG_CONFIG_HOME=str(base / "config"), XDG_CACHE_HOME=str(base / "cache"), XDG_RUNTIME_DIR=str(base / "runtime"))
+        core = base / "core"
+        core.mkdir()
+        for name in ("Config", "Paths", "Enums"):
+            shutil.copyfile(ROOT / "modules/core" / (name + ".qml"), core / (name + ".qml"))
+        (core / "qmldir").write_text("\n".join(f"singleton {name} 1.0 {name}.qml" for name in ("Config", "Paths", "Enums")))
+        settings.write_text(json.dumps(dict(themeScale=1.5, themeBorder=True, scrollSpeed=-10, barSide=99, dockPinned=[None, 42])))
+        (base / "shell.qml").write_text('''import QtQuick
+import Quickshell
+import "core"
+ShellRoot {
+    Timer {
+        interval: 30; running: true; repeat: true
+        onTriggered: {
+            if (!Config.initialized) return;
+            function check(ok) { if (!ok) throw new Error("Invalid configuration was accepted"); }
+            try {
+                check(Config.scrollSpeed === 2.5 && Config.barSide === 0 && Config.dockPinned.length === 0);
+                check(!("themeScale" in Config) && !("themeBorder" in Config));
+                check(!("themeScale" in Config.snapshot()) && !("themeBorder" in Config.snapshot()));
+                Config.set("dockPinned", null);
+                Config.set("scrollSpeed", -1);
+                check(Config.dockPinned !== null && Config.scrollSpeed === 2.5);
+                Config.set("scrollSpeed", 1.25);
+                Config.set("barType", Enums.Islands);
+                check(Config.scrollSpeed === 1.25 && Config.barType === Enums.Islands);
+                console.log("CONFIG_VALIDATION_PASSED");
+            } catch (error) { console.error(error); }
+            Qt.quit();
+        }
+    }
+}
+''')
+        result = subprocess.run([shutil.which("qs"), "-p", str(base), "--no-color"], env=dict(env, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software"), text=True, capture_output=True, timeout=8)
+        assert "CONFIG_VALIDATION_PASSED" in result.stdout + result.stderr, result.stdout + result.stderr
+
+
 if __name__ == "__main__":
+    config_validation_checks()
     checks()
     tray_backend_checks()
     tray_checks()
     layout_checks()
+    navigation_checks()
     display_checks()
     scroll_checks()

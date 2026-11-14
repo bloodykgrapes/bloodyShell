@@ -1,11 +1,13 @@
 import QtQuick
+import "." as Common
 
 import "../animations"
 import "../core"
 
-Item
+Common.InteractiveControl
 {
     id: toggle
+
 
     property bool checked: false
     property real inset: 3
@@ -20,7 +22,7 @@ Item
     property color thumbBorderColor: Qt.rgba(0, 0, 0, 0.14)
 
     readonly property bool pressed: enabled && area.pressed
-    readonly property bool hovered: enabled && (area.containsMouse || activeFocus)
+    readonly property bool highlighted: enabled && (hovered || visualFocus)
     signal toggled(bool value)
 
     implicitWidth: 40
@@ -33,7 +35,7 @@ Item
     Keys.onReturnPressed: event => { if (!event.isAutoRepeat) toggled(!checked); event.accepted = true }
     Keys.onEnterPressed: event => { if (!event.isAutoRepeat) toggled(!checked); event.accepted = true }
 
-    scale: pressed ? pressScale : hovered ? hoverScale : 1
+    scale: pressed ? pressScale : highlighted ? hoverScale : 1
     Spring on scale {}
 
     Rectangle
@@ -70,6 +72,7 @@ Item
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
+        onPressed: toggle.focusFor(Qt.MouseFocusReason)
         onClicked: toggle.toggled(!toggle.checked)
     }
 

@@ -1,13 +1,15 @@
 import QtQuick
+import "." as Common
 import Quickshell.Services.Notifications
 
 import "../animations"
 import "../core"
 import "../services"
 
-Item
+Common.InteractiveControl
 {
     id: notificationRow
+
 
     property var  n
     property real now: Date.now()
@@ -19,14 +21,13 @@ Item
 
     readonly property var  actions: n ? (n.actions || []).filter(a => a.identifier !== "default" && a.text !== "") : []
     readonly property bool critical: n ? n.urgency === NotificationUrgency.Critical : false
-    readonly property bool hovered: hover.hovered || activeFocus
+    readonly property bool highlighted: enabled && (hovered || visualFocus)
     property bool leaving: false
 
     width: parent ? parent.width : 300
     implicitHeight: Math.max(56, content.implicitHeight + 24)
     activeFocusOnTab: !leaving
     enabled: !leaving
-    HoverHandler { id: hover }
 
     function activate()
     {
@@ -114,6 +115,7 @@ Item
             else card.x = 0;
         }
         onCanceled: if (!notificationRow.leaving) card.x = 0
+        onPressed: notificationRow.focusFor(Qt.MouseFocusReason)
         onClicked: if (!drag.active && Math.abs(card.x) < 2) notificationRow.activate()
     }
 
@@ -127,7 +129,7 @@ Item
         readonly property real fade: 1 - Math.min(1, Math.abs(x) / notificationRow.width) * 0.8
         transform: Translate { y: notificationRow.rise }
 
-        scale: area.drag.active ? 1 : area.pressed ? 0.98 : notificationRow.hovered && Config.animationsFluid ? 1.01 : 1
+        scale: area.drag.active ? 1 : area.pressed ? 0.98 : notificationRow.highlighted && Config.animationsFluid ? 1.01 : 1
 
         Spring on x { enabled: Config.animationsEnabled && !area.drag.active && !notificationRow.leaving }
         Spring on scale {}
@@ -135,7 +137,7 @@ Item
         Rectangle
         {
             anchors.fill: parent
-            radius: notificationRow.hovered && Config.animationsFluid ? 14 : 18
+            radius: notificationRow.highlighted && Config.animationsFluid ? 14 : 18
             color: notificationRow.critical ? Qt.tint(Theme.colorField, Qt.rgba(Theme.colorCritical.r, Theme.colorCritical.g, Theme.colorCritical.b, 0.08)) : Theme.colorField
             opacity: card.fade
             Tint on color {}
@@ -146,7 +148,7 @@ Item
                 anchors.fill: parent
                 radius: parent.radius
                 color: area.pressed ? Theme.colorPressed : Theme.colorHoverStrong
-                opacity: notificationRow.hovered || area.drag.active ? 1 : 0
+                opacity: notificationRow.highlighted || area.drag.active ? 1 : 0
                 Smooth on opacity {}
                 Tint on color {}
             }
@@ -213,7 +215,7 @@ Item
                         label: ServiceNotifications.age(notificationRow.n, notificationRow.now)
                         size: 10
                         color: Theme.text4
-                        opacity: notificationRow.hovered || close.hovered ? 0 : 1
+                        opacity: notificationRow.highlighted || close.hovered ? 0 : 1
                         Smooth on opacity {}
                     }
 
@@ -227,7 +229,7 @@ Item
                         icon: Icon.close
                         iconSize: 10
                         iconOnly: true
-                        opacity: notificationRow.hovered || hovered ? 1 : 0
+                        opacity: notificationRow.highlighted || hovered ? 1 : 0
                         Smooth on opacity {}
                         onClicked: notificationRow.dismiss(1)
                     }

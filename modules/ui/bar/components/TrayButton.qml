@@ -59,7 +59,7 @@ WidgetButton
     opacity: Math.min(1, grow * 1.4)
     transform: Scale { origin.x: trayButton.width / 2; origin.y: trayButton.height / 2; xScale: 0.6 + 0.4 * trayButton.grow; yScale: xScale }
 
-    onPressed: mouse => { if (mouse.button === Qt.RightButton) showContext(); }
+    onPointerPressed: mouse => { if (mouse.button === Qt.RightButton) showContext(); }
 
     onClicked: mouse =>
     {

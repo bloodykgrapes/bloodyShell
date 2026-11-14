@@ -190,7 +190,7 @@ ShellRoot
             {
                 switch (step)
                 {
-                    case 0: ServiceCompositor.focusedOutput = Quickshell.screens[0].name; OverlayState.show("settings"); break;
+                    case 0: ServiceCompositor.backend.focusedOutput = Quickshell.screens[0].name; OverlayState.show("settings"); break;
                     case 1:
                         if (waitFor(overlay.testPage.item !== null)) return;
                         tests.savedPage = overlay.testPage.item;

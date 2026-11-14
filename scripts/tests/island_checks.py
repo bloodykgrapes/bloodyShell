@@ -17,11 +17,13 @@ with tempfile.TemporaryDirectory(prefix="bloodyshell-island-") as temporary:
     for folder in ("core", "services", "runtime", "cache"):
         (base / folder).mkdir(mode=0o700)
     shutil.copy2(ROOT / "modules/services/ServiceIsland.qml", base / "services/ServiceIsland.qml")
+    shutil.copy2(ROOT / "modules/services/ServiceRecording.qml", base / "services/ServiceRecording.qml")
     stub(base, "core", "Config", 'property bool notificationsEnabled: true\nproperty int notificationsDuration: 100')
-    stub(base, "core", "Icon", 'property string bell: ""')
+    stub(base, "core", "Icon", 'property string bell: ""; property string settingsDisplay: ""')
+    stub(base, "core", "Tr", 'function tr(key) { return key + " %1"; }')
     stub(base, "services", "ServiceLock", 'property bool locked: false')
     stub(base, "services", "ServiceMedia", 'property bool playing: false\nproperty string title: "Track"\nproperty string artist: "Artist"\nproperty string art: ""')
-    stub(base, "services", "ServiceCompositor", 'property string focusedOutput: "A"; property var fullscreenOutputs: []; function fullscreenOnOutput(name) { return fullscreenOutputs.includes(name); }')
+    stub(base, "services", "ServiceCompositor", 'property string focusedOutput: "A"; property var fullscreenOutputs: []; property var captureStreams: []; function fullscreenOnOutput(name) { return fullscreenOutputs.includes(name); }')
     stub(base, "services", "ServiceOSD", '''
     property bool active: false
     property string text: "72%"
@@ -80,6 +82,19 @@ ShellRoot
                 {
                     case 0:
                         tests.check(ServiceIsland.view("A").kind === "", "Idle island was visible");
+                        ServiceCompositor.captureStreams = [{id:1, active:false, output:"A"}];
+                        tests.check(!ServiceRecording.active, "Paused recording is marked active");
+                        ServiceCompositor.captureStreams = [{id:1, active:true, output:"A"}];
+                        ServiceCompositor.fullscreenOutputs = ["A"];
+                        ServiceNotifications.dnd = true;
+                        tests.check(ServiceRecording.active && ServiceIsland.view("A").kind === "recording" && ServiceIsland.view("B").kind === "recording", "Recording indicator is hidden in fullscreen, on another screen, or by DND");
+                        ServiceLock.locked = true;
+                        tests.check(ServiceIsland.view("A").kind === "", "Recording leaked through the lock screen");
+                        ServiceLock.locked = false;
+                        ServiceNotifications.dnd = false;
+                        ServiceCompositor.captureStreams = [];
+                        ServiceCompositor.fullscreenOutputs = [];
+                        tests.check(!ServiceRecording.active && ServiceIsland.view("A").kind === "", "Stopped recording left its indicator behind");
                         ServiceMedia.playing = true;
                         tests.check(ServiceIsland.view("A").kind === "media", "Playing media missing");
                         ServiceCompositor.fullscreenOutputs = ["A"];

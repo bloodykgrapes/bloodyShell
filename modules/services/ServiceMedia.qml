@@ -106,6 +106,25 @@ Singleton
     property var levels: []
     readonly property bool visualizerRunning: visualizerUsers > 0 && playing && Config.animationsEnabled && !ServiceLock.locked
     property bool cavaMissing: false
+    property real visualizerPeak: 16
+
+    function ingestLevels(line)
+    {
+        const values = line.split(";");
+        const frame = [];
+        let peak = 16;
+        for (let i = 0; i < bars; i++)
+        {
+            const value = parseInt(values[i], 10);
+            const level = Number.isFinite(value) ? Math.max(0, value) : 0;
+            frame.push(level);
+            peak = Math.max(peak, level);
+        }
+        // Follow loud peaks immediately; release gain slowly between beats (30 audio frames/s).
+        visualizerPeak = Math.max(peak, visualizerPeak * Math.exp(-1 / 90));
+        const out = frame.map(value => 0.92 * value / visualizerPeak);
+        if (out.length !== levels.length || out.some((value, index) => value !== levels[index])) levels = out;
+    }
 
     Process
     {
@@ -117,10 +136,7 @@ Singleton
             onRead: line =>
             {
                 if (!serviceMedia.visualizerRunning) return;
-                const values = line.split(";");
-                const out = [];
-                for (let i = 0; i < serviceMedia.bars; i++) out.push(Math.min(1, (parseInt(values[i], 10) || 0) / 1000));
-                if (out.length !== serviceMedia.levels.length || out.some((value, index) => value !== serviceMedia.levels[index])) serviceMedia.levels = out;
+                serviceMedia.ingestLevels(line);
             }
         }
         onExited: code => { if (code === 127) serviceMedia.cavaMissing = true }
@@ -144,5 +160,10 @@ Singleton
             serviceMedia.levels = out;
         }
     }
-    onVisualizerRunningChanged: if (!visualizerRunning) levels = []
+    onVisualizerRunningChanged:
+    {
+        if (visualizerRunning) return;
+        levels = [];
+        visualizerPeak = 16;
+    }
 }

@@ -107,8 +107,8 @@ Item
         visible: selection.valid
         color: "transparent"
         border.width: 1
-        border.color: "#000000"
-        Rectangle { anchors { fill: parent; margins: 1 } color: "transparent"; border.width: 1; border.color: "#ffffff" }
+        border.color: "#99000000"
+        Rectangle { anchors { fill: parent; margins: 1 } color: "transparent"; border.width: 1; border.color: Theme.colorAccent }
 
         Repeater
         {
@@ -118,10 +118,10 @@ Item
                 required property var modelData
                 x: parent.width * modelData[0] - width / 2
                 y: parent.height * modelData[1] - height / 2
-                width: 8; height: 8; radius: 3
-                color: "#ffffff"
+                width: 10; height: 10; radius: 4
+                color: Theme.colorAccent
                 border.width: 1
-                border.color: "#000000"
+                border.color: Theme.colorSolid
             }
         }
     }

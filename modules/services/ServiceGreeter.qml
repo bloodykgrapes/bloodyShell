@@ -23,16 +23,6 @@ Singleton
     onAppearanceChanged: if (Config.initialized) update.restart()
     Component.onCompleted: if (Config.initialized) update.restart()
 
-    Connections
-    {
-        target: Config
-        function onGreeterSyncChanged()
-        {
-            if (Config.initialized) update.restart();
-            else update.stop();
-        }
-    }
-
     Timer
     {
         id: update

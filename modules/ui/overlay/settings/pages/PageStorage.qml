@@ -132,15 +132,19 @@ SettingsPage
                 label: Tr.tr("settings.storage.detectedDisks")
                 description: ServiceStorage.devicesLoaded && ServiceStorage.availableDevices.length === 0
                     ? Tr.tr("settings.storage.noUnmountedDisks") : Tr.tr("settings.storage.selectDisk")
-                stacked: true
 
-                Row
+                Item
                 {
-                    width: parent.width
-                    spacing: 8
+                    id: diskControls
+                    implicitWidth: diskChoice.preferredWidth + refresh.implicitWidth + 8
+                    implicitHeight: Math.max(diskChoice.height, refresh.height)
+                    width: Theme.controlWidth(diskControls, implicitWidth)
                     SettingsCombo
                     {
-                        width: Math.max(160, parent.width - refresh.width - parent.spacing)
+                        id: diskChoice
+                        anchors.verticalCenter: parent.verticalCenter
+                        preferredWidth: 300
+                        width: Math.max(0, parent.width - refresh.width - 8)
                         enabled: !ServiceStorage.busy && !ServiceStorage.confirming
                         options: ServiceStorage.availableDevices.map(device => ({ label: ServiceStorage.deviceLabel(device), value: device.path }))
                         current: ServiceStorage.selectedPath
@@ -150,6 +154,7 @@ SettingsPage
                     SettingsIconButton
                     {
                         id: refresh
+                        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
                         icon: Icon.reload
                         enabled: !ServiceStorage.busy && !ServiceStorage.loading
                         onClicked: ServiceStorage.refresh()
@@ -161,9 +166,9 @@ SettingsPage
             {
                 label: Tr.tr("settings.storage.mountMode")
                 description: ServiceStorage.mountMode === "once" ? Tr.tr("settings.storage.onceHint") : Tr.tr("settings.storage.startupHint")
-                stacked: true
                 SettingsChoices
                 {
+                    objectName: "storageMountMode"
                     enabled: !ServiceStorage.busy && !ServiceStorage.confirming
                     options: [{ label: Tr.tr("settings.storage.mountOnce"), value: "once" }, { label: Tr.tr("settings.storage.mountAtStartup"), value: "persistent" }]
                     current: ServiceStorage.mountMode

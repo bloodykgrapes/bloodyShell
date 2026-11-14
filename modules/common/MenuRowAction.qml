@@ -1,11 +1,17 @@
 import QtQuick
+import "." as Common
 
 import "../animations"
 import "../core"
 
-Rectangle
+Common.InteractiveControl
 {
     id: menuRowAction
+
+    property alias color: surface.color
+    property alias radius: surface.radius
+    property alias border: surface.border
+    background: Rectangle { id: surface }
 
     property string icon: ""
     property string label: ""
@@ -22,13 +28,13 @@ Rectangle
     radius: 12
 
     readonly property color hot: danger ? Qt.rgba(Theme.colorCritical.r, Theme.colorCritical.g, Theme.colorCritical.b, 0.22) : Theme.colorHoverStrong
-    color: area.pressed ? Theme.colorPressed : area.containsMouse || activeFocus ? hot : "transparent"
+    color: area.pressed ? Theme.colorPressed : (hovered || visualFocus) ? hot : "transparent"
     Tint on color {}
 
-    scale: area.pressed ? 0.9 : area.containsMouse ? 1.1 : 1
+    scale: area.pressed ? 0.9 : menuRowAction.hovered ? 1.1 : 1
     Spring on scale {}
 
-    ShellIcon { anchors.centerIn: parent; icon: menuRowAction.icon; size: 13; opacity: area.containsMouse ? 1 : 0.8 }
+    ShellIcon { anchors.centerIn: parent; icon: menuRowAction.icon; size: 13; opacity: menuRowAction.hovered ? 1 : 0.8 }
 
     MouseArea
     {
@@ -36,6 +42,7 @@ Rectangle
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
+        onPressed: menuRowAction.focusFor(Qt.MouseFocusReason)
         onClicked: menuRowAction.clicked()
     }
 

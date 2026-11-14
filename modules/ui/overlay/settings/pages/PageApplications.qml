@@ -3,6 +3,7 @@ import QtQuick
 import "../../../../core"
 import "../../../../services"
 import "../components"
+import "../components" as Parts
 
 SettingsPage
 {
@@ -15,7 +16,15 @@ SettingsPage
     readonly property var apps: ServiceApplications.search(query.trim().toLocaleLowerCase())
     onQueryChanged: resetScroll()
 
-    onActiveChanged: ServiceApplications.setAutostartActive(pageApplications, active)
+    onActiveChanged:
+    {
+        ServiceApplications.setAutostartActive(pageApplications, active);
+        if (!active && !OverlayState.popupsSuspended)
+        {
+            applicationMenu.close();
+            applicationRemoval.close();
+        }
+    }
     Component.onCompleted: ServiceApplications.setAutostartActive(pageApplications, active)
     Component.onDestruction: ServiceApplications.setAutostartActive(pageApplications, false)
 
@@ -27,7 +36,20 @@ SettingsPage
         onTextEdited: value => pageApplications.query = value
     }
 
+    Parts.SettingsApplicationMenu
+    {
+        id: applicationMenu
+        host: pageApplications
+        onDeleteRequested: app => applicationRemoval.request(app)
+    }
+    Parts.SettingsApplicationRemoval
+    {
+        id: applicationRemoval
+        host: pageApplications
+    }
+
     SettingsAutostart { objectName: "autostartSection" }
+    Parts.SettingsDefaultApplications { objectName: "defaultApplicationsSection" }
 
     SettingsGroup
     {
@@ -43,8 +65,18 @@ SettingsPage
 
                 required property var modelData
 
+                objectName: "applicationRow-" + modelData.id
+
+                icon: ServiceApplications.iconFor(modelData.id) || Icon.settingsApplications
                 label: modelData.name
                 description: modelData.id
+
+                TapHandler
+                {
+                    parent: appRow
+                    acceptedButtons: Qt.RightButton
+                    onTapped: eventPoint => applicationMenu.openFor(appRow.modelData, appRow, eventPoint.position.x, eventPoint.position.y)
+                }
 
                 Row
                 {
@@ -52,10 +84,17 @@ SettingsPage
 
                     SettingsButton
                     {
-                        readonly property bool pinned: ServiceDock.isPinned(appRow.modelData.id)
-                        text: pinned ? Tr.tr("common.unpin") : Tr.tr("dock.pin")
-                        icon: pinned ? Icon.unpin : Icon.pin
-                        onClicked: ServiceDock.togglePin(appRow.modelData.id)
+                        id: menuButton
+                        objectName: "applicationMenu-" + appRow.modelData.id
+                        text: Tr.tr("settings.applications.actions")
+                        icon: Icon.chevronDown
+                        onClicked: applicationMenu.openFor(appRow.modelData, menuButton, 0, menuButton.height + 6)
+                        Keys.onPressed: event =>
+                        {
+                            if (event.key !== Qt.Key_Menu && !(event.key === Qt.Key_F10 && event.modifiers & Qt.ShiftModifier)) return;
+                            applicationMenu.openFor(appRow.modelData, menuButton, 0, menuButton.height + 6);
+                            event.accepted = true;
+                        }
                     }
                     SettingsButton
                     {

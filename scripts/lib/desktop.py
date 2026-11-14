@@ -1,4 +1,4 @@
-"""Desktop integrations: autostart, niri configuration and exported tray menus."""
+"""Desktop integration: application shortcuts, autostart, niri and tray menus."""
 
 from pathlib import Path
 import ctypes
@@ -13,7 +13,9 @@ import signal
 import stat
 import subprocess
 import sys
-import tempfile
+
+
+FILES = runpy.run_path(str(Path(__file__).with_name("files.py")))
 
 
 def base_path(name, fallback):
@@ -95,18 +97,8 @@ def read(path):
 
 
 def write(path, text):
-    path.parent.mkdir(parents=True, exist_ok=True)
     mode = stat.S_IMODE(path.stat().st_mode) if path.is_file() and not path.is_symlink() else 0o644
-    handle, temporary = tempfile.mkstemp(prefix=".bloodyShell-", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8") as output:
-            os.fchmod(output.fileno(), mode)
-            output.write(text)
-            output.flush()
-            os.fsync(output.fileno())
-        os.replace(temporary, path)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
+    FILES["atomic_write"](path, text.encode(), mode)
 
 
 def candidates():
@@ -308,280 +300,134 @@ def autostart_main():
         raise ValueError("Usage: autostart list | add <application-id> | set <entry-id> true/false | remove <entry-id> | watch")
     print(json.dumps(status()))
 
-# Transactional edits to bloodyShell's niri fragments.
+DEFAULT_APPLICATION_TYPES = {
+    "browser": ("x-scheme-handler/http", "x-scheme-handler/https"),
+    "file-manager": ("inode/directory",),
+    "terminal": (),
+}
+DEFAULT_APPLICATION_SETTINGS = {"browser": "applicationBrowser", "file-manager": "applicationFileManager", "terminal": "applicationTerminal"}
 
-NIRI_MANAGED = ("00-environment.kdl", "01-layout.kdl", "02-window.kdl", "03-layer.kdl", "04-binds.kdl")
-NIRI_USER = ("05-user.kdl", "06-user-input.kdl", "07-user-output.kdl")
 
-
-def niri_write(name, content):
-    if name not in NIRI_USER:
-        raise ValueError("Shell settings may only write user niri fragments: " + name)
-    config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "niri"
-    directory = config / "bloodyShell"
-    if not directory.is_dir():
-        raise ValueError("The bloodyShell niri configuration is not installed")
-    api = runpy.run_path(str(Path(__file__).with_name("ownership.py")))
-    target, main_config = directory / name, config / "config.kdl"
-    originals = {path: api["snapshot"](path) for path in (target, main_config)}
-    accepted = False
+def application_libraries():
     try:
-        api["atomic"](target.resolve(), (content.rstrip("\n") + "\n").encode(), originals[target]["mode"])
-        if main_config.is_file():
-            text = main_config.read_text()
-            if not re.search(r'^\s*include\s+"bloodyShell/' + re.escape(name) + r'"', text, re.M):
-                api["atomic"](main_config.resolve(), (text.rstrip("\n") + '\n\ninclude "bloodyShell/' + name + '"\n').encode(), originals[main_config]["mode"])
-        if shutil.which("niri"):
-            result = subprocess.run(["niri", "validate", "-c", str(main_config)], capture_output=True, text=True, timeout=10)
-            if result.returncode:
-                raise ValueError("niri did not accept " + name + "; previous configuration restored")
-        accepted = True
-    finally:
-        if not accepted:
-            import base64
-            for path, original in originals.items():
-                if original["data"] is None:
-                    path.resolve().unlink(missing_ok=True)
-                else:
-                    api["atomic"](path.resolve(), base64.b64decode(original["data"]), original["mode"])
+        import gi
+        gi.require_version("Gio", "2.0")
+        from gi.repository import Gio, GLib
+    except (ImportError, ValueError):
+        raise RuntimeError("Install the Python GObject bindings to manage applications") from None
+    return Gio, GLib
 
 
-def kdl_mask(text, strings=True):
-    """Mask strings/comments without changing positions, for conservative node edits."""
-    result = list(text)
-    i = 0
-    while i < len(text):
-        start = i
-        comment = text.startswith(("//", "/*"), i)
-        if text.startswith("//", i):
-            end = text.find("\n", i)
-            i = len(text) if end < 0 else end
-        elif text.startswith("/*", i):
-            depth = 1
-            i += 2
-            while i < len(text) and depth:
-                if text.startswith("/*", i):
-                    depth += 1
-                    i += 2
-                elif text.startswith("*/", i):
-                    depth -= 1
-                    i += 2
-                else:
-                    i += 1
-        else:
-            raw = re.match(r'(?:r(#+)?|(#+))"', text[i:])
-            if raw:
-                hashes = raw.group(1) or raw.group(2) or ""
-                opening = i + len(raw.group()) - 1
-                quote = '"""' if text.startswith('"""', opening) else '"'
-                end = text.find(quote + hashes, opening + len(quote))
-                i = len(text) if end < 0 else end + len(quote) + len(hashes)
-            elif text[i] == '"':
-                quote = '"""' if text.startswith('"""', i) else '"'
-                i += len(quote)
-                while i < len(text):
-                    if text[i] == "\\":
-                        i += 2
-                    elif text.startswith(quote, i):
-                        i += len(quote)
-                        break
-                    else:
-                        i += 1
-            else:
-                i += 1
-                continue
-        for index in range(start, min(i, len(text))) if strings or comment else ():
-            if result[index] != "\n":
-                result[index] = " "
-    return "".join(result)
-
-
-MOUSE_DEFAULTS = dict(speed=0.0, profile="adaptive", naturalScroll=False, leftHanded=False,
-                      scrollHorizontal=1.0, scrollVertical=1.0, middleEmulation=False)
-MOUSE_NODES = {"speed": "accel-speed", "profile": "accel-profile", "naturalScroll": "natural-scroll",
-               "leftHanded": "left-handed", "middleEmulation": "middle-emulation",
-               "scrollHorizontal": "scroll-factor", "scrollVertical": "scroll-factor"}
-
-
-def kdl_block(text, name, parent=None):
-    mask = kdl_mask(text)
-    start, end = (parent[1] + 1, parent[2] - 1) if parent else (0, len(text))
-    for match in re.finditer(r"\b" + re.escape(name) + r"\s*\{", mask[start:end]):
-        offset = start + match.start()
-        prefix = mask[start:offset]
-        if prefix.count("{") != prefix.count("}") or prefix.rstrip().endswith("/-"):
+def default_applications(Gio):
+    groups = {role: [] for role in DEFAULT_APPLICATION_TYPES}
+    for app in Gio.AppInfo.get_all():
+        if not app.should_show() or not app.get_id():
             continue
-        opening = start + match.end() - 1
-        depth, close = 1, opening + 1
-        while close < end and depth:
-            if mask[close] == "{": depth += 1
-            elif mask[close] == "}": depth -= 1
-            close += 1
-        if depth:
-            raise ValueError("Unclosed " + name + " configuration")
-        return offset, opening, close
-    return None
+        categories = set((app.get_categories() or "").split(";")) if hasattr(app, "get_categories") else set()
+        types = set(app.get_supported_types() or [])
+        if "WebBrowser" in categories or types.intersection(DEFAULT_APPLICATION_TYPES["browser"]):
+            groups["browser"].append(app)
+        if "FileManager" in categories:
+            groups["file-manager"].append(app)
+        if "TerminalEmulator" in categories:
+            groups["terminal"].append(app)
+    for apps in groups.values():
+        apps.sort(key=lambda app: (app.get_display_name().casefold(), app.get_id()))
+    config = base_path("XDG_CONFIG_HOME", Path.home() / ".config") / "bloodyShell/settings.json"
+    settings = json.loads(config.read_text()) if config.is_file() else {}
+    if not isinstance(settings, dict):
+        raise ValueError("Shell settings must contain a JSON object")
+    selected = {}
+    for role, apps in groups.items():
+        current = Gio.AppInfo.get_default_for_type(DEFAULT_APPLICATION_TYPES[role][0], False) if role != "terminal" else None
+        app_id = settings.get(DEFAULT_APPLICATION_SETTINGS[role], "") or (current.get_id() if current else "")
+        selected[role] = next((app.get_id() for app in apps if app.get_id() == app_id), apps[0].get_id() if apps else "")
+    return groups, selected
 
 
-def mouse_nodes(text):
-    outer = kdl_block(text, "input")
-    block = kdl_block(text, "mouse", outer) if outer else None
-    if not block:
-        return outer, None, []
-    start, end = block[1] + 1, block[2] - 1
-    mask, comments = kdl_mask(text), kdl_mask(text, strings=False)
-    nodes = []
-    for match in re.finditer(r"(?:^|(?<=[;\n{}]))[ \t]*(/-\s*)?([a-zA-Z][\w-]*)\b[^;\n{}]*", mask[start:end]):
-        prefix = mask[start:start + match.start(2)]
-        if match.group(1) or prefix.count("{") != prefix.count("}"):
-            continue
-        first = start + match.start(2)
-        last = start + match.end()
-        last = first + len(comments[first:last].rstrip())
-        nodes.append((match.group(2), first, last, comments[first + len(match.group(2)):last].strip()))
-    return outer, block, nodes
-
-
-def mouse_settings(text):
-    values = dict(MOUSE_DEFAULTS)
-    _, _, nodes = mouse_nodes(text)
-    for name, _, _, value in nodes:
-        if name == "accel-speed": values["speed"] = float(value)
-        elif name == "accel-profile":
-            raw = re.fullmatch(r'(?:r)?(#+)"(.*)"\1', value)
-            values["profile"] = raw.group(2) if raw else json.loads(value)
-        elif name == "scroll-factor":
-            number = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
-            base = re.match(r"^(" + number + r")(?:\s|$)", value)
-            values["scrollHorizontal"] = values["scrollVertical"] = float(base.group(1)) if base else 1.0
-            for axis, key in (("horizontal", "scrollHorizontal"), ("vertical", "scrollVertical")):
-                match = re.search(r"\b" + axis + r"\s*=\s*(" + number + r")", value)
-                if match: values[key] = float(match.group(1))
-        else:
-            key = next((key for key, node in MOUSE_NODES.items() if node == name), None)
-            if key in ("naturalScroll", "leftHanded", "middleEmulation"): values[key] = True
-    return values
-
-
-def mouse_config(text, changes):
-    import math
-    if not isinstance(changes, dict) or not changes or any(key not in MOUSE_NODES for key in changes):
-        raise ValueError("Unknown mouse setting")
-    for key, value in changes.items():
-        if key == "profile": valid = value in ("flat", "adaptive")
-        elif isinstance(MOUSE_DEFAULTS[key], bool): valid = isinstance(value, bool)
-        else:
-            limit = 1 if key == "speed" else 10
-            valid = type(value) in (int, float) and math.isfinite(value) and -limit <= value <= limit
-        if not valid: raise ValueError("Invalid mouse setting: " + key)
-    outer, block, nodes = mouse_nodes(text)
-    values = mouse_settings(text) | changes
-    selected = {MOUSE_NODES[key] for key in changes}
-    lines = []
-    for name in dict.fromkeys(MOUSE_NODES.values()):
-        if name not in selected: continue
-        if name == "scroll-factor": lines.append(f'scroll-factor horizontal={values["scrollHorizontal"]} vertical={values["scrollVertical"]}')
-        else:
-            key = next(key for key, node in MOUSE_NODES.items() if node == name)
-            if isinstance(values[key], bool):
-                if values[key]: lines.append(name)
-            else: lines.append(name + " " + json.dumps(values[key]))
-    if block:
-        rendered = {line.split()[0]: line for line in lines}
-        first_nodes = {}
-        for name, first, _, _ in nodes: first_nodes.setdefault(name, first)
-        for name, first, last, _ in reversed(nodes):
-            if name not in selected: continue
-            replacement = rendered.get(name, "") if first_nodes[name] == first else ""
-            if not replacement:
-                if text[last:last + 1] == ";": last += 1
-                line_start = text.rfind("\n", 0, first) + 1
-                line_end = text.find("\n", last)
-                if line_end < 0: line_end = len(text)
-                if not text[line_start:first].strip() and not text[last:line_end].strip():
-                    first, last = line_start, min(line_end + 1, len(text))
-            text = text[:first] + replacement + text[last:]
-        missing = [line for line in lines if line.split()[0] not in first_nodes]
-        if not missing: return text
-        _, block, _ = mouse_nodes(text)
-        opening_line = text[text.rfind("\n", 0, block[0]) + 1:block[0]]
-        indent = opening_line if not opening_line.strip() else "    "
-        close = block[2] - 1
-        line_start = text.rfind("\n", 0, close) + 1
-        if not text[line_start:close].strip():
-            return text[:line_start] + "".join(indent + "    " + line + "\n" for line in missing) + text[line_start:]
-        return text[:close] + "\n" + "\n".join(indent + "    " + line for line in missing) + "\n" + indent + text[close:]
-    body = "\n".join("        " + line for line in lines)
-    mouse = "\n    mouse {\n" + body + "\n    }\n"
-    if outer: return text[:outer[2] - 1] + mouse + text[outer[2] - 1:]
-    return text.rstrip() + "\n\ninput {" + mouse + "}\n"
-
-
-def cursor_block(text):
-    return kdl_block(text, "cursor")
-
-
-def cursor_config(text, theme, size):
-    if not isinstance(theme, str) or not theme or any(c in theme for c in "\n\r\x00") or not 1 <= size <= 256:
-        raise ValueError("Invalid cursor settings")
-    span = cursor_block(text)
-    values = '    xcursor-theme ' + json.dumps(theme, ensure_ascii=False) + '\n    xcursor-size ' + str(size) + '\n'
-    if span is None:
-        return text.rstrip() + "\n\ncursor {\n" + values + "}\n"
-    _, opening, close = span
-    mask = kdl_mask(text)
-    body = text[opening + 1:close - 1]
-    body_mask = mask[opening + 1:close - 1]
-    # Only replace these two node values; preserve other cursor options and input data.
-    for match in reversed(list(re.finditer(r"(?m)(?:^|(?<=;))[ \t]*xcursor-(?:theme|size)\b[^\n;{}]*(?:;)?", body_mask))):
-        body = body[:match.start()] + body[match.end():]
-    return text[:opening + 1] + "\n" + body.strip("\n") + "\n" + values + text[close - 1:]
-
-
-def keyboard_config(text, content):
-    import textwrap
-    content = textwrap.dedent(content).strip()
-    span = kdl_block(content, "keyboard")
-    if span is None or span[0] != 0 or span[2] != len(content):
-        raise ValueError("Invalid keyboard block")
-    outer = kdl_block(text, "input")
-    keyboard = kdl_block(text, "keyboard", outer) if outer else None
-    if keyboard:
-        prefix = text[text.rfind("\n", 0, keyboard[0]) + 1:keyboard[0]]
-        indent = prefix if not prefix.strip() else "    "
-        return text[:keyboard[0]] + content.replace("\n", "\n" + indent) + text[keyboard[2]:]
-    block = "    " + content.replace("\n", "\n    ") + "\n"
-    if outer: return text[:outer[2] - 1] + "\n" + block + text[outer[2] - 1:]
-    return text.rstrip() + "\n\ninput {\n" + block + "}\n"
-
-
-def niri_main():
-    def terminate(signum, frame):
-        raise SystemExit(128 + signum)
-    signal.signal(signal.SIGTERM, terminate)
-    directory = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "niri/bloodyShell"
-    input_file = directory / "06-user-input.kdl"
-    if sys.argv[1:] == ["mouse-read"] or len(sys.argv) == 3 and sys.argv[1] == "mouse":
-        available = directory.is_dir() and (directory.parent / "config.kdl").is_file() and shutil.which("niri") is not None
-        text = input_file.read_text() if input_file.exists() else ""
-        if sys.argv[1] == "mouse":
-            if not available: raise ValueError("Mouse settings are unavailable: niri configuration is not installed")
-            niri_write(input_file.name, mouse_config(text, json.loads(sys.argv[2])))
-            text = input_file.read_text()
-        print(json.dumps(dict(available=available, mouse=mouse_settings(text))))
-    elif len(sys.argv) == 3 and sys.argv[1] == "keyboard":
-        text = input_file.read_text() if input_file.exists() else ""
-        niri_write(input_file.name, keyboard_config(text, sys.argv[2]))
-    elif len(sys.argv) == 4 and sys.argv[1] == "write":
-        niri_write(*sys.argv[2:])
-    elif len(sys.argv) == 4 and sys.argv[1] == "cursor":
-        directory = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "niri/bloodyShell"
-        path = directory / "06-user-input.kdl"
-        text = path.read_text() if path.exists() else ""
-        niri_write(path.name, cursor_config(text, sys.argv[2], int(sys.argv[3])))
-    else:
-        raise ValueError("Usage: niri-config write USER_FILE CONTENT | cursor THEME SIZE | keyboard BLOCK | mouse-read | mouse JSON")
+def applications_action(Gio):
+    args = sys.argv[1:]
+    if len(args) == 2 and args[0] == "removal":
+        plan = application_removal(Gio, args[1])
+        management = runpy.run_path(str(Path(__file__).with_name("management.py")))
+        plan["terminal"] = management["terminal"]()
+        if not plan["terminal"]:
+            raise RuntimeError("Install a terminal to uninstall applications")
+        print(json.dumps(plan))
+        return 0
+    if len(args) == 3 and args[0] == "remove":
+        try:
+            plan = application_removal(Gio, args[1])
+            if plan["target"] != args[2]:
+                raise RuntimeError("The application's package changed. Open its Delete dialog again")
+            return subprocess.run(plan["command"]).returncode
+        finally:
+            if sys.stdin.isatty():
+                try:
+                    input("\nPress Enter to close…")
+                except (EOFError, KeyboardInterrupt):
+                    pass
+    if args != ["status"] and not (len(args) == 2 and args[0] == "launch" and args[1] in DEFAULT_APPLICATION_TYPES):
+        raise ValueError("Usage: applications status | launch <role> | removal <app-id> | remove <app-id> <target>")
+    groups, selected = default_applications(Gio)
+    if args[0] == "launch":
+        role = args[1]
+        app = next((app for app in groups[role] if app.get_id() == selected[role]), None)
+        if app is None:
+            raise RuntimeError("No installed application found for " + role)
+        files = [Gio.File.new_for_path(str(Path.home()))] if role == "file-manager" else []
+        if not app.launch(files, None):
+            raise RuntimeError("Could not launch " + app.get_display_name())
+        return 0
+    print(json.dumps(dict(applications={role: [dict(id=app.get_id(), name=app.get_display_name()) for app in apps]
+                                        for role, apps in groups.items()}, current=selected)))
     return 0
+
+
+def application_removal(Gio, app_id):
+    name = desktop_name(app_id if app_id.endswith(".desktop") else app_id + ".desktop")
+    app = Gio.DesktopAppInfo.new(name)
+    if app is None or not app.get_filename():
+        raise ValueError("The application is no longer installed")
+    path = Path(app.get_filename())
+    flatpak_id = fields(read(path)).get("X-Flatpak", "")
+    if flatpak_id and re.fullmatch(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_-]+){2,}", flatpak_id):
+        roots = ((base_path("XDG_DATA_HOME", Path.home() / ".local/share") / "flatpak", "--user"), (Path("/var/lib/flatpak"), "--system"))
+        for root, scope in roots:
+            if path.resolve().is_relative_to(root / "app" / flatpak_id):
+                result = subprocess.run(["flatpak", "info", scope, "--show-ref", flatpak_id], capture_output=True, text=True, timeout=10)
+                ref = result.stdout.strip()
+                if result.returncode or not re.fullmatch(r"app/" + re.escape(flatpak_id) + r"/[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+", ref):
+                    raise ValueError("Could not identify the installed Flatpak application")
+                return dict(package=flatpak_id, manager="Flatpak", target=scope + ":" + ref,
+                            command=["flatpak", "uninstall", scope, "--no-related", ref])
+    management = runpy.run_path(str(Path(__file__).with_name("management.py")))
+    distro = management["family"]()
+    queries = {"arch": ["pacman", "-Qoq", "--", str(path)],
+               "debian": ["dpkg-query", "-S", str(path)],
+               "fedora": ["rpm", "-qf", "--qf", "%{NAME}\\n", "--", str(path)]}
+    if distro not in queries:
+        raise ValueError("Application removal is not supported on this distribution")
+    result = subprocess.run(queries[distro], capture_output=True, text=True, timeout=10)
+    packages = result.stdout.splitlines() if result.returncode == 0 else []
+    if distro == "debian":
+        packages = [line.rpartition(": ")[0] for line in packages if line.rpartition(": ")[2] == str(path)]
+    packages = list(dict.fromkeys(packages))
+    if len(packages) != 1 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9+_.:@-]*", packages[0]):
+        raise ValueError("No installed package owns this launcher. Remove this application using its original installer")
+    package = packages[0]
+    managers = {"arch": "pacman", "debian": "apt-get", "fedora": "dnf"}
+    manager = managers[distro]
+    return dict(package=package, manager=manager, target=manager + ":" + package,
+                command=["sudo", manager, "-R" if distro == "arch" else "remove", "--", package])
+
+
+def applications_main():
+    Gio, GLib = application_libraries()
+    try:
+        return applications_action(Gio)
+    except GLib.Error as error:
+        raise RuntimeError(str(error)) from None
 
 
 def tray_menu_main():

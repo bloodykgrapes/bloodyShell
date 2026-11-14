@@ -84,6 +84,18 @@ ShellRoot
         equalizer.width = 100;
         equalizer.active = true;
         check(ServiceMedia.visualizerUsers === 1, "equalizer subscribes independently");
+        const frame = [2000, 1500, 1000].concat(Array(ServiceMedia.bars - 3).fill(0));
+        ServiceMedia.ingestLevels(frame.join(";") + ";");
+        check(Math.abs(ServiceMedia.levels[0] - 0.92) < 1e-12
+              && Math.abs(ServiceMedia.levels[1] - 0.69) < 1e-12
+              && Math.abs(ServiceMedia.levels[2] - 0.46) < 1e-12,
+              "Audio acquisition flattened loud bands before rendering");
+        ServiceMedia.ingestLevels(frame.map(value => value / 2).join(";") + ";");
+        check(ServiceMedia.visualizerPeak > 1000 && ServiceMedia.visualizerPeak < 2000 && ServiceMedia.levels[0] < 0.5,
+              "Gain jumped to maximum between audio peaks");
+        ServiceMedia.ingestLevels("bad;-1;Infinity;");
+        check(ServiceMedia.levels.length === ServiceMedia.bars && ServiceMedia.levels.every(value => value === 0),
+              "Malformed audio frames escaped normalization");
         Config.equalizerStyle = Enums.EqualizerWaves;
         check(equalizer.style === Enums.EqualizerWaves && ServiceMedia.visualizerUsers === 1, "Global Waves selection changed subscriptions");
         ServiceMedia.levels = [0.2, 0.8, 0.4];
@@ -98,6 +110,46 @@ ShellRoot
         check(waves.settling && JSON.stringify(waves.values) === beforeRetarget, "New samples snapped the wave instead of retargeting its motion");
         const path = waves.curve([0.2, 0.8, 0.4]);
         check(path.startsWith("M 0 40 L 0 ") && path.endsWith("L 100 40 Z") && path.includes(" C "), "Waves are not a closed, curved fill");
+        for (const levels of [[0.1, 0.3, 0.9, 0.5, 0.4], [0, 1, 0, 1, 0], [1, 1, 1], [0, 0, 0]])
+        {
+            const segments = waves.curve(levels).match(/C [^CLZ]+/g).map(segment => segment.slice(2).trim().split(/\s+/).map(Number));
+            for (let i = 0; i < segments.length; i++)
+            {
+                const segment = segments[i];
+                for (let j = 1; j < segment.length; j += 2)
+                    check(segment[j] >= 0 && segment[j] <= equalizer.height, "Wave curve escaped its render area");
+                if (i > 0)
+                {
+                    const previous = segments[i - 1];
+                    check(Math.abs((previous[5] - previous[3]) - (segment[1] - previous[5])) < 1e-9,
+                          "Wave segments meet with a sharp change of slope: " + JSON.stringify([previous, segment, levels]));
+                }
+            }
+        }
+        waves.advance(1 / 60);
+        check(waves.velocities.some(value => Math.abs(value) > 0), "Wave did not ease toward new audio levels");
+        const beforeVelocity = JSON.stringify(waves.velocities), beforeValues = JSON.stringify(waves.values);
+        ServiceMedia.levels = [0.1, 0.9, 0.2];
+        check(JSON.stringify(waves.velocities) === beforeVelocity && JSON.stringify(waves.values) === beforeValues,
+              "New audio samples interrupted wave velocity");
+        function response(rate)
+        {
+            waves.values = [0.2, 0.2]; waves.target = [0.8, 0.8]; waves.velocities = [0, 0]; waves.settling = true;
+            for (let i = 0; i < rate / 6; i++) waves.advance(1 / rate);
+            return waves.values[0];
+        }
+        const slow = response(30), fast = response(144);
+        check(Math.abs(slow - fast) < 1e-9 && slow > 0.2 && slow < 0.8, "Wave smoothing depends on display refresh rate");
+        waves.target = [0, 1];
+        for (let i = 0; i < 180; i++)
+        {
+            waves.advance(1 / 60);
+            check(waves.values.every(value => value >= 0 && value <= 1), "Wave motion overshot its render area");
+        }
+        check(!waves.settling && waves.values[0] === 0 && waves.values[1] === 1, "Settled wave retained animation work");
+        Config.animationsEnabled = false;
+        check(!waves.settling && waves.velocities.every(value => value === 0), "Disabling animations retained wave motion");
+        Config.animationsEnabled = true;
         equalizer.bars = 100;
         check(equalizer.levels.length === 32, "Wave complexity is not bounded");
         Config.equalizerStyle = Enums.EqualizerBars;
@@ -106,6 +158,15 @@ ShellRoot
         check(ServiceMedia.visualizerUsers === 0 && equalizer.levels.length === 100, "Preview samples started a live visualizer");
         for (let i = 0; i < 100; i++)
             check(Math.abs(equalizer.levels[i] - (0.4 + 0.3 * i / 99)) < 1e-12, "Cached resampling changed the equalizer shape");
+        equalizer.bars = 3;
+        equalizer.samples = [2, 1.5, 1];
+        check(JSON.stringify(equalizer.levels) === "[1,0.75,0.5]", "Loud audio was cropped instead of scaled proportionally");
+        check(equalizer.levelHeight(1) < equalizer.height && equalizer.levelHeight(0.5) === equalizer.levelHeight(1) / 2,
+              "Peak heights do not fit the available render area");
+        equalizer.height = 10;
+        check(equalizer.levelHeight(1) < 10, "Resizing retained the previous pixel height");
+        equalizer.samples = [NaN, -1, Infinity];
+        check(equalizer.levels.every(value => value === 0), "Invalid audio samples escaped normalization");
         equalizer.samples = null;
         equalizer.visible = false;
         check(ServiceMedia.visualizerUsers === 0, "hidden equalizer releases shared cava");
@@ -121,6 +182,7 @@ ShellRoot
         check(ServiceMedia.visualizerRunning, "visualizer resumes when shown");
         ServiceLock.locked = true;
         check(!ServiceMedia.visualizerRunning, "lock screen suspends background visualizers");
+        check(ServiceMedia.visualizerPeak === 16, "Suspending the visualizer retained stale gain");
         ServiceLock.locked = false;
         check(ServiceMedia.visualizerRunning, "unlock resumes visualizers");
         Config.animationsEnabled = false;

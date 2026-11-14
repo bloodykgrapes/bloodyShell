@@ -24,9 +24,10 @@ def resources_main():
             dict(id="compositor",kind="compositor",destination="/fixture/niri"),
             dict(id="dots",kind="dots",programs=["fastfetch","kitty"],destination="/fixture/config"),
             dict(id="greeter",kind="greeter",destination="/fixture/greeter"),
-            dict(id="wallpapers",kind="wallpapers",destination="/fixture/wallpapers")
+            dict(id="wallpapers",kind="wallpapers",destination="/fixture/wallpapers"),
+            dict(id="cli",kind="cli",destination="/fixture/bin/bloodyShell")
         ])))
-    elif sys.argv[1:] == ["import", "wallpapers"]:
+    elif sys.argv[1:] in (["import", "wallpapers"], ["import", "cli"]):
         print(json.dumps(dict(settings={})))
     else:
         raise AssertionError("Unexpected import: " + repr(sys.argv))
@@ -71,10 +72,10 @@ ShellRoot {
                     if (!Config.initialized || !page || !page.active) return;
                     imports.expanded = true; tests.phase++;
                 } else if (tests.phase === 1) {
-                    if (ServiceResources.busy || ServiceResources.entries.length !== 4) return;
-                    const ids = ["compositor", "dots", "greeter", "wallpapers"];
+                    if (ServiceResources.busy || ServiceResources.entries.length !== 5) return;
+                    const ids = ["compositor", "dots", "greeter", "wallpapers", "cli"];
                     tests.check(ServiceResources.entries.map(entry=>entry.id).join(",") === ids.join(","), "Import order is incorrect");
-                    tests.check(ids.map(id=>tests.find(page, "importRow-"+id).label).join(",") === "Compositor,Dots,Login screen,Wallpapers", "Import labels are incorrect");
+                    tests.check(ids.map(id=>tests.find(page, "importRow-"+id).label).join(",") === "Compositor,Dots,Login screen,Wallpapers,CLI", "Import labels are incorrect");
                     tests.find(imports, "importResource-compositor").clicked(); tests.phase++;
                 } else if (tests.phase === 2) {
                     if (!dialog.opened) return;
@@ -125,11 +126,22 @@ ShellRoot {
                 } else if (tests.phase === 11) {
                     if (ServiceResources.busy || dialog.visible) return;
                     tests.check(ServiceResources.pending === null && ServiceResources.message !== "", "Import did not finish");
-                    tests.find(imports, "importResource-greeter").clicked(); tests.phase++;
+                    tests.find(imports, "importResource-cli").clicked(); tests.phase++;
                 } else if (tests.phase === 12) {
                     if (!dialog.opened) return;
-                    pageLoader.active = false; tests.phase++;
+                    const accept=tests.find(dialog.contentItem,"acceptConfirmation");
+                    tests.check(accept.text === "Refresh" && dialog.description.includes("/fixture/bin/bloodyShell"),"CLI confirmation is incorrect");
+                    tests.click(accept);
+                    tests.check(ServiceResources.busy && ServiceUpdate.resourcesBusy,"CLI refresh did not run directly or block updates");
+                    tests.phase++;
                 } else if (tests.phase === 13) {
+                    if (ServiceResources.busy || dialog.visible) return;
+                    tests.check(ServiceResources.message === "Command refreshed." && ServiceResources.error === "","CLI refresh required a terminal or failed");
+                    tests.find(imports,"importResource-greeter").clicked(); tests.phase++;
+                } else if (tests.phase === 14) {
+                    if (!dialog.opened) return;
+                    pageLoader.active = false; tests.phase++;
+                } else if (tests.phase === 15) {
                     tests.check(ServiceResources.pending === null && !OverlayState.settingsPopup, "Destroying the page left a modal grab");
                     tests.click(background);
                     tests.check(tests.backgroundClicks === 1, "Popup still intercepts input after page destruction");

@@ -32,14 +32,16 @@ Singleton
     readonly property color colorSolid: style[0]
     readonly property color colorLine:  tinted(light ? "#ababB5" : "#47474a", 0.16)
 
-    readonly property color text1: tinted(light ? "#1d1d1f" : "#f5f5f7", 0.10)
+    function textFor(lightMode) { return tinted(lightMode ? "#1d1d1f" : "#f5f5f7", 0.10); }
+    readonly property color text1: textFor(light)
     readonly property color text2: tinted(light ? "#34343a" : "#aeaeb2", 0.10)
     readonly property color text3: tinted(light ? "#414147" : "#9a9a9a", 0.10)
     readonly property color text4: inkAlpha(0.5)
 
     readonly property bool  accentShell: Config.themeAccent
     readonly property color accentBase:  ServiceAppearance.accent
-    readonly property color accent:      Qt.hsla(Math.max(0, accentBase.hslHue), Math.min(0.7, accentBase.hslSaturation), light ? 0.36 : 0.72, 1)
+    function accentFor(lightMode) { return Qt.hsla(Math.max(0, accentBase.hslHue), Math.min(0.7, accentBase.hslSaturation), lightMode ? 0.36 : 0.72, 1); }
+    readonly property color accent: accentFor(light)
     function accentAlpha(a) { return Qt.rgba(accent.r, accent.g, accent.b, a) }
     function tone(a) { return accentShell ? accentAlpha(a * (light ? 1.3 : 1.6)) : inkAlpha(a) }
 
@@ -67,7 +69,8 @@ Singleton
     readonly property color colorCritical:  light ? "#b42332" : "#ff6b6b"
     readonly property color colorAttention: light ? "#874500" : "#ff9f0a"
 
-    readonly property color frameColor: tinted(light ? "#f5f5f7" : accentShell ? "#08080a" : "#000000", 0.24)
+    function frameFor(lightMode) { return tinted(lightMode ? "#f5f5f7" : accentShell ? "#08080a" : "#000000", 0.24); }
+    readonly property color frameColor: frameFor(light)
     readonly property int frameThickness: Math.max(0, Math.min(8, Config.frameThickness))
     readonly property int frameRadius: 24
     readonly property int frameSmoothing: 24
@@ -135,6 +138,12 @@ Singleton
     readonly property color settingsColorSidebar:    style[1]
     readonly property color settingsColorCard:       style[2]
     readonly property color settingsColorLine:       inkAlpha(0.06)
+    readonly property color settingsColorHover: light
+        ? Qt.tint(Qt.tint(settingsColorCard, inkAlpha(0.14)), accentShell ? accentAlpha(0.04) : "transparent")
+        : Qt.tint(settingsColorCard, colorHover)
+    readonly property color settingsColorPressed: light
+        ? Qt.tint(Qt.tint(settingsColorCard, inkAlpha(0.20)), accentShell ? accentAlpha(0.04) : "transparent")
+        : Qt.tint(settingsColorCard, colorPressed)
 
     readonly property color lockSurface: colorSolid
     readonly property color lockSurfaceEdge: inkAlpha(0.12)

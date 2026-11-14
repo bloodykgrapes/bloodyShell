@@ -5,6 +5,7 @@ import "../../../../common"
 import "../../../../core"
 import "../../../../services"
 import "../components"
+import "../components" as Parts
 
 SettingsPage
 {
@@ -189,4 +190,6 @@ SettingsPage
             label: Tr.tr("settings.sound.noActiveApps")
         }
     }
+
+    Parts.SettingsEasyEffects { objectName: "easyEffectsSection"; active: pageSound.active }
 }

@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import re
+import runpy
 import shutil
 import subprocess
 import tempfile
@@ -162,5 +163,45 @@ ShellRoot
         assert not re.search(r"RUNTIME_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|is not a type", output), output
 
 
+def compositor_checks():
+    prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-unsupported-compositor-") as temporary:
+        base = Path(temporary)
+        env = prepare(base)
+        (base / "home").mkdir()
+        env.update(HOME=str(base / "home"), XDG_STATE_HOME=str(base / "state"), NIRI_SOCKET="", XDG_CURRENT_DESKTOP="unsupported")
+        env.pop("WAYLAND_DISPLAY", None)
+        niri = base / "bin/niri"
+        niri.write_text('#!/bin/sh\ntouch "$TEST_SCREENSHOT_BASE/unexpected-niri-command"\nexit 1\n')
+        niri.chmod(0o700)
+        (base / "shell.qml").write_text('''import QtQuick
+import Quickshell
+import "modules/core"
+import "modules/services"
+ShellRoot {
+    Timer { interval: 200; running:true; onTriggered: {
+        try {
+            if (ServiceCompositor.available || ServiceCompositor.name !== "" || ServiceCompositor.supports("displays")) throw new Error("Unsupported compositor selected a backend");
+            if (ServiceCompositor.windowList.length || ServiceCompositor.workspacesList.count || ServiceCompositor.captureStreams.length || ServiceRecording.active) throw new Error("Unavailable backend exposed stale state");
+            if (ServiceCompositor.configuration(["mouse-read"]).length || ServiceCompositor.logoutCommand.length) throw new Error("Unavailable backend exposed commands");
+            ServiceCompositor.focusWindow(1); ServiceCompositor.focusWorkspace("A", 1); ServiceCompositor.powerOffMonitors();
+            ServiceDisplay.refresh(); ServiceDisplay.change("A", "scale", 2); ServiceKeyboard.refresh(); ServiceKeyboard.set("repeatRate", 30);
+            if (Object.keys(Config.displays).length) throw new Error("Unsupported display settings were saved");
+            finish.start();
+        } catch (error) { console.error("COMPOSITOR_FAILED", error); Qt.quit(); }
+    } }
+    Timer { id:finish; interval:700; onTriggered:{ console.log("COMPOSITOR_PASSED unsupported backend has empty state, no commands, and safe settings"); Qt.quit(); } }
+}
+''')
+        result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, text=True, capture_output=True, timeout=5)
+        output = result.stdout + result.stderr
+        assert result.returncode == 0 and "COMPOSITOR_PASSED" in output, output
+        assert not re.search(r"COMPOSITOR_FAILED|ReferenceError|TypeError|Binding loop|Unable to assign", output), output
+        assert not (base / "unexpected-niri-command").exists(), "Unsupported compositor ran niri commands"
+        assert not (base / "config/niri").exists(), "Unsupported compositor wrote niri configuration"
+    print("Unsupported compositor keeps empty state, hides unavailable capabilities, and performs no niri commands or config writes.")
+
+
 if __name__ == "__main__":
     checks()
+    compositor_checks()

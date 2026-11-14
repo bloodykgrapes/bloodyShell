@@ -103,7 +103,7 @@ Widget
             : island.vertical ? 32 : Math.min(island.limit, Math.max(130, textProbe.advanceWidth + 76))
         implicitHeight: island.notification ? Math.max(84, textColumn.implicitHeight + 24) : 32
         hoverEnabled: true
-        acceptedButtons: island.shown.kind === "osd" ? Qt.NoButton : Qt.LeftButton | Qt.MiddleButton
+        acceptedButtons: island.shown.kind === "osd" || island.shown.kind === "recording" ? Qt.NoButton : Qt.LeftButton | Qt.MiddleButton
         cursorShape: acceptedButtons !== Qt.NoButton ? Qt.PointingHandCursor : Qt.ArrowCursor
         opacity: island.contentOpacity * (1 - island.menuProgress)
         transform: Translate
@@ -114,11 +114,12 @@ Widget
         scale: pressed ? 0.97 : 1
         Spring on scale {}
 
-        Accessible.role: Accessible.Button
+        Accessible.role: island.shown.kind === "recording" ? Accessible.StaticText : Accessible.Button
         Accessible.name: (island.shown.title || "") + " " + (island.shown.subtitle || "")
         onClicked: mouse =>
         {
             if (island.shown.kind === "notification") ServiceIsland.activate();
+            else if (island.shown.kind === "recording") return;
             else if (mouse.button === Qt.MiddleButton) ServiceMedia.toggle();
             else island.toggleMenu();
         }
@@ -140,7 +141,7 @@ Widget
             width: island.notification ? 40 : 28
             height: width
             radius: island.notification ? 12 : 9
-            color: Theme.inkAlpha(0.07)
+            color: island.shown.kind === "recording" ? Qt.rgba(Theme.colorCritical.r, Theme.colorCritical.g, Theme.colorCritical.b, 0.15) : Theme.inkAlpha(0.07)
 
             Image
             {
@@ -162,9 +163,17 @@ Widget
             ShellIcon
             {
                 anchors.centerIn: parent
-                visible: island.shown.kind !== "notification" && art.status !== Image.Ready
+                visible: island.shown.kind !== "notification" && island.shown.kind !== "recording" && art.status !== Image.Ready
                 icon: island.shown.icon || Icon.music
                 size: 16
+            }
+            Rectangle
+            {
+                objectName: "recordingMark"
+                anchors.centerIn: parent
+                width: 10; height: 10; radius: 5
+                color: Theme.colorCritical
+                visible: island.shown.kind === "recording"
             }
         }
         Column
@@ -203,6 +212,17 @@ Widget
                 wrapMode: island.notification ? Text.Wrap : Text.NoWrap
                 maximumLineCount: island.notification ? 4 : 1
             }
+        }
+        Rectangle
+        {
+            objectName: "recordingIndicator"
+            x: cover.x + cover.width - 5
+            y: cover.y - 1
+            width: 8; height: 8; radius: 4
+            color: Theme.colorCritical
+            border.width: 1
+            border.color: Theme.colorSolid
+            visible: ServiceRecording.active && island.shown.kind !== "recording"
         }
         Equalizer
         {

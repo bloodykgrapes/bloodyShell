@@ -19,8 +19,10 @@ ShaderEffect
     property real cornerRadius: Theme.frameRadius
     property real bodyRadius: Theme.barRadius
     property real smoothing: Theme.frameSmoothing
-    readonly property real panelSmoothing: Config.barMenu === Enums.MenuFloating ? 0 : Theme.frameSmoothing
+    property real panelSmoothing: Config.barMenu === Enums.MenuFloating ? 0 : Theme.frameSmoothing
     property color fillColor: Theme.frameColor
+    property real borderWidth: 0
+    property color borderColor: "transparent"
 
     fragmentShader: Qt.resolvedUrl("../../../assets/shaders/frame.frag.qsb")
 }

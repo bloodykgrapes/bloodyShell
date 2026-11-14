@@ -1,11 +1,13 @@
 import QtQuick
+import "." as Common
 
 import "../animations"
 import "../core"
 
-Item
+Common.InteractiveControl
 {
     id: menuItem
+
 
     property string icon: ""
     property string text: ""
@@ -15,7 +17,7 @@ Item
     property int textSize: 12
     property real trailingInset: trailing !== "" ? trailingLabel.width + 10 : 0
     property bool actionPressed: false
-    readonly property bool hovered: enabled && (hover.hovered || activeFocus)
+    readonly property bool highlighted: enabled && (hovered || visualFocus)
 
     signal clicked()
 
@@ -30,17 +32,16 @@ Item
     Accessible.name: text
     Accessible.onPressAction: if (enabled) clicked()
 
-    scale: area.pressed || actionPressed ? 0.98 : hovered ? 1.025 : 1
+    scale: area.pressed || actionPressed ? 0.98 : highlighted ? 1.025 : 1
 
     Spring on scale {}
-    HoverHandler { id: hover }
 
     Rectangle
     {
         anchors.fill: parent
         radius: Theme.radiusMedium
         color: Theme.menuColorHover
-        opacity: menuItem.hovered ? 1 : 0
+        opacity: menuItem.highlighted ? 1 : 0
 
         Smooth on opacity {}
     }
@@ -95,6 +96,7 @@ Item
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
+        onPressed: menuItem.focusFor(Qt.MouseFocusReason)
         onClicked: menuItem.clicked()
     }
 }

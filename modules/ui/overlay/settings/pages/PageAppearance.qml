@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 
-import "../../../../animations"
 import "../../../../common"
 import "../../../../core"
 import "../../../../services"
@@ -32,127 +31,16 @@ SettingsPage
             label: Tr.tr("settings.appearance.theme")
             stacked: true
 
-            Row
+            SettingsStyleChoices
             {
-                id: themeCards
-
-                readonly property var themes: Registry.themeOptions
-                width: parent.width
-                spacing: 10
-
-                Repeater
-                {
-                    model: themeCards.themes
-
-                    Item
-                    {
-                        id: themeCard
-
-                        required property var modelData
-                        readonly property bool  current: Theme.light === light
-                        readonly property var   colors: Theme.styles[modelData.value]
-                        readonly property bool  light: modelData.value === Enums.ThemeLight
-                        readonly property color ink: light ? "#1d1d1f" : "#ffffff"
-                        readonly property color mark: Config.themeAccent ? Theme.accentBase : ink
-
-                        width: Math.min(150, (themeCards.width - themeCards.spacing) / 2)
-                        height: preview.height + themeCaption.implicitHeight + 8
-
-                        scale: cardArea.pressed ? 0.96 : cardArea.containsMouse ? 1.03 : 1
-                        Spring on scale {}
-
-                        Rectangle
-                        {
-                            id: preview
-
-                            width: parent.width
-                            height: Math.round(width * 0.62)
-                            radius: Theme.radiusLarge
-                            color: themeCard.colors[1]
-                            border.width: themeCard.current ? 2 : 1
-                            border.color: themeCard.current ? Theme.text1 : Theme.colorLine
-                            Tint on border.color {}
-
-                            Rectangle
-                            {
-                                x: 8; y: 7
-                                width: parent.width - 16
-                                height: 8
-                                radius: 4
-                                color: themeCard.colors[0]
-                                border.width: 1
-                                border.color: Qt.rgba(themeCard.ink.r, themeCard.ink.g, themeCard.ink.b, 0.08)
-
-                                Rectangle { x: 4; anchors.verticalCenter: parent.verticalCenter; width: 10; height: 3; radius: 1.5; color: themeCard.mark }
-                                Rectangle
-                                {
-                                    anchors { right: parent.right; rightMargin: 4; verticalCenter: parent.verticalCenter }
-                                    width: 14; height: 3; radius: 1.5
-                                    color: Qt.rgba(themeCard.ink.r, themeCard.ink.g, themeCard.ink.b, 0.4)
-                                }
-                            }
-
-                            Rectangle
-                            {
-                                x: 8; y: 21
-                                width: parent.width - 16
-                                height: parent.height - 29
-                                radius: 6
-                                color: themeCard.colors[0]
-                                border.width: 1
-                                border.color: Qt.rgba(themeCard.ink.r, themeCard.ink.g, themeCard.ink.b, 0.08)
-
-                                Column
-                                {
-                                    x: 6; y: 6
-                                    spacing: 4
-                                    Rectangle { width: 30; height: 3; radius: 1.5; color: Qt.rgba(themeCard.ink.r, themeCard.ink.g, themeCard.ink.b, 0.7) }
-                                    Rectangle { width: 22; height: 3; radius: 1.5; color: Qt.rgba(themeCard.ink.r, themeCard.ink.g, themeCard.ink.b, 0.3) }
-                                }
-                                Rectangle
-                                {
-                                    anchors { right: parent.right; rightMargin: 6; verticalCenter: parent.verticalCenter }
-                                    width: 16; height: 9; radius: 4.5
-                                    color: themeCard.mark
-                                    Rectangle
-                    {
-                        anchors { right: parent.right; rightMargin: 1.5; verticalCenter: parent.verticalCenter }
-                        width: 6; height: 6; radius: 3
-                        color: themeCard.colors[0]
-                    }
-                                }
-                            }
-                        }
-
-                        ShellText
-                        {
-                            id: themeCaption
-                            anchors { horizontalCenter: parent.horizontalCenter; top: preview.bottom; topMargin: 6 }
-                            width: parent.width
-                            horizontalAlignment: Text.AlignHCenter
-                            wrapMode: Text.Wrap
-                            label: themeCard.modelData.label
-                            size: 11
-                            color: themeCard.current ? Theme.text1 : Theme.text3
-                            Tint on color {}
-                        }
-
-                        MouseArea
-                        {
-                            id: cardArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: Config.set("themeStyle", themeCard.modelData.value)
-                        }
-
-                        Accessible.role: Accessible.RadioButton
-                        Accessible.name: themeCard.modelData.label
-                        Accessible.checked: themeCard.current
-                    }
-                }
+                kind: "theme"
+                options: Registry.themeOptions
+                namePrefix: "themeStyle-"
+                current: Config.themeStyle
+                onSelected: value => Config.set("themeStyle", value)
             }
         }
+
         SettingsRow
         {
             label: Tr.tr("settings.appearance.automaticColor")
@@ -190,27 +78,13 @@ SettingsPage
             description: Tr.tr("settings.appearance.equalizerStyleHint")
             stacked: true
 
-            Flow
+            SettingsStyleChoices
             {
-                id: equalizerStyles
-                width: parent.width
-                spacing: 10
-
-                Repeater
-                {
-                    model: [Enums.EqualizerBars, Enums.EqualizerWaves]
-                    SettingsStyleCard
-                    {
-                        required property int modelData
-                        objectName: "equalizerStyle-" + modelData
-                        kind: "equalizer"
-                        width: Math.min(150, (equalizerStyles.width - equalizerStyles.spacing) / 2)
-                        value: modelData
-                        label: Tr.tr(modelData === Enums.EqualizerBars ? "settings.appearance.equalizerBars" : "settings.appearance.equalizerWaves")
-                        current: Config.equalizerStyle === modelData
-                        onClicked: Config.set("equalizerStyle", modelData)
-                    }
-                }
+                kind: "equalizer"
+                options: Registry.equalizerOptions
+                namePrefix: "equalizerStyle-"
+                current: Config.equalizerStyle
+                onSelected: value => Config.set("equalizerStyle", value)
             }
         }
     }

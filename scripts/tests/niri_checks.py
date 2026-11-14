@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def checks():
     resources = runpy.run_path(str(ROOT / "scripts/lib/resources.py"))
-    desktop = runpy.run_path(str(ROOT / "scripts/lib/desktop.py"))
+    desktop = runpy.run_path(str(ROOT / "scripts/lib/compositors/niri.py"))
     managed, user = desktop["NIRI_MANAGED"], desktop["NIRI_USER"]
     with tempfile.TemporaryDirectory(prefix="bloodyshell-niri-") as temporary:
         base = Path(temporary)
@@ -94,7 +94,7 @@ def checks():
             updated = desktop["cursor_config"](tricky, "Adwaita", 24)
             assert 'options r#"{ cursor }"#' in updated and "hide-when-typing" in updated
             assert updated.count("xcursor-size") == 1 and "xcursor-size 24" in updated
-            changed = subprocess.run([sys.executable, str(ROOT / "scripts/bloodyShell"), "internal", "niri-config", "cursor", "Adwaita", "32"], capture_output=True, text=True, timeout=8)
+            changed = subprocess.run([sys.executable, str(ROOT / "scripts/bloodyShell"), "internal", "compositor", "config", "niri", "cursor", "Adwaita", "32"], capture_output=True, text=True, timeout=8)
             assert changed.returncode == 0, changed.stdout + changed.stderr
             text = (fragments / "06-user-input.kdl").read_text()
             assert original_input.strip() in text and "xcursor-size 32" in text
@@ -108,7 +108,7 @@ def checks():
 
 def mouse_checks():
     import json
-    api = runpy.run_path(str(ROOT / 'scripts/lib/desktop.py'))
+    api = runpy.run_path(str(ROOT / 'scripts/lib/compositors/niri.py'))
     mouse_config, mouse_settings = api['mouse_config'], api['mouse_settings']
     text = '''// input { mouse { fake } }
 input {
@@ -152,7 +152,6 @@ cursor { xcursor-theme "Adwaita"; xcursor-size 24; }
         (config / 'config.kdl').write_text('include "bloodyShell/06-user-input.kdl"\n')
         shared = base / 'shared-input.kdl'
         shared.write_text((ROOT / 'dots/niri/bloodyShell/06-user-input.kdl').read_text())
-        original = shared.read_bytes()
         shared.chmod(0o600)
         (fragments / '06-user-input.kdl').symlink_to(shared)
         (base / 'bin').mkdir()
@@ -162,13 +161,12 @@ cursor { xcursor-theme "Adwaita"; xcursor-size 24; }
         validator.write_text('#!/bin/sh\n[ ! -f "' + str(base / 'deny') + '" ] || exit 1\nexec /usr/bin/niri "$@"\n')
         validator.chmod(0o700)
         env = dict(os.environ, HOME=str(base / 'home'), XDG_CONFIG_HOME=str(base / 'config'), XDG_STATE_HOME=str(base / 'state'), PATH=str(base / 'bin') + os.pathsep + os.environ['PATH'])
-        cli = [sys.executable, str(ROOT / 'scripts/bloodyShell'), 'internal','niri-config']
+        cli = [sys.executable, str(ROOT / 'scripts/bloodyShell'), 'internal','compositor','config','niri']
         read = subprocess.run(cli + ['mouse-read'],env=env,capture_output=True,text=True,check=True)
         assert json.loads(read.stdout)['available'] and not (base / 'state').exists(), 'Reading mouse settings wrote state'
         result = subprocess.run(cli + ['mouse', json.dumps(dict(speed=0.4,scrollVertical=1.7,naturalScroll=True))],env=env,capture_output=True,text=True,check=True)
         assert json.loads(result.stdout)['mouse']['speed'] == 0.4
-        record = json.loads((base / 'state/bloodyShell/changes.json').read_text())
-        assert str(fragments / '06-user-input.kdl') in record['files'], 'Mouse changes were not tracked for restoration'
+        assert not (base / 'state/bloodyShell/changes.json').exists(), 'Mouse changes created a tracking journal'
         assert (fragments / '06-user-input.kdl').is_symlink() and shared.stat().st_mode & 0o777 == 0o600
         subprocess.run(cli + ['keyboard','keyboard {\n    xkb { layout "fr"; }\n    repeat-rate 40\n}'],env=env,capture_output=True,text=True,check=True)
         assert mouse_settings(shared.read_text())['speed'] == 0.4 and 'repeat-rate 40' in shared.read_text()
@@ -179,9 +177,7 @@ cursor { xcursor-theme "Adwaita"; xcursor-size 24; }
         failed = subprocess.run(cli + ['mouse',json.dumps({'speed':0.9})],env=env,capture_output=True,text=True)
         assert failed.returncode != 0 and shared.read_bytes() == before, 'Rejected mouse configuration was not rolled back'
         subprocess.run(['niri','validate','-c',str(config / 'config.kdl')],capture_output=True,text=True,check=True)
-        restored = subprocess.run([sys.executable, str(ROOT / 'scripts/bloodyShell'), 'restore', '--apply'],env=env,capture_output=True,text=True)
-        assert restored.returncode == 0, restored.stdout + restored.stderr
-        assert shared.read_bytes() == original and (fragments / '06-user-input.kdl').is_symlink(), 'Tracked mouse and keyboard changes were not restored'
+        assert shared.read_bytes() == before and (fragments / '06-user-input.kdl').is_symlink(), 'Rejected edits changed the user configuration'
     print('Mouse configuration passed: real niri validation, defaults, flags, signed scroll axes, comments, disabled nodes, inline KDL, idempotence, concurrent keyboard edits, symlinks, permissions and rollback.')
 
 
@@ -212,7 +208,7 @@ import "modules/core"
 import "modules/services"
 import "modules/ui/overlay/settings/pages"
 ShellRoot {
-    FileView { id: inputFile; path: Paths.niriDir + "/06-user-input.kdl"; watchChanges: true; onFileChanged: reload() }
+    FileView { id: inputFile; path: ServiceCompositor.configFiles.input; watchChanges: true; onFileChanged: reload() }
     FileView { id: deny; path: DENY_PATH; printErrors: false }
     Window {
         visible: true; width: 900; height: 900
@@ -260,14 +256,55 @@ ShellRoot {
         assert not re.search(r'MOUSE_UI_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|Failed to load configuration',output), output
         final = path.read_text()
         assert 'repeat-rate 40' in final and 'scroll-factor horizontal=-2.1 vertical=1.7' in final and 'accel-speed 0.3' in final
-        api = runpy.run_path(str(ROOT / 'scripts/lib/desktop.py'))
+        api = runpy.run_path(str(ROOT / 'scripts/lib/compositors/niri.py'))
         for name in ('touchpad','cursor'):
             old_span = api['kdl_block'](initial,name,api['kdl_block'](initial,'input') if name == 'touchpad' else None)
             new_span = api['kdl_block'](final,name,api['kdl_block'](final,'input') if name == 'touchpad' else None)
             assert initial[old_span[0]:old_span[2]] == final[new_span[0]:new_span[2]], name + ' changed while editing mouse settings'
 
 
+def concurrent_checks():
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-niri-concurrent-") as temporary:
+        base = Path(temporary)
+        directory = base / "config/niri/bloodyShell"
+        directory.mkdir(parents=True)
+        (directory.parent / "config.kdl").write_text('include "bloodyShell/06-user-input.kdl"\n')
+        path = directory / "06-user-input.kdl"
+        path.write_text('input { keyboard { xkb { layout "us"; }; }; mouse { accel-speed 0.0; }; touchpad { tap; }; }\n')
+        binary = base / "bin"
+        binary.mkdir()
+        niri = binary / "niri"
+        niri.write_text("#!/usr/bin/env python3\nimport time\ntime.sleep(0.03)\n")
+        niri.chmod(0o700)
+        env = dict(os.environ, HOME=str(base / "home"), XDG_CONFIG_HOME=str(base / "config"),
+                   XDG_STATE_HOME=str(base / "state"), PATH=str(binary) + os.pathsep + os.environ["PATH"])
+        requests = [
+            ["keyboard", 'keyboard { xkb { layout "de,us"; }; repeat-rate 42; }'],
+            ["mouse", '{"speed":0.45,"profile":"flat"}'],
+            ["cursor", "Adwaita", "32"],
+            ["write", "07-user-output.kdl", 'output "Test" { scale 1.25; }']
+        ]
+        processes = [subprocess.Popen([sys.executable, str(ROOT / "scripts/bloodyShell"), "internal", "compositor", "config", "niri", *args],
+                                      env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                     for args in requests * 3]
+        try:
+            for process in processes:
+                output, errors = process.communicate(timeout=10)
+                assert process.returncode == 0, output + errors
+        finally:
+            for process in processes:
+                if process.poll() is None:
+                    process.kill(); process.communicate(timeout=3)
+        text = path.read_text()
+        assert 'layout "de,us"' in text and 'repeat-rate 42' in text, text
+        assert 'accel-speed 0.45' in text and 'accel-profile "flat"' in text and 'xcursor-size 32' in text, text
+        assert 'touchpad { tap; }' in text and 'scale 1.25' in (directory / "07-user-output.kdl").read_text(), text
+        assert set(item.name for item in directory.iterdir()) == {"06-user-input.kdl", "07-user-output.kdl"}, "Input saving left lock or staging files"
+    print("Concurrent niri writes passed: keyboard, mouse, cursor and output changes are kept without lock files.")
+
+
 if __name__ == "__main__":
     checks()
     mouse_checks()
     mouse_ui_checks()
+    concurrent_checks()

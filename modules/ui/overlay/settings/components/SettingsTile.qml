@@ -38,7 +38,7 @@ Rectangle
         topRightRadius:    parent.topRightRadius
         bottomLeftRadius:  parent.bottomLeftRadius
         bottomRightRadius: parent.bottomRightRadius
-        color: Theme.colorHover
+        color: Theme.settingsColorHover
         opacity: settingsTile.hovered ? 1 : 0
         Behavior on opacity
         {

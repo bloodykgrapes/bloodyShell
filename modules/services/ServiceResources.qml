@@ -47,7 +47,8 @@ Singleton
     function apply()
     {
         if (!pending || busy || ServiceUpdate.busy) return;
-        if (pending.kind !== "wallpapers" && terminal.length === 0)
+        const direct = pending.kind === "wallpapers" || pending.kind === "cli";
+        if (!direct && terminal.length === 0)
         {
             error = Tr.tr("settings.dependencies.noTerminal");
             return;
@@ -57,7 +58,7 @@ Singleton
         operation = entry.id;
         error = "";
         const args = helper.concat(["import", entry.id]);
-        command.run(entry.kind === "wallpapers" ? args : terminal.concat(args, ["--wait"]));
+        command.run(direct ? args : terminal.concat(args, ["--wait"]));
     }
 
     CommandProcess
@@ -72,6 +73,7 @@ Singleton
                 const data = JSON.parse(catalog.text);
                 serviceResources.entries = data.entries;
                 serviceResources.terminal = data.terminal;
+                serviceResources.error = data.error || "";
             }
             catch (error) { serviceResources.error = String(error); }
         }
@@ -85,7 +87,8 @@ Singleton
             serviceResources.operation = "";
             if (code !== 0) { serviceResources.error = errorMessage(Tr.tr("settings.imports.failed")); return; }
             const entry = serviceResources.entries.find(item => item.id === id);
-            serviceResources.message = Tr.tr("settings.imports.completed").arg(entry ? entry.destination : id);
+            serviceResources.message = entry && entry.kind === "cli" ? Tr.tr("settings.imports.cliCompleted")
+                : Tr.tr("settings.imports.completed").arg(entry ? entry.destination : id);
         }
     }
 }

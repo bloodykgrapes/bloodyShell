@@ -269,14 +269,14 @@ def path_checks():
             (tools / "qs").write_text("#!/bin/sh\nprintf '[]\\n'\n")
             (tools / "qs").chmod(0o755)
             env = dict(HOME=str(home), SHELL="/bin/" + shell, PATH=str(tools) + ":/usr/bin:/bin", ZDOTDIR=str(zsh),
-                       XDG_CONFIG_HOME=str(config), XDG_STATE_HOME=str(home / "state"), XDG_CACHE_HOME=str(home / "cache"))
+                       XDG_CONFIG_HOME=str(config), XDG_STATE_HOME=str(home / "state"), XDG_CACHE_HOME=str(home / "cache"), XDG_BIN_HOME=str(binary))
             arguments = ["install-command", str(target / "scripts/bloodyShell"), str(binary), str(home / "backup")]
             with patch.dict(os.environ, env, clear=True), patch.object(sys, "argv", arguments), redirect_stdout(io.StringIO()):
                 api["install_main"]()
-                record = json.loads((home / "state/bloodyShell/install.json").read_text())
-                before = {name: (Path(name).read_bytes(), Path(name).stat().st_mtime_ns) for name in record["path_files"]}
+                profiles = api["path_blocks"](binary)
+                before = {name: (Path(name).read_bytes(), Path(name).stat().st_mtime_ns) for name in profiles}
                 api["install_main"]()
-                assert before == {name: (Path(name).read_bytes(), Path(name).stat().st_mtime_ns) for name in record["path_files"]}, "PATH installation must be idempotent"
+                assert before == {name: (Path(name).read_bytes(), Path(name).stat().st_mtime_ns) for name in profiles}, "PATH installation must be idempotent"
             assert (home / ".bashrc").is_symlink() and managed.stat().st_mode & 0o777 == 0o640
             for profile in (home / ".profile", home / ".bashrc", home / ".bash_profile"):
                 sourced = subprocess.run(["bash", "--noprofile", "--norc", "-c", '. "$1"; . "$1"; command -v bloodyShell; bloodyShell version; printf "%s" "$PATH"', "test", str(profile)],
@@ -299,11 +299,11 @@ def path_checks():
             managed.write_bytes(managed.read_bytes() + b"# personal addition\n")
             with patch.dict(os.environ, env, clear=True), patch.object(sys, "argv", ["uninstall", "--apply"]), redirect_stdout(io.StringIO()):
                 api["uninstall_main"]()
-            assert managed.read_bytes() == original + b"\n# personal addition\n" and (home / ".bashrc").is_symlink()
-            assert (home / ".bash_profile").read_text() == "export KEEP_LOGIN=yes\n"
-            assert not (home / ".profile").exists() and not (config / "environment.d/90-bloodyShell-path.conf").exists()
+            assert [line for line in managed.read_text().splitlines() if line] == [original.decode(), "# personal addition"] and (home / ".bashrc").is_symlink()
+            assert (home / ".bash_profile").read_text().strip() == "export KEEP_LOGIN=yes"
+            assert not (home / ".profile").read_text().strip() and not (config / "environment.d/90-bloodyShell-path.conf").exists()
             assert not (ROOT / "unexpected").exists() and not (home / "unexpected").exists()
-        # A failed registration rolls back only files written by that attempt.
+        # A failed PATH update rolls back only files written by that attempt.
         home = base / "rollback home"
         (home / "config/quickshell/bloodyShell/scripts").mkdir(parents=True)
         target = home / "config/quickshell/bloodyShell"
@@ -312,13 +312,13 @@ def path_checks():
         (target / "version").write_text("1.2.3")
         (home / ".bashrc").write_text("# original")
         env = dict(HOME=str(home), SHELL="/bin/bash", PATH="/usr/bin:/bin", XDG_CONFIG_HOME=str(home / "config"), XDG_STATE_HOME=str(home / "state"))
-        ownership = runpy.run_path(str(ROOT / "scripts/lib/ownership.py"))
-        original_atomic = ownership["atomic"]
+        files = api["install_command"].__globals__["FILES"]
+        original_atomic = files["atomic_write"]
         def failing_atomic(path, data, mode=0o600):
             original_atomic(path, data, mode)
             if path == home / ".profile":
                 raise OSError("simulated disk failure after the profile write")
-        with patch.dict(os.environ, env, clear=True), patch.object(sys, "argv", ["install-command", str(target / "scripts/bloodyShell"), str(home / ".local/bin"), str(home / "backup")]), patch("runpy.run_path", return_value=dict(ownership, atomic=failing_atomic)), redirect_stdout(io.StringIO()):
+        with patch.dict(os.environ, env, clear=True), patch.object(sys, "argv", ["install-command", str(target / "scripts/bloodyShell"), str(home / ".local/bin"), str(home / "backup")]), patch.dict(files, atomic_write=failing_atomic), redirect_stdout(io.StringIO()):
             try:
                 api["install_main"]()
             except OSError:
@@ -330,6 +330,72 @@ def path_checks():
     print("Managed PATH blocks passed: Bash/login shells, ZDOTDIR, Fish, environment.d, literal paths, symlinks, permissions, idempotence and removal preserving user edits.")
 
 
+def application_routing_checks():
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-application-routing-") as temporary:
+        base = Path(temporary)
+        binary = base / "bin"
+        binary.mkdir()
+        command = binary / "bloodyShell"
+        shutil.copy2(ROOT / "scripts/bloodyShell", command)
+        installed = base / "config/quickshell/bloodyShell"
+        checkout = base / "current checkout"
+        other = base / "other config"
+        for root in (installed, checkout, other):
+            (root / "scripts/lib").mkdir(parents=True)
+            (root / "shell.qml").write_text("fixture")
+            (root / "setup").write_text('case "$1" in cli|uninstall) printf "%s" "$0" > "$TEST_CLI_ROUTE";; *) exit 1;; esac\n')
+        instances = base / "instances.json"
+        calls = base / "calls.json"
+        (binary / "qs").write_text('#!/usr/bin/env python3\nimport os\nfrom pathlib import Path\nprint(Path(os.environ["TEST_APPLICATION_INSTANCES"]).read_text())\n')
+        (binary / "qs").chmod(0o700)
+        env = dict(os.environ, HOME=str(base), XDG_CONFIG_HOME=str(base / "config"),
+                   PATH=str(binary)+os.pathsep+os.environ["PATH"], TEST_APPLICATION_INSTANCES=str(instances), TEST_APPLICATION_CALLS=str(calls), TEST_CLI_ROUTE=str(base / "cli-route"))
+        env.pop("WAYLAND_DISPLAY", None)
+        env.pop("DISPLAY", None)
+        newer = '''import json, os
+from pathlib import Path
+MODULES={"applications": None}
+def dispatch(arguments, root):
+    Path(os.environ["TEST_APPLICATION_CALLS"]).write_text(json.dumps(dict(root=str(root),arguments=arguments)))
+    return 0
+'''
+        (checkout / "scripts/lib/backend.py").write_text(newer)
+        (other / "scripts/lib/backend.py").write_text('raise RuntimeError("Unrelated config was executed")\n')
+        (installed / "scripts/lib/backend.py").write_text('MODULES={}\n')
+        instances.write_text(json.dumps([
+            dict(id="old-install",shell_id="bloodyShell",config_path=str(installed / "shell.qml"),launch_time="2026-01-01"),
+            dict(id="current-checkout",shell_id="bloodyShell",config_path=str(checkout / "shell.qml"),launch_time="2026-02-01"),
+            dict(id="other",shell_id="other",config_path=str(other / "shell.qml"),launch_time="2026-03-01")
+        ]))
+        def invoke(*args):
+            return subprocess.run([sys.executable,str(command),*args],env=env,capture_output=True,text=True,timeout=6)
+        for role in ("browser","file-manager","terminal"):
+            result=invoke("open",role)
+            assert result.returncode==0,result.stderr
+            assert json.loads(calls.read_text())==dict(root=str(checkout),arguments=["applications","launch",role])
+        result=invoke("cli")
+        assert result.returncode==0 and (base / "cli-route").read_text()==str(checkout / "setup"),result.stderr
+        result=invoke("uninstall","--json")
+        assert result.returncode==0 and (base / "cli-route").read_text()==str(checkout / "setup"),result.stderr
+        result=invoke("cli","unexpected")
+        assert result.returncode!=0 and "does not take arguments" in result.stderr,result.stderr
+        instances.write_text("[]")
+        result=invoke("cli")
+        assert result.returncode==0 and (base / "cli-route").read_text()==str(installed / "setup"),result.stderr
+        result=invoke("uninstall","--json")
+        assert result.returncode==0 and (base / "cli-route").read_text()==str(installed / "setup"),result.stderr
+        result=invoke("open","terminal")
+        assert result.returncode!=0 and "Update the shell" in result.stderr and "Unknown internal command" not in result.stderr,result.stderr
+        (installed / "scripts/lib/backend.py").write_text(newer)
+        result=invoke("open","terminal")
+        assert result.returncode==0 and json.loads(calls.read_text())["root"]==str(installed),result.stderr
+        env["PATH"]="/nonexistent"
+        result=invoke("open","terminal")
+        assert result.returncode==0 and json.loads(calls.read_text())["root"]==str(installed),result.stderr
+    print("Application and CLI refresh routing passed: active checkout with older installed backend, unrelated configs excluded, all roles, stopped shell, missing Quickshell and actionable outdated-runtime errors.")
+
+
 if __name__ == "__main__":
     run_checks()
     path_checks()
+    application_routing_checks()

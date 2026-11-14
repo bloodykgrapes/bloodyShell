@@ -1,13 +1,15 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import "." as Common
 
 import "../animations"
 import "../core"
 
-Item
+Common.InteractiveControl
 {
     id: control
+
 
     property string text: ""
     property string icon: ""
@@ -69,7 +71,7 @@ Item
         anchors.fill: parent
         radius: height / 2
         color: Theme.colorField
-        scale: pointer.pressed ? 0.985 : pointer.containsMouse && Config.animationsFluid ? 1.012 : 1
+        scale: pointer.pressed ? 0.985 : control.hovered && Config.animationsFluid ? 1.012 : 1
         Spring on scale {}
 
         Readout { anchors.fill: parent; foreground: Theme.text1 }
@@ -103,7 +105,7 @@ Item
             anchors.fill: parent
             radius: surface.radius
             color: Theme.inkAlpha(0.05)
-            opacity: pointer.containsMouse || pointer.pressed || control.activeFocus ? 1 : 0
+            opacity: control.hovered || pointer.pressed || control.visualFocus ? 1 : 0
             Smooth on opacity {}
         }
     }
@@ -122,7 +124,7 @@ Item
             dragValue = Math.max(0, Math.min(1, x / width));
             control.moved(dragValue);
         }
-        onPressed: mouse => { control.forceActiveFocus(Qt.MouseFocusReason); update(mouse.x, mouse.y) }
+        onPressed: mouse => { control.focusFor(Qt.MouseFocusReason); update(mouse.x, mouse.y) }
         onPositionChanged: mouse => { if (pressed) update(mouse.x, mouse.y) }
         onWheel: wheel => control.wheel(wheel)
     }
@@ -134,7 +136,7 @@ Item
         width: control.iconWidth; height: parent.height
         enabled: control.iconAction
         cursorShape: Qt.PointingHandCursor
-        onClicked: { control.forceActiveFocus(Qt.MouseFocusReason); control.iconClicked() }
+        onClicked: { control.focusFor(Qt.MouseFocusReason); control.iconClicked() }
         onWheel: wheel => control.wheel(wheel)
     }
 

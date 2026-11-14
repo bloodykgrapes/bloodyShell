@@ -30,7 +30,7 @@ def run_checks():
         shutil.copy2(ROOT / "scripts/bloodyShell", package / "scripts/bloodyShell")
         for folder in ("tests", "tools"):
             (package / "scripts" / folder).mkdir(parents=True)
-        for folder, name in (("dots/wallpapers", "new.png"), ("dots/kitty", "kitty.conf"), ("dots/sddm", "Main.qml")):
+        for folder, name in (("dots/wallpapers", "new.png"), ("dots/config/kitty", "kitty.conf"), ("dots/sddm", "Main.qml")):
             (package / folder).mkdir(parents=True)
             (package / folder / name).write_text("optional repository file")
         (package / "scripts/tests/development-check.py").write_text("development test\n")
@@ -205,5 +205,51 @@ def run_checks():
         print("Installer commands, Doctor menu, diagnostics, updates, repair, invalid releases and temporary-file cleanup passed.")
 
 
+def installation_flow_checks():
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-install-flow-") as temporary:
+        base = Path(temporary)
+        source = (ROOT / "setup").read_text().rsplit('main "$@"', 1)[0]
+        source = "\n".join('readonly PACKAGE="$TEST_PACKAGE"' if line.startswith("readonly PACKAGE=") else line for line in source.splitlines())
+        script = base / "install-flow"
+        script.write_text(source + '''
+lock_installation() { :; }
+install_dependencies() { :; }
+install_applications() { :; }
+apply_shell() { printf 'shell\\n' >> "$TEST_CALLS"; }
+tool_available() { return 0; }
+interactive() { return 1; }
+ask() { printf '%s\\n' "$*" >> "$TEST_ASKS"; return 1; }
+choose_many() { printf '%s\\n' "$@" > "$TEST_CHOICES"; SELECTED=(); }
+restart_shell() { printf restarted >> "$TEST_CALLS"; }
+python3() {
+    if [[ "$*" == *"internal resources programs" ]]; then command python3 "$@"; return; fi
+    if [[ "$*" == *"internal resources import compositor --human" ]]; then
+        printf 'compositor\\n' >> "$TEST_CALLS"
+        return "$TEST_IMPORT_FAILURE"
+    fi
+    printf 'Unexpected backend invocation: %s\\n' "$*" >&2; return 1
+}
+cmd_install
+''')
+        env = dict(os.environ, HOME=str(base / "home"), XDG_CONFIG_HOME=str(base / "config"),
+                   XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"),
+                   TEST_PACKAGE=str(ROOT), TEST_ASKS=str(base / "asks"), TEST_CHOICES=str(base / "choices"),
+                   TEST_CALLS=str(base / "calls"), TEST_IMPORT_FAILURE="0")
+        env.pop("WAYLAND_DISPLAY", None)
+        result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True, timeout=10)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert (base / "calls").read_text() == "compositor\nshell\nrestarted", "Niri was not imported before installing the shell when optional choices were skipped"
+        choices = (base / "choices").read_text().splitlines()[1:]
+        assert sorted(choice.split("|")[0] for choice in choices) == ["fastfetch", "gtk-3.0", "gtk-4.0", "kitty"], choices
+        assert not any(name in (base / "asks").read_text().lower() for name in ("compositor", "niri")), "Required niri import asked for optional confirmation"
+        (base / "calls").unlink()
+        (base / "choices").unlink()
+        result = subprocess.run(["bash", str(script)], env=dict(env, TEST_IMPORT_FAILURE="1"), capture_output=True, text=True, timeout=10)
+        assert result.returncode != 0 and (base / "calls").read_text() == "compositor\n", result.stdout + result.stderr
+        assert not (base / "choices").exists(), "Failed mandatory import continued with optional configuration"
+    print("Installation flow passed: only application configs are offered, niri is mandatory, and failed niri import stops installation.")
+
+
 if __name__ == "__main__":
     run_checks()
+    installation_flow_checks()

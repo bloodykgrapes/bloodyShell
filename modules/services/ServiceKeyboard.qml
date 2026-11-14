@@ -4,7 +4,6 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-import "../src/Kdl.js" as Kdl
 import "../common"
 import "../core"
 
@@ -12,8 +11,8 @@ Singleton
 {
     id: serviceKeyboard
 
-    readonly property string file: Paths.niriDir + "/06-user-input.kdl"
-    readonly property var helper: Paths.commandFor("niri-config")
+    readonly property string file: ServiceCompositor.configFiles.input || ""
+    readonly property var helper: ServiceCompositor.configuration([])
 
     property var    layouts: []
     property string switchOption: ""
@@ -73,30 +72,14 @@ Singleton
     }
     function set(key, value) { serviceKeyboard[key] = value; save() }
 
-    function save() { error = ""; flush.restart() }
+    function save() { if (ServiceCompositor.supports("keyboard")) { error = ""; flush.restart(); } }
     Timer { id: flush; interval: 400; onTriggered: serviceKeyboard.write() }
-
-    function renderBlock(indent)
-    {
-        const i1 = indent, i2 = indent + "    ", i3 = indent + "        ";
-        const options = [switchOption, capsOption].concat(otherOptions).filter(o => o !== "");
-        const lines = [i1 + "keyboard {", i2 + "xkb {"];
-        lines.push(i3 + "layout " + Kdl.quote(layouts.map(l => l.layout).join(",")));
-        if (layouts.some(l => l.variant !== "")) lines.push(i3 + "variant " + Kdl.quote(layouts.map(l => l.variant).join(",")));
-        if (options.length > 0) lines.push(i3 + "options " + Kdl.quote(options.join(",")));
-        lines.push(i2 + "}");
-        if (repeatDelay !== 600) lines.push(i2 + "repeat-delay " + repeatDelay);
-        if (repeatRate !== 25) lines.push(i2 + "repeat-rate " + repeatRate);
-        if (trackLayout === "window") lines.push(i2 + "track-layout \"window\"");
-        if (numlock) lines.push(i2 + "numlock");
-        lines.push(i1 + "}");
-        return lines.join("\n");
-    }
 
     function write()
     {
         if (writer.busy) { flush.restart(); return; }
-        writer.run(helper.concat(["keyboard", renderBlock("")]));
+        if (!ServiceCompositor.supports("keyboard")) return;
+        writer.run(helper.concat(ServiceCompositor.backend.keyboardWriteArgs(serviceKeyboard)));
     }
 
     CommandProcess
@@ -111,32 +94,9 @@ Singleton
 
     function parse(text)
     {
-        text = Kdl.nodeLines(text);
-        const input = Kdl.findBlock(text, "input", 0);
-        const keyboard = input ? Kdl.findBlock(text, "keyboard", input.open, input.close) : null;
-        const block = keyboard ? text.substring(keyboard.open, keyboard.close) : "";
-        const xkb = keyboard ? Kdl.findBlock(text, "xkb", keyboard.open, keyboard.close) : null;
-        const xkbBlock = xkb ? text.substring(xkb.open, xkb.close) : "";
-        const value = (key, source = block) =>
-        {
-            const m = new RegExp('^\\s*' + key + '\\s+("(?:\\\\.|[^"\\\\])*")', "m").exec(source);
-            return m ? JSON.parse(m[1]) : null;
-        };
-        const number = (key, fallback) => { const m = new RegExp("^\\s*" + key + "\\s+(\\d+)", "m").exec(block); return m ? parseInt(m[1], 10) : fallback };
-
-        const codes = (value("layout", xkbBlock) || "us").split(",").map(s => s.trim());
-        const vars = (value("variant", xkbBlock) || "").split(",").map(s => s.trim());
-        layouts = codes.filter(c => c !== "").map((c, i) => ({ layout: c, variant: vars[i] || "" }));
-
-        const options = (value("options", xkbBlock) || "").split(",").map(s => s.trim()).filter(o => o !== "");
-        switchOption = options.find(o => o.startsWith("grp:")) || "";
-        capsOption = options.find(o => o.startsWith("caps:") || o === "ctrl:nocaps" || o === "ctrl:swapcaps") || "";
-        otherOptions = options.filter(o => o !== switchOption && o !== capsOption);
-
-        repeatDelay = number("repeat-delay", 600);
-        repeatRate = number("repeat-rate", 25);
-        trackLayout = value("track-layout") === "window" ? "window" : "global";
-        numlock = /^\s*numlock\s*$/m.test(block);
+        if (!ServiceCompositor.supports("keyboard")) return;
+        const values = ServiceCompositor.backend.keyboardSettings(text);
+        for (const key of Object.keys(values)) serviceKeyboard[key] = values[key];
         loaded = true;
     }
 
@@ -147,7 +107,7 @@ Singleton
         path: serviceKeyboard.file
         printErrors: false
 
-        watchChanges: true
+        watchChanges: ServiceCompositor.supports("keyboard")
         onFileChanged: reload()
         onLoaded: if (!flush.running && !writer.busy) serviceKeyboard.parse(text())
         onLoadFailed: if (!flush.running && !writer.busy) serviceKeyboard.parse("")

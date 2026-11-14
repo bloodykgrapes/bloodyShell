@@ -311,6 +311,7 @@ def main():
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/command_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/program_choices_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/dependency_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/easyeffects_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/update_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/updates_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/resource_checks.py")], check=True)
@@ -332,7 +333,6 @@ def main():
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/overlay_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/menu_geometry_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/island_checks.py")], check=True)
-        subprocess.run([sys.executable, str(ROOT / "scripts/tests/ownership_checks.py")], check=True)
         if shutil.which("pkg-config") and subprocess.run(["pkg-config", "--exists", "Qt6Quick"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0 and shutil.which("c++"):
             subprocess.run([sys.executable, str(ROOT / "scripts/tests/keyboard_checks.py")], check=True)
             if shutil.which("wayland-scanner") and subprocess.run(["pkg-config", "--exists", "wayland-client", "wayland-server", "xkbcommon"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:

@@ -20,18 +20,27 @@ SettingsPage
     {
         title: Tr.tr("settings.power.powerMode")
 
-        SettingsRow
+        Repeater
         {
-            label: Tr.tr("settings.power.powerMode")
-            description: Tr.tr("settings.power.powerModeHint")
+            model: [
+                {source:"battery", name:"powerProfileBattery", label:Tr.tr("settings.power.onBattery")},
+                {source:"plugged", name:"powerProfilePlugged", label:Tr.tr("settings.power.pluggedIn")}
+            ]
 
-            SettingsChoices
+            SettingsRow
             {
-                options: ServicePower.profileHasPerformance
-                    ? [{ label: Tr.tr("settings.power.powerSaver"), value: 0 }, { label: Tr.tr("common.balanced"), value: 1 }, { label: Tr.tr("common.performance"), value: 2 }]
-                    : [{ label: Tr.tr("settings.power.powerSaver"), value: 0 }, { label: Tr.tr("common.balanced"), value: 1 }]
-                current: ServicePower.profileID
-                onSelected: value => ServicePower.setProfile(value)
+                id: profileRow
+                required property var modelData
+                label: modelData.label
+                description: ServicePowerProfiles.preference(modelData.source) === 2 && !ServicePowerProfiles.hasPerformance ? Tr.tr("settings.power.performanceUnavailable") : ""
+
+                SettingsChoices
+                {
+                    objectName: profileRow.modelData.name
+                    options: ServicePowerProfiles.options
+                    current: ServicePowerProfiles.effective(profileRow.modelData.source)
+                    onSelected: value => ServicePowerProfiles.setPreference(profileRow.modelData.source, value)
+                }
             }
         }
     }

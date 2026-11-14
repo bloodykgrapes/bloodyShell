@@ -44,7 +44,7 @@ Singleton
         if (!detailsRequested) detailsRequested = true;
         else for (const file of [hostFile, kernelFile, vendorFile, productFile, cpuFile, memoryFile]) file.reload();
         releaseFile.reload();
-        compositorVersion.run(["niri", "--version"]);
+        if (ServiceCompositor.versionCommand.length > 0) compositorVersion.run(ServiceCompositor.versionCommand);
         graphicsDevices.run(["lspci", "-mm"]);
     }
 
@@ -153,7 +153,7 @@ Singleton
     {
         id: compositorVersion
         stdout: StdioCollector { id: compositorOutput }
-        onCompleted: code => serviceSystem.compositor = code === 0 ? compositorOutput.text.trim().replace(/^niri\s+/, "") : ""
+        onCompleted: code => serviceSystem.compositor = code === 0 ? compositorOutput.text.trim() : ""
     }
     CommandProcess
     {

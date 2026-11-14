@@ -12,13 +12,15 @@ Rectangle
 
     readonly property int  maxRows: 8
     readonly property real rowH: Theme.launcherRow
-    readonly property real footerH: 30
-    readonly property real chrome: Theme.launcherPadding * 2 + Theme.launcherSearch + Theme.launcherSpacing + footerH
+    readonly property real footerH: width < 440 ? 48 : 34
+    readonly property real footerGap: Theme.launcherSpacing
+    readonly property real rowSpacing: Theme.launcherSpacing / 2
+    readonly property real chrome: Theme.launcherPadding * 2 + Theme.launcherSearch + Theme.launcherSpacing + footerGap + footerH
 
     readonly property int  rows: Math.min(apps.length, maxRows)
-    readonly property real listH: apps.length > 0 ? rows * rowH : rowH * 2
+    readonly property real listH: apps.length > 0 ? rows * rowH + Math.max(0, rows - 1) * rowSpacing : rowH * 2
 
-    readonly property real fullHeight: chrome + maxRows * rowH
+    readonly property real fullHeight: chrome + maxRows * rowH + (maxRows - 1) * rowSpacing
 
     property int selectedID: 0
     readonly property string query: input.text.trim().toLocaleLowerCase()
@@ -42,13 +44,15 @@ Rectangle
 
     radius: Theme.launcherRadius
     color: Theme.colorSolid
+    border.width: 1
+    border.color: Theme.colorHairline
     clip: true
 
     function hide() { OverlayState.hide("launcher") }
 
     function reveal(i)
     {
-        const top = i * rowH;
+        const top = i * (rowH + rowSpacing);
         const from = scroll.running ? scroll.destination : list.contentY;
         let target = from;
         if (top < from) target = top;
@@ -125,7 +129,8 @@ Rectangle
         radius: Theme.radiusLarge
         color: Theme.colorField
         border.width: 1
-        border.color: input.activeFocus ? Theme.accentAlpha(0.32) : "transparent"
+        border.color: input.activeFocus ? Qt.rgba(Theme.colorAccent.r, Theme.colorAccent.g, Theme.colorAccent.b, 0.32) : "transparent"
+        Tint on border.color {}
 
         ShellIcon
         {
@@ -133,13 +138,14 @@ Rectangle
 
             anchors { left: parent.left; leftMargin: 16; verticalCenter: parent.verticalCenter }
             icon: Icon.search
-            size: 16
-            opacity: 0.8
+            size: 18
+            opacity: 0.85
         }
 
         TextInput
         {
             id: input
+            objectName: "launcherSearchInput"
 
             anchors
             {
@@ -158,6 +164,7 @@ Rectangle
             font.pixelSize: 16
             selectByMouse: true
             clip: true
+            Accessible.name: Tr.tr("launcher.searchApplications")
 
             Component.onCompleted: forceActiveFocus()
             onAccepted: launcherContent.launchSelected()
@@ -182,6 +189,7 @@ Rectangle
             ShellText
             {
                 anchors.verticalCenter: parent.verticalCenter
+                width: parent.width
                 visible: input.text === ""
                 label: Tr.tr("launcher.searchApplications")
                 size: 16
@@ -205,30 +213,23 @@ Rectangle
                 font.family: Theme.fontMono
             }
 
-            Rectangle
+            ActionButton
             {
+                objectName: "launcherClear"
                 anchors.verticalCenter: parent.verticalCenter
-                width: 26
-                height: 26
-                radius: 13
+                width: 28
+                height: 28
                 visible: opacity > 0.01
+                enabled: input.text !== ""
                 opacity: input.text !== "" ? 1 : 0
                 Smooth on opacity {}
-
-                color: clearArea.pressed ? Theme.colorPressed : clearArea.containsMouse ? Theme.colorHover : "transparent"
-                scale: clearArea.containsMouse ? 1.1 : 1
-                Spring on scale {}
-
-                ShellIcon { anchors.centerIn: parent; icon: Icon.close; size: 12; zoom: 1.1 }
-
-                MouseArea
-                {
-                    id: clearArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: { input.text = ""; input.forceActiveFocus(); }
-                }
+                color: "transparent"
+                text: Tr.tr("launcher.clearSearch")
+                icon: Icon.close
+                iconOnly: true
+                hoverScale: 1.04
+                activeFocusOnTab: false
+                onClicked: { input.text = ""; input.forceActiveFocus(Qt.MouseFocusReason); }
             }
         }
     }
@@ -236,11 +237,13 @@ Rectangle
     ListView
     {
         id: list
+        objectName: "launcherResults"
 
         x: Theme.launcherPadding
         y: search.y + search.height + Theme.launcherSpacing
         width: parent.width - Theme.launcherPadding * 2
-        height: Math.max(0, launcherContent.height - y - launcherContent.footerH - Theme.launcherPadding)
+        height: Math.max(0, launcherContent.height - y - launcherContent.footerH - launcherContent.footerGap - Theme.launcherPadding)
+        spacing: launcherContent.rowSpacing
 
         onContentYChanged: launcherContent.selectAtPointer()
 
@@ -258,7 +261,7 @@ Rectangle
             width: list.width
             height: launcherContent.rowH
             radius: Theme.radiusLarge
-            color: Theme.colorCurrent
+            color: Theme.colorSelection
 
             y: list.currentItem ? list.currentItem.y : 0
             Glide on y { enabled: Config.animationsEnabled && !launcherContent.instant && !launcherContent.mouseMode; duration: 240 }
@@ -298,6 +301,15 @@ Rectangle
                 NumberAnimation { target: row; property: "rise"; to: 1; duration: 240; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized }
             }
 
+            Rectangle
+            {
+                anchors.fill: parent
+                radius: Theme.radiusLarge
+                color: Theme.colorPressed
+                opacity: rowArea.pressed ? 1 : 0
+                Smooth on opacity { duration: 80 }
+            }
+
             IconImage
             {
                 id: appIcon
@@ -308,7 +320,7 @@ Rectangle
                 source: ServiceApplications.iconSource(row.modelData.icon)
                 mipmap: true
 
-                scale: row.selected ? 1 : 0.9
+                scale: row.selected ? 1 : 0.94
                 Glide on scale { duration: 220 }
             }
 
@@ -330,6 +342,7 @@ Rectangle
                     label: launcherContent.marked(row.modelData.name)
                     textFormat: Text.StyledText
                     size: 14
+                    font.weight: Font.Medium
                     color: row.selected ? Theme.text1 : Theme.text2
                     Tint on color {}
                 }
@@ -340,9 +353,9 @@ Rectangle
                 id: enter
 
                 anchors { right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
-                width: enterText.implicitWidth + 14
-                height: 20
-                radius: 6
+                width: 28
+                height: 22
+                radius: 7
                 color: Theme.colorField
                 border.color: Theme.settingsColorLine
                 border.width: 1
@@ -350,7 +363,7 @@ Rectangle
                 opacity: row.selected ? 1 : 0
                 Smooth on opacity { duration: 160 }
 
-                ShellText { id: enterText; anchors.centerIn: parent; label: "↵"; size: 11; color: Theme.text3 }
+                ShellText { anchors.centerIn: parent; label: "↵"; size: 12; color: Theme.text2 }
             }
 
             MouseArea
@@ -368,6 +381,7 @@ Rectangle
         Column
         {
             anchors.centerIn: parent
+            width: Math.max(0, parent.width - 32)
             visible: launcherContent.apps.length === 0
             spacing: 10
 
@@ -375,9 +389,13 @@ Rectangle
             ShellText
             {
                 anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
                 label: launcherContent.query !== "" ? Tr.tr("launcher.noAppsMatch").arg(input.text.trim()) : Tr.tr("launcher.noApplications")
                 size: 13
                 color: Theme.text3
+                wrapMode: Text.Wrap
+                maximumLineCount: 2
             }
         }
     }
@@ -396,7 +414,9 @@ Rectangle
             anchors { left: parent.left; leftMargin: 6; right: resultCount.left; rightMargin: 12; verticalCenter: parent.verticalCenter; verticalCenterOffset: 2 }
             label: Tr.tr(launcherContent.query !== "" ? "launcher.navigationSearch" : "launcher.navigation")
             size: 11
-            color: Theme.text4
+            color: Theme.text3
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
         }
         ShellText
         {
@@ -405,7 +425,7 @@ Rectangle
             width: Math.min(implicitWidth, parent.width * 0.3)
             label: Tr.tr("launcher.count").arg(launcherContent.apps.length)
             size: 11
-            color: Theme.text4
+            color: Theme.text3
         }
     }
 }

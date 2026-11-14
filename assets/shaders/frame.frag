@@ -22,6 +22,8 @@ layout(std140, binding = 0) uniform buf {
     float smoothing;
     float panelSmoothing;
     vec4 fillColor;
+    float borderWidth;
+    vec4 borderColor;
 };
 
 float roundedBox(vec2 p, vec2 center, vec2 halfSize, float radius)
@@ -65,5 +67,9 @@ void main()
     d = joinWith(d, body(p, rightBody), panelSmoothing);
     float aa = max(fwidth(d), 0.001);
     float alpha = 1.0 - smoothstep(-aa, aa, d);
-    fragColor = vec4(fillColor.rgb * fillColor.a, fillColor.a) * alpha * qt_Opacity;
+    float edge = borderWidth > 0.0 ? smoothstep(-borderWidth - aa, -borderWidth + aa, d) : 0.0;
+    float strokeAlpha = borderColor.a * edge;
+    vec4 surface = vec4(borderColor.rgb * strokeAlpha, strokeAlpha)
+        + vec4(fillColor.rgb * fillColor.a, fillColor.a) * (1.0 - strokeAlpha);
+    fragColor = surface * alpha * qt_Opacity;
 }

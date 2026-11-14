@@ -35,7 +35,7 @@ Singleton
 
     readonly property var device: UPower.displayDevice
 
-    readonly property bool present: !!device && device.isLaptopBattery
+    readonly property bool present: device?.isLaptopBattery === true
 
     readonly property real level: present ? device.percentage : 0
     readonly property int  percent: Math.round(level * 100)
@@ -50,24 +50,8 @@ Singleton
     readonly property string status: statusOf(chargeState)
     readonly property string timeText: present && (charging || discharging) ? formatTime(charging ? device.timeToFull : device.timeToEmpty) : ""
 
-    readonly property int profileID: PowerProfiles.profile === PowerProfile.PowerSaver ? 0
-                                   : PowerProfiles.profile === PowerProfile.Performance ? 2 : 1
-    readonly property bool profileHasPerformance: PowerProfiles.hasPerformanceProfile
-
     readonly property string infoPower: present ? (charging ? "+ " : discharging ? "- " : "") + Math.abs(device.changeRate).toFixed(1) + " W" : ""
     readonly property string infoCapacity: present ? device.energy.toFixed(1) + " / " + device.energyCapacity.toFixed(1) + " W·h" : ""
-
-    function setProfile(index)
-    {
-        let next;
-        if (index === 0) next = PowerProfile.PowerSaver;
-        else if (index === 1) next = PowerProfile.Balanced;
-        else if (index === 2 && profileHasPerformance) next = PowerProfile.Performance;
-        else return false;
-
-        PowerProfiles.profile = next;
-        return true;
-    }
 
     property string pendingAction: ""
 
@@ -84,7 +68,10 @@ Singleton
         }
 
         else if (action === "logout")
-            actionProcess.run(["niri", "msg", "action", "quit", "--skip-confirmation"]);
+        {
+            if (ServiceCompositor.logoutCommand.length > 0) actionProcess.run(ServiceCompositor.logoutCommand);
+            else pendingAction = "";
+        }
 
         else if (action === "switch")
         {
@@ -123,7 +110,7 @@ Singleton
     {
         const list = UPower.devices.values || [];
         const b = list.find(d => d.isLaptopBattery && d.nativePath);
-        return b ? b.nativePath : "";
+        return b ? b.nativePath || "" : "";
     }
 
     function refreshDetails()

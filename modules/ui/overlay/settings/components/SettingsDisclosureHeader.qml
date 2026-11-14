@@ -1,29 +1,33 @@
 import QtQuick
+import "../../../../common" as Common
 
 import "../../../../animations"
 import "../../../../common"
 import "../../../../core"
 
-Rectangle
+Common.InteractiveControl
 {
     id: header
+
+    property alias color: surface.color
+    property alias radius: surface.radius
+    property alias border: surface.border
+    background: Rectangle { id: surface }
 
     property string title: ""
     property string description: ""
     property string icon: ""
     property string summary: ""
     property bool expanded: false
-    property bool keyboardFocusHighlight: false
 
     signal toggled(bool expanded)
 
     implicitWidth: 400
     implicitHeight: Math.max(Theme.settingsRowHeight, labels.implicitHeight + 32)
     radius: Theme.radiusLarge + 2
-    color: Qt.tint(Theme.settingsColorCard, area.pressed ? Theme.colorPressed
-        : area.containsMouse || (activeFocus && keyboardFocusHighlight) ? Theme.colorHoverStrong : "transparent")
+    color: area.pressed ? Theme.settingsColorPressed
+        : header.hovered || visualFocus ? Theme.settingsColorHover : Theme.settingsColorCard
     activeFocusOnTab: true
-    onActiveFocusChanged: keyboardFocusHighlight = activeFocus
 
     scale: Config.animationsFluid && area.pressed ? 0.99 : 1
     Spring on scale {}
@@ -108,13 +112,8 @@ Rectangle
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onPressed: header.keyboardFocusHighlight = false
-        onClicked:
-        {
-            header.forceActiveFocus();
-            header.keyboardFocusHighlight = false;
-            header.toggled(!header.expanded);
-        }
+        onPressed: header.focusFor(Qt.MouseFocusReason)
+        onClicked: header.toggled(!header.expanded)
     }
 
     Keys.onSpacePressed: event => { if (!event.isAutoRepeat) toggled(!expanded); event.accepted = true }

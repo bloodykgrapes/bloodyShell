@@ -104,6 +104,7 @@ finish()
     detail "Shell" "$(hl "$TARGET")"
     if $BACKED_UP; then detail "Backup" "$(hl "$BACKUP_ROOT/$STAMP")"; fi
     detail "Command" "$(hl "$BIN_HOME/$NAME")"
+    detail "Niri" "$(hl "$CONFIG_HOME/niri") · required; user files kept"
     detail "Start" "bloodyShell"
     detail "Settings" "bloodyShell settings"
     detail "Check" "bloodyShell doctor"
@@ -351,7 +352,6 @@ apply_shell()
         trap cleanup_installation EXIT
         trap 'exit 130' INT
         trap 'exit 143' TERM
-        registration=()
         if [[ "$package" != "$TARGET" ]]; then
             mkdir -p "$CONFIG_HOME/quickshell" || exit 1
             stage="$(mktemp -d "$CONFIG_HOME/quickshell/.$NAME.new.XXXXXX")" || exit 1
@@ -363,10 +363,9 @@ apply_shell()
             fi
             mv -- "$stage" "$TARGET" || exit 1
             stage=""; installed=true
-            registration=(--refresh-files)
         fi
         chmod +x "$TARGET/setup" || exit 1
-        install_command "${registration[@]}" || exit 1
+        install_command || exit 1
         committed=true
     ) || die "Installation failed; previous shell and settings were kept"
     [[ ! -d "$BACKUP_ROOT/$STAMP" ]] || BACKED_UP=true
@@ -379,20 +378,13 @@ apply_shell()
 
 apply_configs()
 {
-    local source="$PACKAGE/dots"
-
     local programs=("$@")
     if [[ ${#programs[@]} -eq 0 ]]; then
         local items=() available=() names program
-        if [[ -d "$source" ]]; then
-            for dir in "$source"/*/; do [[ ! -d "$dir" ]] || available+=("$(basename "$dir")"); done
-        else
-            names="$(python3 "$PACKAGE/scripts/bloodyShell" internal resources programs)" || return 1
-            [[ -z "$names" ]] || mapfile -t available <<< "$names"
-        fi
+        names="$(python3 "$PACKAGE/scripts/bloodyShell" internal resources programs)" || return 1
+        [[ -z "$names" ]] || mapfile -t available <<< "$names"
         for program in "${available[@]}"; do
-            if [[ "$program" == niri && -e "$CONFIG_HOME/$program" ]]; then items+=("$program|refreshes managed defaults; keeps user/input/output files (backed up)")
-            elif [[ -e "$CONFIG_HOME/$program" ]]; then items+=("$program|replaces $(pretty "$CONFIG_HOME/$program") (backed up)")
+            if [[ -e "$CONFIG_HOME/$program" ]]; then items+=("$program|replaces $(pretty "$CONFIG_HOME/$program") (backed up)")
             else items+=("$program|new $(pretty "$CONFIG_HOME/$program")"); fi
         done
         [[ ${#items[@]} -gt 0 ]] || return 0
@@ -402,7 +394,7 @@ apply_configs()
         [[ ${#programs[@]} -gt 0 ]] || { info "App configs skipped"; return 0; }
     fi
 
-    ask "Import configs for ${programs[*]}? Existing files are backed up; niri user files are kept." y || { info "App configs skipped"; return 0; }
+    ask "Import configs for ${programs[*]}? Existing files are backed up." y || { info "App configs skipped"; return 0; }
 
     for program in "${programs[@]}"; do
         [[ "$program" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "Invalid config name: $program"
@@ -433,6 +425,7 @@ readonly DEPENDENCIES=(
     "optional|lpstat|Printers|cups system-config-printer|cups system-config-printer|cups system-config-printer"
     "optional|notify-send|Update notifications|libnotify|libnotify|libnotify-bin"
     "optional|cava|Audio visualizer in the media menu|cava|cava|cava"
+    "optional|easyeffects|Audio effects and presets|easyeffects|easyeffects|easyeffects"
     "optional|playerctl|Media keyboard shortcuts|playerctl|playerctl|playerctl"
     "optional|btop|System monitor keyboard shortcut|btop|btop|btop"
     "optional|nautilus|File manager keyboard shortcut|nautilus|nautilus|nautilus"
@@ -900,13 +893,16 @@ cmd_install()
     info "Choose optional programs, app configs and the login screen during setup"
     info "Existing shell and replaced files are backed up; your shell settings are kept"
     if interactive && ! ask "Continue with installation?" y; then info "Installation cancelled"; return 0; fi
-    steps 6
+    steps 7
 
     step "Dependencies"
     install_dependencies
 
     step "Optional programs"
     install_applications
+
+    step "Compositor configuration"
+    python3 "$PACKAGE/scripts/bloodyShell" internal resources import compositor --human || die "Could not import the required compositor configuration"
 
     step "Installing the shell"
     info "Wallpapers are optional: import them from Settings → Updates when wanted"
@@ -1017,16 +1013,22 @@ cmd_uninstall()
     exec python3 "$PACKAGE/scripts/bloodyShell" internal uninstall "$@"
 }
 
+cmd_cli()
+{
+    python3 "$PACKAGE/scripts/bloodyShell" internal resources import cli --human
+}
+
 usage()
 {
     banner
     section "Commands"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup"                  "$R" "menu"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup install"          "$R" "install dependencies, the shell and app configs, start it"
-    printf '    %s%-26s%s %s\n' "$CYN" "./setup uninstall"        "$R" "preview removal; use --apply, optionally --restore"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup uninstall"        "$R" "preview removal; --apply asks about SDDM and shell settings"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup update [--beta]"  "$R" "download and install the latest release"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup doctor [--json]"  "$R" "check dependencies and configuration"
-    printf '    %s%-26s%s %s\n' "$CYN" "./setup configs [names]"  "$R" "re-apply app configs (kitty, fastfetch, niri…)"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup configs [names]"  "$R" "re-apply app configs (kitty, fastfetch, GTK…)"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup cli"              "$R" "refresh the CLI and PATH without reinstalling the shell"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup sddm"           "$R" "login screen in the shell's style (SDDM, sudo)"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup help"             "$R" "show commands and options"
     section "Update options"
@@ -1047,7 +1049,7 @@ menu()
     items+=("Doctor|Check dependencies and configuration");         actions+=(doctor)
     items+=("Configs|Apply app configuration files"); actions+=(configs)
     items+=("SDDM|Configure the login screen · administrator access");   actions+=(sddm)
-    items+=("Uninstall|Preview removal of installed files; keep personal settings"); actions+=(uninstall)
+    items+=("Uninstall|Remove the shell; optionally remove SDDM theme and shell settings"); actions+=(uninstall)
     items+=("Help|View commands and options");                         actions+=(help)
 
     choose "Choose an action" "${items[@]}"
@@ -1067,7 +1069,7 @@ menu()
         sddm) cmd_sddm ;;
         uninstall)
             python3 "$PACKAGE/scripts/bloodyShell" internal uninstall
-            if ask "Stop and uninstall this installed copy? Personal settings and backups will be kept." n; then
+            if ask "Stop and uninstall bloodyShell?" n; then
                 cmd_uninstall --apply
             fi ;;
         help)    usage ;;
@@ -1089,7 +1091,7 @@ main()
     done
 
     case "$command" in
-        install|sddm|help)
+        install|sddm|cli|help)
             [[ ${#args[@]} -eq 0 ]] || die "Unexpected argument for $command: ${args[0]}"
             ;;
     esac
@@ -1100,6 +1102,7 @@ main()
         update)  cmd_update  "${args[@]+"${args[@]}"}" ;;
         doctor)  cmd_doctor "${args[@]+"${args[@]}"}" ;;
         configs) banner; cmd_configs "${args[@]+"${args[@]}"}" ;;
+        cli) cmd_cli ;;
         sddm) banner; cmd_sddm ;;
         "")      if interactive; then menu; else usage; fi ;;
         help) usage ;;

@@ -15,8 +15,8 @@ import uuid
 
 
 def runtime():
-    ownership = runpy.run_path(str(Path(__file__).with_name("ownership.py")))
-    base = ownership["private_runtime"]() / "captures"
+    files = runpy.run_path(str(Path(__file__).with_name("files.py")))
+    base = files["private_runtime"]() / "captures"
     if base.is_symlink():
         raise ValueError("Invalid screenshot directory")
     base.mkdir(mode=0o700, exist_ok=True)

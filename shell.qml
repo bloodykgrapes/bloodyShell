@@ -22,6 +22,7 @@ ShellRoot
         void ServiceUpdate.version;
         void ServiceLock.locked;
         void ServiceIdle.objectName;
+        void ServicePowerProfiles.current;
         void ServiceGreeter.appearance;
         void ServiceCompositor.windowList;
     }

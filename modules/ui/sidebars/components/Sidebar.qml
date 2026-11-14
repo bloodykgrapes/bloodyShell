@@ -15,6 +15,7 @@ FocusScope
     required property string side
     property int barSide: -1
     property real barThickness: 0
+    property Component header: null
     default property alias content: body.data
 
     readonly property bool opened: SidebarState.current === side && screen && SidebarState.onOutput(screen.name)
@@ -34,7 +35,8 @@ FocusScope
     readonly property bool atRight: verticalBar ? barSide === Enums.EdgeRight : side === "right"
     readonly property bool atBottom: barSide === Enums.EdgeBottom || (verticalBar && side === "right")
     readonly property real panelWidth: Math.max(0, Math.min(Theme.sidebarWidth, width - leftInset - rightInset - 24))
-    readonly property real panelHeight: Math.max(0, Math.min(body.implicitHeight + 36, height - topInset - bottomInset))
+    readonly property real headerHeight: headerLoader.item ? headerLoader.item.implicitHeight + 14 : 0
+    readonly property real panelHeight: Math.max(0, Math.min(body.implicitHeight + headerHeight + 36, height - topInset - bottomInset))
     property real progress: opened ? 1 : 0
     Glide on progress {}
     visible: opened || progress > 0.001
@@ -78,10 +80,19 @@ FocusScope
             transformOrigin: sidebar.atBottom ? (sidebar.atRight ? Item.BottomRight : Item.BottomLeft)
                 : (sidebar.atRight ? Item.TopRight : Item.TopLeft)
 
+            Loader
+            {
+                id: headerLoader
+                x: 18; y: 18
+                width: sidebar.panelWidth - 36
+                height: item ? item.implicitHeight : 0
+                sourceComponent: sidebar.header
+            }
+
             Flickable
             {
                 id: viewport
-                anchors { fill: parent; margins: 4 }
+                anchors { fill: parent; margins: 4; topMargin: sidebar.headerHeight + 4 }
                 contentWidth: width
                 contentHeight: body.implicitHeight + 28
                 boundsBehavior: Flickable.StopAtBounds

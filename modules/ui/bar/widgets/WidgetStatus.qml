@@ -69,6 +69,7 @@ Widget
             onClicked: mouse => mouse.button === Qt.MiddleButton ? ServiceAudio.toggleMute() : volume.toggleMenu()
             onWheel: wheel =>
             {
+                wheel.accepted = true;
                 const steps = widgetStatus.wheelSteps(wheel);
                 if (steps !== 0) ServiceAudio.changeVolume(steps * 0.05);
             }

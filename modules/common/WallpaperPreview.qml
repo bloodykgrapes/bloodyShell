@@ -1,12 +1,14 @@
 import QtQuick
+import "." as Common
 import Quickshell.Widgets
 
 import "../animations"
 import "../core"
 
-Item
+Common.InteractiveControl
 {
     id: preview
+
 
     property string wallpaper: Config.wallpaperCurrent
     signal clicked()
@@ -45,7 +47,7 @@ Item
             asynchronous: true
             opacity: status === Image.Ready ? 1 : 0
             Smooth on opacity { duration: 300 }
-            scale: area.containsMouse || preview.activeFocus ? 1.04 : 1
+            scale: preview.hovered || preview.visualFocus ? 1.04 : 1
             Ease on scale { duration: 500 }
         }
         Rectangle
@@ -73,7 +75,7 @@ Item
             width: caption.implicitWidth + 22
             height: 26
             radius: 13
-            color: Qt.rgba(1, 1, 1, area.containsMouse || preview.activeFocus ? 0.28 : 0.16)
+            color: Qt.rgba(1, 1, 1, preview.hovered || preview.visualFocus ? 0.28 : 0.16)
             Tint on color {}
             ShellText { id: caption; anchors.centerIn: parent; label: Tr.tr("settings.appearance.change"); size: 11; color: "#ffffff" }
         }
@@ -84,7 +86,7 @@ Item
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: { preview.forceActiveFocus(Qt.MouseFocusReason); preview.clicked() }
+        onClicked: { preview.focusFor(Qt.MouseFocusReason); preview.clicked() }
     }
 
     Accessible.role: Accessible.Button

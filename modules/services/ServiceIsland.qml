@@ -14,7 +14,7 @@ Singleton
     property var notice: null
     property var mediaMenuOwner: null
     property string valueOutput: ""
-    readonly property bool active: !ServiceLock.locked && (ServiceOSD.active || notice !== null || ServiceMedia.playing)
+    readonly property bool active: !ServiceLock.locked && (ServiceOSD.active || notice !== null || ServiceRecording.active || ServiceMedia.playing)
 
     function plain(text) { return String(text || "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim() }
     function matches(name, output) { return output === "" || name === output }
@@ -37,6 +37,8 @@ Singleton
         if (notice && matches(output, notice.output))
             return { kind: "notification", title: notice.title, subtitle: notice.body || notice.app,
                 notification: notice.notification, value: -1, icon: Icon.bell };
+        if (ServiceRecording.active)
+            return {kind: "recording", title: Tr.tr("recording.active"), subtitle: ServiceRecording.detail, icon: Icon.settingsDisplay, value: -1};
         if (ServiceMedia.playing && !ServiceCompositor.fullscreenOnOutput(output))
             return mediaView();
         return { kind: "" };

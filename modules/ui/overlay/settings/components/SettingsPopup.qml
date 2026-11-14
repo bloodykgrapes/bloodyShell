@@ -12,6 +12,8 @@ Controls.Popup
     readonly property bool suspended: OverlayState.popupsSuspended
     property real reveal: 0
     property bool presenting: false
+    property bool keyboardNavigation: false
+    property Item focusOrigin: null
 
     parent:
     {
@@ -38,8 +40,29 @@ Controls.Popup
     Connections
     {
         target: popup
-        function onAboutToShow() { popup.presenting = true; }
-        function onClosed() { popup.presenting = false; }
+        function onAboutToShow()
+        {
+            popup.focusOrigin = popup.host.Window.window ? popup.host.Window.window.activeFocusItem : null;
+            popup.keyboardNavigation = popup.focusOrigin?.visualFocus === true;
+            popup.presenting = true;
+        }
+        function onAboutToHide()
+        {
+            const focused = popup.host.Window.window ? popup.host.Window.window.activeFocusItem : null;
+            if (focused && focused.visualFocus !== undefined) popup.keyboardNavigation = focused.visualFocus;
+        }
+        function onClosed()
+        {
+            popup.presenting = false;
+            Qt.callLater(() => {
+                if (!OverlayState.settingsPopup && !popup.suspended && popup.host.visible && popup.focusOrigin?.visible && popup.focusOrigin.enabled)
+                {
+                    const reason = popup.keyboardNavigation ? Qt.TabFocusReason : Qt.MouseFocusReason;
+                    if (typeof popup.focusOrigin.focusFor === "function") popup.focusOrigin.focusFor(reason);
+                    else popup.focusOrigin.forceActiveFocus(reason);
+                }
+            });
+        }
     }
 
     Controls.Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4 * popup.reveal) }

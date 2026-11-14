@@ -9,6 +9,7 @@ import "../../../common"
 import "../../../core"
 import "../../../services"
 import "components"
+import "components" as Parts
 
 Rectangle
 {
@@ -22,11 +23,12 @@ Rectangle
     function revealTab()
     {
         const entry = tabRepeater.itemAt(current);
-        if (!entry) return;
+        if (!entry || navigation.width <= 0 || navigation.height <= 0 || entry.tabHeight <= 0) return false;
         const top = tabColumn.y + entry.y + entry.tabY;
         const bottom = top + entry.tabHeight;
-        if (top >= navigation.contentY && bottom <= navigation.contentY + navigation.height) return;
-        navigationScroll.scrollTo(top < navigation.contentY ? top : bottom - navigation.height, settled);
+        if (top < navigation.contentY || bottom > navigation.contentY + navigation.height)
+            navigationScroll.scrollTo(top < navigation.contentY ? top : bottom - navigation.height, settled);
+        return true;
     }
     onCurrentChanged: revealTimer.restart()
     onTabsChanged: revealTimer.restart()
@@ -37,13 +39,14 @@ Rectangle
         interval: 0
         onTriggered:
         {
-            settingsContent.revealTab();
-            settingsContent.settled = true;
+            if (settingsContent.revealTab()) settingsContent.settled = true;
         }
     }
 
     radius: Theme.settingsRadius
     color: Theme.settingsColorBackground
+    border.width: 1
+    border.color: Theme.colorHairline
     clip: true
 
     focus: true
@@ -112,9 +115,9 @@ Rectangle
             {
                 width: Math.max(0, brand.width - 38 - brand.spacing)
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 1
+                spacing: 3
 
-                ShellText { width: parent.width; label: "bloodyShell"; size: 15; color: Theme.text1; font.bold: true }
+                ShellText { width: parent.width; label: "bloodyShell"; size: 15; color: Theme.text1; font.weight: Font.DemiBold }
                 ShellText { width: parent.width; label: Tr.tr("common.settings"); size: 11; color: Theme.text3 }
             }
         }
@@ -122,27 +125,29 @@ Rectangle
         Flickable
         {
             id: navigation
+            objectName: "settingsNavigation"
 
             y: brand.y + brand.height + 18
             width: parent.width
-            height: parent.height - y - footer.height - 12
+            height: Math.max(0, parent.height - y - footer.height - 12)
 
             clip: true
+            contentWidth: width
             contentHeight: tabColumn.implicitHeight + 8
             boundsBehavior: Flickable.StopAtBounds
+            flickableDirection: Flickable.VerticalFlick
             interactive: contentHeight > height
+
+            onWidthChanged: revealTimer.restart()
+            onHeightChanged: revealTimer.restart()
+            onContentHeightChanged: revealTimer.restart()
 
             SmoothScroll { id: navigationScroll; view: navigation }
 
-            Controls.ScrollBar.vertical: Controls.ScrollBar
+            Controls.ScrollBar.vertical: Parts.SettingsScrollBar
             {
-                width: 4
-                anchors.right: parent.right
-                anchors.rightMargin: 3
-                padding: 1
-                policy: Controls.ScrollBar.AsNeeded
-                active: navigation.moving || hovered || pressed
-                contentItem: Rectangle { implicitWidth: 2; radius: 1; color: Theme.text4; opacity: 0.4 }
+                view: navigation
+                compact: true
             }
 
             Rectangle
@@ -194,14 +199,16 @@ Rectangle
                         ShellText
                         {
                             x: 12
+                            width: Math.max(0, parent.width - 24)
                             visible: entry.groupStart && entry.modelData.group !== 0
-                            topPadding: 10
-                            bottomPadding: 4
+                            topPadding: 12
+                            bottomPadding: 6
                             label: Registry.settingsGroups[entry.modelData.group].toUpperCase()
                             size: 10
-                            color: Theme.text4
-                            font.bold: true
-                            font.letterSpacing: 1.2
+                            color: Theme.text3
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: 0.8
+                            wrapMode: Text.Wrap
                         }
 
                         SettingsTab
@@ -227,7 +234,7 @@ Rectangle
 
             anchors.bottom: parent.bottom
             width: parent.width
-            height: 44
+            height: 48
 
             Rectangle
             {
@@ -240,10 +247,11 @@ Rectangle
             ShellText
             {
                 x: 20
+                width: Math.max(0, parent.width - 40)
                 anchors.verticalCenter: parent.verticalCenter
                 label: Tr.tr("settings.version").arg(ServiceUpdate.version)
                 size: 11
-                color: Theme.text4
+                color: Theme.text3
             }
         }
     }
@@ -291,7 +299,7 @@ Rectangle
 
     SettingsIconButton
     {
-        anchors { top: parent.top; right: parent.right; margins: 16 }
+        anchors { top: parent.top; right: parent.right; margins: 20 }
         width: 32
         height: 32
         icon: Icon.close

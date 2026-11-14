@@ -108,6 +108,7 @@ SettingsPage
     SettingsGroup
     {
         title: Tr.tr("settings.timeLanguage.keyboardLayouts")
+        visible: ServiceCompositor.supports("keyboard")
         subtitle: Tr.tr("settings.timeLanguage.layoutsHint")
 
         SettingsRow

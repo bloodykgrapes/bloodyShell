@@ -135,7 +135,7 @@ SettingsPage
 
         InfoRow { label: Tr.tr("settings.about.operatingSystem"); detail: ServiceSystem.release.PRETTY_NAME || ServiceSystem.release.NAME || "Linux" }
         InfoRow { label: Tr.tr("settings.about.kernel"); detail: ServiceSystem.kernel }
-        InfoRow { label: Tr.tr("settings.about.compositor"); detail: "niri" + (ServiceSystem.compositor ? " " + ServiceSystem.compositor : "") }
+        InfoRow { label: Tr.tr("settings.about.compositor"); detail: ServiceSystem.compositor || ServiceCompositor.displayName }
         InfoRow { label: Tr.tr("settings.about.runtime"); detail: "Quickshell" + (Qt.application.version ? " " + Qt.application.version : "") }
         InfoRow { label: Tr.tr("settings.about.computerName"); detail: ServiceSystem.hostname }
     }

@@ -25,7 +25,7 @@ def checks():
         wallpaper.write_bytes(b"test")
         (base / "home/.face").write_bytes(b"avatar")
         source = base / "source.json"
-        source.write_text(json.dumps(dict(greeterSync=True, shellLanguage="ru", wallpaperCurrent=str(wallpaper), privateValue="not exported", themeAnimations=2, themeAccent=True, barWidgetClock24=False)))
+        source.write_text(json.dumps(dict(shellLanguage="ru", wallpaperCurrent=str(wallpaper), privateValue="not exported", themeAnimations=2, themeAccent=True, barWidgetClock24=False)))
         account = SimpleNamespace(pw_dir=str(base / "home"), pw_name="tester")
         with patch("pwd.getpwuid", return_value=account):
             old_mask = os.umask(0o077)
@@ -40,8 +40,13 @@ def checks():
             assert Path(data["wallpaperCurrent"]).read_bytes() == b"test"
             assert data["animationLevel"] == "2" and not data.getboolean("widgetClock24") and data["shellLanguage"] == "ru"
             assert "privateValue" not in data and "themeStyle" not in data and "accentColor" not in data
+            shared_files = [Path(data["wallpaperCurrent"]), base / "state/avatars/tester", base / "state/theme.conf"]
+            modified = {path: path.stat().st_mtime_ns for path in shared_files}
+            resources["export"](source, base / "state")
+            assert all(path.stat().st_mtime_ns == modified[path] for path in shared_files), "Unchanged login appearance rewrote shared files"
             layouts = [{"layout": "us", "variant": ""}, {"layout": "ru", "variant": "phonetic"}]
             resources["export"](source, base / "state", layouts)
+            assert all(path.stat().st_mtime_ns == modified[path] for path in shared_files[:2]), "Keyboard layout export recopied unchanged images"
             config.read(base / "state/theme.conf")
             assert json.loads(config["General"]["keyboardLayouts"]) == layouts
             resources["export"](source, base / "state")
@@ -54,7 +59,18 @@ def checks():
             else:
                 raise AssertionError("Invalid login-screen keyboard layout was accepted")
             assert (base / "state/avatars/tester").read_bytes() == b"avatar"
-            source.write_text('{"greeterSync": false}')
+            replacement = base / "replacement.jpg"
+            replacement.write_bytes(b"new wallpaper")
+            (base / "home/.face").write_bytes(b"new avatar")
+            source.write_text(json.dumps(dict(wallpaperCurrent=str(replacement))))
+            resources["export"](source, base / "state")
+            assert (base / "state/wallpaper.jpg").read_bytes() == b"new wallpaper"
+            assert not (base / "state/wallpaper.png").exists(), "Wallpaper replacement left a stale copy"
+            assert (base / "state/avatars/tester").read_bytes() == b"new avatar"
+            assert (base / "state/wallpaper.jpg").stat().st_mode & 0o777 == 0o644
+            assert (base / "state/avatars/tester").stat().st_mode & 0o777 == 0o644
+            (base / "home/.face").unlink()
+            source.write_text('{}')
             resources["export"](source, base / "state")
             config = configparser.ConfigParser(interpolation=None)
             config.read(base / "state/theme.conf")

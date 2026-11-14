@@ -2,6 +2,8 @@
 """Exercise setup uninstall through real installed launchers and isolated services."""
 
 import fcntl
+import io
+from contextlib import redirect_stdout
 import json
 import os
 from pathlib import Path
@@ -68,214 +70,187 @@ def run(base, env, *args, success=True, installed=False):
 
 
 def checks():
-    with tempfile.TemporaryDirectory(prefix="bloodyshell-uninstall-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-uninstall-") as temporary:
         root = Path(temporary)
-        base = root / "normal"
+        for record_state in ("normal", "missing", "invalid"):
+            base = root / record_state
+            env, target, command = fixture(base)
+            state = base / "state/bloodyShell"
+            record = state / "install.json"
+            assert not record.exists(), "Installer still creates tracking records"
+            if record_state != "missing":
+                state.mkdir(parents=True, exist_ok=True)
+                record.write_text("broken JSON" if record_state == "invalid" else '{"obsolete":true}')
+            settings = base / "config/bloodyShell/settings.json"
+            settings.parent.mkdir()
+            settings.write_text('{"personal":true}')
+            for path in (base / "config/niri/user.kdl", base / "config/kitty/kitty.conf", state / "backups/keep"):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("keep")
+            cache = base / "cache/bloodyShell"
+            (cache / "wallpapers").mkdir(parents=True)
+            (cache / "wallpapers/poster.png").write_text("generated")
+            private = base / "runtime/bloodyShell"
+            private.mkdir()
+            (private / "temporary").write_text("generated")
+            (target / "user-edited.qml").write_text("runtime file")
+            command.write_bytes(command.read_bytes()+b"\n# Edited installed command\n")
+            preview = json.loads(run(base, env, "--json").stdout)
+            assert str(target) in preview["remove"] and str(command) in preview["remove"]
+            assert str(cache) in preview["remove"] and str(settings.parent) not in preview["remove"]
+            assert target.exists() and not (base / "calls").exists(), "Preview changed files or contacted the shell"
+            removed = json.loads(run(base, env, "--apply", "--json", installed=True).stdout)
+            assert not target.exists() and not command.exists() and not cache.exists() and not private.exists()
+            assert not record.exists() and not removed["delete_settings"] and not removed["delete_sddm"]
+            assert settings.read_text() == '{"personal":true}'
+            assert (base / "config/niri/user.kdl").read_text() == "keep"
+            assert (base / "config/kitty/kitty.conf").read_text() == "keep"
+            assert (state / "backups/keep").read_text() == "keep"
+            assert "# >>> bloodyShell PATH >>>" not in (base / "home/.bashrc").read_text()
+            run(base, env, "--apply")
+        base = root / "shutdown"
         env, target, command = fixture(base)
         state = base / "state/bloodyShell"
-        settings = base / "config/bloodyShell/settings.json"
-        settings.parent.mkdir()
-        settings.write_text('{"personal":true}')
-        backups = state / "backups"
-        backups.mkdir()
-        (backups / "keep").write_text("previous config")
-        cache = base / "cache/bloodyShell/keyboard"
-        cache.mkdir(parents=True)
-        (cache / "plugin.so").write_text("cached")
-        record = (state / "install.json").read_bytes()
-        plan = json.loads(run(base, env, "--json").stdout)
-        assert str(command) in plan["remove"] and target.exists()
-        assert str(cache) in plan["cleanup"]
-        assert not (base / "calls").exists(), "Preview contacted or stopped the shell"
-        assert (state / "install.json").read_bytes() == record
-        assert (state / "install.json").stat().st_mode & 0o777 == 0o600
-        # Both the CLI and setup route the uninstall without depending on the source checkout.
+        state.mkdir(parents=True, exist_ok=True)
         with (state / "operation.lock").open("w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             run(base, env, "--apply", success=False)
-        assert target.exists() and command.exists() and not (base / "calls").exists()
-        entries = [dict(id="installed", shell_id="bloodyShell", config_path=str(target)),
-                   dict(id="unrelated", shell_id="other-shell", config_path="/other")]
+        assert target.exists() and command.exists()
+        entries = [dict(id="installed",shell_id="bloodyShell",config_path=str(target)),
+                   dict(id="unrelated",shell_id="other-shell",config_path="/other")]
         (base / "instances").write_text(json.dumps(entries))
-        for failure in ("TEST_QUERY_FAIL", "TEST_STOP_FAIL"):
-            run(base, dict(env, **{failure: "1"}), "--apply", success=False)
-            assert target.exists() and command.exists(), "Failed shutdown removed installed files"
-        # The recorded command path wins over a later XDG_BIN_HOME change.
-        alternative = base / "alternative commands"
-        alternative.mkdir()
-        (alternative / "bloodyShell").write_text("unrelated command")
-        removed = json.loads(run(base, dict(env, XDG_BIN_HOME=str(alternative), XDG_DATA_HOME=str(base / "other data")), "--apply", "--json", installed=True).stdout)
-        assert not removed["preserve"] and not target.exists() and not command.exists()
-        assert (alternative / "bloodyShell").read_text() == "unrelated command"
-        assert not (state / "install.json").exists() and not cache.exists()
-        assert settings.read_text() == '{"personal":true}' and (backups / "keep").is_file()
+        for failure in ("TEST_QUERY_FAIL","TEST_STOP_FAIL"):
+            run(base,dict(env,**{failure:"1"}),"--apply",success=False)
+            assert target.exists() and command.exists()
+        run(base, env, "--apply")
         assert json.loads((base / "instances").read_text()) == entries[1:]
-        assert "No recorded installation" in run(base, env, "--apply").stdout
-        assert (ROOT / "setup").exists(), "Uninstall removed the source checkout"
-
-        for edited in (False, True):
-            base = root / ("replace-edited" if edited else "replace-command")
-            env, target, command = fixture(base)
-            application = base / "data/applications/bloodyShell.desktop"
-            application.parent.mkdir(parents=True)
-            application.write_text("[Desktop Entry]\nName=bloodyShell\nType=Application\nExec=unused\n")
-            manifest = base / "state/bloodyShell/install.json"
-            record = json.loads(manifest.read_text())
-            api = runpy.run_path(str(ROOT / "scripts/lib/management.py"))
-            record.update(application=str(application), application_fingerprint=api["fingerprint"](application))
-            manifest.write_text(json.dumps(record))
-            if edited:
-                application.write_text(application.read_text() + "# user edit\n")
-                command.write_text(command.read_text() + "\n# user edit\n")
-            replacement = base / "system commands"
-            registered = subprocess.run([sys.executable, str(target / "scripts/bloodyShell"), "internal", "install-command",
-                                         str(target / "scripts/bloodyShell"), str(replacement), str(base / "state/replacement-backup")],
-                                        env=env, capture_output=True, text=True, timeout=8)
-            assert registered.returncode == 0, registered.stderr
-            assert application.exists() == edited and command.exists() == edited
-            updated = json.loads(manifest.read_text())
-            assert updated["command"] == str(replacement / "bloodyShell") and "application" not in updated
-            invoked = subprocess.run(["bash", "--noprofile", "--norc", "-c", "bloodyShell version"],
-                                     env=dict(env, PATH=str(replacement) + os.pathsep + env["PATH"]), capture_output=True, text=True, timeout=5)
-            assert invoked.returncode == 0 and invoked.stdout.strip() == "bloodyShell 1.0.0", invoked.stderr
-
-        base = root / "modified"
+        base = root / "other-instance"
         env, target, command = fixture(base)
-        custom = target / "personal.txt"
-        custom.write_text("keep user data")
-        (target / "shell.qml").write_text("// user's edits\n")
-        # Reinstalling only the command must not adopt changed/extra runtime files.
-        repaired = subprocess.run([sys.executable, str(target / "scripts/bloodyShell"), "internal", "install-command",
-                                   str(target / "scripts/bloodyShell"), str(command.parent), str(base / "state/backup")],
-                                  env=env, capture_output=True, text=True, timeout=8)
-        assert repaired.returncode == 0, repaired.stderr
-        command.write_text(command.read_text() + "\n# user's edits\n")
-        rejected = subprocess.run([sys.executable, str(target / "scripts/bloodyShell"), "internal", "install-command",
-                                   str(target / "scripts/bloodyShell"), str(command.parent), str(base / "state/backup")],
-                                  env=env, capture_output=True, text=True, timeout=8)
-        assert rejected.returncode != 0 and command.read_text().endswith("# user's edits\n")
-        cache = base / "cache/bloodyShell/keyboard"
-        cache.mkdir(parents=True)
-        (cache / "plugin.so").write_text("live cache")
-        # A different development instance shares caches but must never be killed.
-        other = dict(id="development", shell_id="bloodyShell", config_path=str(ROOT))
-        (base / "instances").write_text(json.dumps([other]))
-        plan = json.loads(run(base, env, "--apply", "--json").stdout)
-        assert str(command) in plan["preserve"] and str(custom) in plan["preserve"]
-        assert command.is_file() and custom.read_text() == "keep user data"
-        assert (target / "shell.qml").read_text() == "// user's edits\n"
-        assert not (target / "scripts/bloodyShell").exists() and cache.exists()
-        assert json.loads((base / "instances").read_text()) == [other]
-        assert (base / "state/bloodyShell/install.json").exists()
-
-        base = root / "registration-rollback"
+        cache = base / "cache/bloodyShell"
+        cache.mkdir()
+        (cache / "keep-live").write_text("live")
+        (base / "instances").write_text(json.dumps([dict(id="development",shell_id="bloodyShell",config_path="/another/checkout")]))
+        run(base,env,"--apply","--delete-settings",success=False)
+        assert target.exists() and command.exists()
+        plan=json.loads(run(base,env,"--apply","--json").stdout)
+        assert str(cache) in plan["kept_cache"] and (cache / "keep-live").exists()
+        assert not target.exists() and not command.exists()
+        base = root / "delete-settings"
         env, target, command = fixture(base)
-        application = base / "data/applications/bloodyShell.desktop"
-        application.parent.mkdir(parents=True)
-        application.write_text("generated application")
-        manifest = base / "state/bloodyShell/install.json"
-        api = runpy.run_path(str(ROOT / "scripts/lib/management.py"))
-        recorded = json.loads(manifest.read_text())
-        recorded.update(application=str(application), application_fingerprint=api["fingerprint"](application))
-        manifest.write_text(json.dumps(recorded))
-        record = (base / "state/bloodyShell/install.json").read_bytes()
-        replacement = base / "new commands/bloodyShell"
-        arguments = [str(ROOT / "scripts/lib/management.py"), str(target / "scripts/bloodyShell"), str(replacement.parent), str(base / "state/replacement-backup")]
-        with patch.dict(os.environ, env), patch.object(sys, "argv", arguments), patch.dict(api["install_main"].__globals__, SYSTEM_COMMAND=replacement), patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "sudo")) as sudo:
-            try:
-                api["install_main"]()
-            except subprocess.CalledProcessError:
-                pass
-            else:
-                raise AssertionError("Failed sudo installation was accepted")
-            assert sudo.call_count == 1, "A failed sudo install should not request sudo again for rollback"
-        assert command.exists() and application.exists() and not replacement.exists()
+        settings=base / "config/bloodyShell"
+        settings.mkdir()
+        (settings / "settings.json").write_text("{}")
+        assert str(settings) in json.loads(run(base,env,"--delete-settings","--json").stdout)["remove"]
+        assert settings.exists()
+        run(base,env,"--apply","--delete-settings")
+        assert not settings.exists()
+        run(base,env,"--apply","--restore",success=False)
+        base = root / "cache-config-overlap"
+        env, target, command=fixture(base)
+        settings=base / "config/bloodyShell"
+        settings.mkdir()
+        (settings / "settings.json").write_text("keep")
+        run(base,dict(env,XDG_CACHE_HOME=env["XDG_CONFIG_HOME"]),"--apply")
+        assert (settings / "settings.json").read_text()=="keep"
+        base = root / "source-checkout"
+        env,target,command=fixture(base)
         (target / ".git").mkdir()
-        failed = subprocess.run([sys.executable, str(target / "scripts/bloodyShell"), "internal", "install-command",
-                                 str(target / "scripts/bloodyShell"), str(replacement.parent), str(base / "state/replacement-backup")],
-                                env=env, capture_output=True, text=True, timeout=8)
-        assert failed.returncode != 0 and command.exists() and application.read_text() == "generated application" and not replacement.exists()
-        assert (base / "state/bloodyShell/install.json").read_bytes() == record
-
-        base = root / "edited-path"
-        env, target, command = fixture(base)
-        profile = base / "home/.profile"
-        profile.write_text(profile.read_text().replace("case ", "# personal change\ncase ", 1))
-        bashrc = base / "home/.bashrc"
-        bashrc.write_text(bashrc.read_text() + "export PRIVATE_TOKEN=do-not-print\n")
-        preview = run(base, env, "--json").stdout
-        assert str(profile) in json.loads(preview)["preserve"]
-        assert "PRIVATE_TOKEN" not in preview and "ZG8tbm90LXByaW50" not in preview and '"contents"' not in preview, "Uninstall reports must not disclose shell profile contents"
-        before = command.read_bytes()
-        repaired = subprocess.run([sys.executable, str(target / "scripts/bloodyShell"), "internal", "install-command",
-                                   str(target / "scripts/bloodyShell"), str(command.parent), str(base / "state/backup")], env=env, capture_output=True, text=True, timeout=8)
-        assert repaired.returncode != 0 and command.read_bytes() == before
-        removed = json.loads(run(base, env, "--apply", "--json").stdout)
-        assert str(profile) in removed["preserve"] and "# personal change" in profile.read_text()
-        assert bashrc.read_text() == "export PRIVATE_TOKEN=do-not-print\n" and not target.exists()
-
-        base = root / "restore"
-        env, target, command = fixture(base)
-        niri = base / "config/niri"
-        (niri / "bloodyShell").mkdir(parents=True)
-        (niri / "config.kdl").write_text("// user config\n")
-        fragment = niri / "bloodyShell/06-user-input.kdl"
-        fragment.write_text("// original\n")
-        result = subprocess.run([sys.executable, str(target / "scripts/bloodyShell"), "internal", "niri-config", "write", fragment.name, "// changed"], env=env, capture_output=True, text=True, timeout=8)
-        assert result.returncode == 0, result.stderr
-        fragment.write_text("// later user edit\n")
-        run(base, env, "--apply", "--restore", success=False)
-        assert target.is_dir() and command.is_file() and fragment.read_text() == "// later user edit\n"
-        fragment.write_text("// changed\n")
-        run(base, env, "--apply", "--restore")
-        assert fragment.read_text() == "// original\n" and not target.exists()
-
-        base = root / "unsafe"
-        env, target, command = fixture(base)
-        original = base / "original"
-        target.rename(original)
-        target.symlink_to(original, target_is_directory=True)
-        run(base, env, "--apply", success=False)
-        assert original.is_dir() and command.is_file()
-        target.unlink()
-        original.rename(target)
-        manifest = base / "state/bloodyShell/install.json"
-        record = json.loads(manifest.read_text())
-        record["files"]["../outside"] = {}
-        manifest.write_text(json.dumps(record))
-        run(base, env, "--apply", success=False)
-        assert target.is_dir() and command.is_file()
-        manifest.unlink()
-        run(base, env, "--apply", success=False)
-        assert target.is_dir() and command.is_file(), "Unrecorded installation was removed"
-
-        base = root / "cache-links"
-        env, target, command = fixture(base)
-        personal = base / "personal"
+        run(base,env,"--apply",success=False)
+        assert target.exists() and command.exists()
+        base = root / "runtime-link"
+        env,target,command=fixture(base)
+        source=base / "source"
+        shutil.move(str(target),source)
+        (source / ".git").mkdir()
+        target.symlink_to(source,target_is_directory=True)
+        personal=base / "personal"
         personal.mkdir()
-        (personal / "keep").write_text("user data")
-        cache = base / "cache/bloodyShell/keyboard"
-        cache.parent.mkdir(parents=True)
-        cache.symlink_to(personal, target_is_directory=True)
-        plan = json.loads(run(base, env, "--apply", "--json").stdout)
-        assert str(cache) in plan["preserve_data"]
-        assert not target.exists() and cache.is_symlink() and (personal / "keep").is_file()
+        (personal / "keep").write_text("keep")
+        (base / "cache/bloodyShell").symlink_to(personal,target_is_directory=True)
+        run(base,env,"--apply")
+        assert not target.is_symlink() and source.exists() and (personal / "keep").read_text()=="keep"
+        assert not (base / "cache/bloodyShell").is_symlink()
+        base = root / "path-cleanup"
+        env,target,command=fixture(base)
+        profile=base / "home/.bashrc"
+        profile.write_text("# personal before\n"+profile.read_text()+"# personal after\n")
+        managed=base / "managed-bashrc"
+        profile.rename(managed)
+        profile.symlink_to(managed)
+        run(base,env,"--apply")
+        assert profile.is_symlink() and "personal before" in managed.read_text() and "personal after" in managed.read_text()
+        assert "bloodyShell PATH" not in managed.read_text()
+    print("Simple uninstall passed: folder removal, absent/corrupt records, edited runtime and CLI, full cache cleanup, preserved configs/backups, optional settings, scoped shutdown, live shared caches, locks, symlinks and PATH cleanup.")
 
-        base = root / "restart-lock"
-        env, target, command = fixture(base)
-        command.write_text('''import os, subprocess
-from pathlib import Path
-lock = Path(os.environ["XDG_STATE_HOME"]) / "bloodyShell/operation.lock"
-result = subprocess.run(["flock", "-n", str(lock), "true"])
-assert result.returncode == 0, "Restart inherited a held installer lock"
-print("RESTART_LOCK_RELEASED")
-''')
-        script = base / "restart-check"
-        script.write_text((ROOT / "setup").read_text().rsplit('main "$@"', 1)[0] + "\nlock_installation\nrestart_shell\n")
-        restarted = subprocess.run(["bash", str(script)], env=dict(env, WAYLAND_DISPLAY="test-only"), capture_output=True, text=True, timeout=8)
-        assert restarted.returncode == 0 and "RESTART_LOCK_RELEASED" in restarted.stdout, restarted.stdout + restarted.stderr
-    print("Uninstall passed: previews, self-removal, scoped shutdown, command registration/rollback, locks, edited/untracked files, shared caches, restoration, symlinks and invalid records.")
+
+class TerminalInput(io.StringIO):
+    def isatty(self): return True
+
+
+def optional_checks():
+    api=runpy.run_path(str(ROOT / "scripts/lib/management.py"))
+    scope=api["uninstall_main"].__globals__
+    original_run=subprocess.run
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-uninstall-options-") as temporary:
+        for answer in ("keep", "delete", "flags", "cancel", "sudo-failure"):
+            base=Path(temporary) / answer
+            env,target,command=fixture(base)
+            settings=base / "config/bloodyShell"
+            settings.mkdir()
+            (settings / "settings.json").write_text("personal")
+            theme=base / "system/themes/bloodyShell"
+            theme.mkdir(parents=True)
+            (theme / "Main.qml").write_text("theme")
+            dropin=base / "system/sddm.conf.d/zz-bloodyShell.conf"
+            dropin.parent.mkdir()
+            dropin.write_text("theme config")
+            shared=base / "system/shared/bloodyShell"
+            shared.mkdir(parents=True)
+            (shared / "avatar").write_text("shared image")
+            other=base / "system/sddm.conf"
+            other.write_text("personal login-manager config")
+            privileged=[]
+            def tools(args,**kwargs):
+                if args[0]!="sudo": return original_run(args,**kwargs)
+                privileged.append(args)
+                if answer=="sudo-failure": raise subprocess.CalledProcessError(1,args)
+                if args[1:]==["-v"]: return subprocess.CompletedProcess(args,0)
+                assert args[1:4]==["rm","-rf","--"] and set(args[4:])=={str(theme),str(dropin),str(shared)},args
+                for name in args[4:]:
+                    path=Path(name)
+                    if path.is_dir(): shutil.rmtree(path)
+                    else: path.unlink()
+                return subprocess.CompletedProcess(args,0)
+            replies="n\n\n" if answer=="keep" else "yes\ny\n"
+            output=io.StringIO()
+            args=["uninstall","--apply"] + (["--delete-sddm","--delete-settings"] if answer=="flags" else [])
+            stdin=io.StringIO("") if answer=="flags" else TerminalInput(replies)
+            with patch.dict(os.environ,env,clear=True), patch.dict(scope,SDDM_THEME=theme,SDDM_CONFIG=dropin,SDDM_STATE=shared), patch.object(sys,"argv",args), patch.object(sys,"stdin",stdin), patch("subprocess.run",side_effect=tools), redirect_stdout(output):
+                if answer=="cancel":
+                    with patch("builtins.input",side_effect=KeyboardInterrupt):
+                        try: api["uninstall_main"]()
+                        except KeyboardInterrupt: pass
+                        else: raise AssertionError("Cancellation was ignored")
+                elif answer=="sudo-failure":
+                    try: api["uninstall_main"]()
+                    except subprocess.CalledProcessError: pass
+                    else: raise AssertionError("Administrator authorization failure was ignored")
+                else: api["uninstall_main"]()
+            if answer in ("cancel","sudo-failure"):
+                assert target.exists() and command.exists() and settings.exists() and theme.exists()
+            else:
+                if answer=="flags":
+                    assert "[y/N]" not in output.getvalue(), "Non-interactive flags prompted for input"
+                else:
+                    assert "Delete SDDM theme? [y/N]" in output.getvalue() and "Delete shell settings? [y/N]" in output.getvalue()
+                assert not target.exists() and not command.exists()
+                assert settings.exists()==(answer=="keep") and theme.exists()==(answer=="keep")
+                assert shared.exists()==(answer=="keep") and dropin.exists()==(answer=="keep")
+                if answer=="keep": assert not privileged
+            assert other.read_text()=="personal login-manager config"
+    print("Uninstall questions passed: both default to No, explicit deletion removes only shell settings/SDDM files, sudo is conditional, and cancellation/authentication failure preserves the installation.")
 
 
 if __name__ == "__main__":
     checks()
+    optional_checks()

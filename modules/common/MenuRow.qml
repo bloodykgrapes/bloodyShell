@@ -1,11 +1,13 @@
 import QtQuick
+import "." as Common
 
 import "../animations"
 import "../core"
 
-Item
+Common.InteractiveControl
 {
     id: menuRow
+
 
     property string icon: ""
     property string text: ""
@@ -21,8 +23,8 @@ Item
 
     default property alias actions: actionsRow.data
     readonly property bool hasActions: actionsRow.children.some(child => child.visible)
-    readonly property bool hovered: area.containsMouse || actionsHover.hovered || activeFocus
-    readonly property bool showActions: hasActions && (prominent || hovered)
+    readonly property bool highlighted: enabled && (hovered || visualFocus)
+    readonly property bool showActions: hasActions && (prominent || highlighted)
     readonly property MenuList view: ListView.view as MenuList
 
     RenderActivity { id: activity; target: menuRow }
@@ -40,15 +42,15 @@ Item
     width: view ? view.rowWidth : parent ? parent.width : 200
     height: Math.max(prominent ? (filled ? 68 : 58) : filled ? (subtitle !== "" || level >= 0 ? 48 : 40) : subtitle !== "" || level >= 0 ? 46 : 36, labels.implicitHeight + 16)
 
-    scale: area.pressed ? 0.98 : interactive && menuRow.hovered ? (filled ? Config.animationsFluid ? 1.01 : 1 : 1.025) : 1
+    scale: area.pressed ? 0.98 : interactive && menuRow.highlighted ? (filled ? Config.animationsFluid ? 1.01 : 1 : 1.025) : 1
     Spring on scale {}
 
     Rectangle
     {
         anchors.fill: parent
-        radius: menuRow.filled ? (menuRow.hovered && Config.animationsFluid ? (menuRow.prominent ? 14 : 12) : (menuRow.prominent ? 18 : 14)) : menuRow.prominent ? Theme.radiusLarge : Theme.radiusMedium
+        radius: menuRow.filled ? (menuRow.highlighted && Config.animationsFluid ? (menuRow.prominent ? 14 : 12) : (menuRow.prominent ? 18 : 14)) : menuRow.prominent ? Theme.radiusLarge : Theme.radiusMedium
         color: menuRow.selected ? Theme.colorCurrent : menuRow.prominent || menuRow.filled ? Theme.colorField : Theme.menuColorHover
-        opacity: menuRow.filled || menuRow.prominent || menuRow.selected || menuRow.hovered ? 1 : 0
+        opacity: menuRow.filled || menuRow.prominent || menuRow.selected || menuRow.highlighted ? 1 : 0
 
         Smooth on opacity {}
         Tint on color {}
@@ -59,7 +61,7 @@ Item
             anchors.fill: parent
             radius: parent.radius
             color: area.pressed ? Theme.colorPressed : Theme.colorHoverStrong
-            opacity: menuRow.filled && menuRow.interactive && menuRow.hovered ? 1 : 0
+            opacity: menuRow.filled && menuRow.interactive && menuRow.highlighted ? 1 : 0
             Smooth on opacity {}
             Tint on color {}
         }
@@ -72,6 +74,7 @@ Item
         hoverEnabled: true
         enabled: menuRow.interactive && !menuRow.busy
         cursorShape: Qt.PointingHandCursor
+        onPressed: menuRow.focusFor(Qt.MouseFocusReason)
         onClicked: menuRow.clicked()
     }
 
@@ -200,7 +203,6 @@ Item
                 opacity: menuRow.showActions ? 1 : 0
                 Smooth on opacity {}
 
-                HoverHandler { id: actionsHover }
             }
         }
 

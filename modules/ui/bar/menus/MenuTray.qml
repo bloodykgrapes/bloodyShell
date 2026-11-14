@@ -255,7 +255,7 @@ Menu
                         trayItem: modelData
                         active: menuTray.requestedItem === modelData
                         backgroundColor: Qt.tint(Theme.frameColor, pressed ? Theme.colorPressed : active ? Theme.colorChosen
-                            : containsMouse || activeFocus ? Theme.colorHoverStrong : Theme.colorField)
+                            : containsMouse || visualFocus ? Theme.colorHoverStrong : Theme.colorField)
                         onLaunched: MenuState.close()
                         onContextRequested: menuTray.toggleContext(modelData)
                     }

@@ -2,12 +2,12 @@
 
 function appKey(w) { return w.app_id ? w.app_id : "id:" + w.id; }
 
-function sameApp(a, b)
+function matchKey(value)
 {
-    const x = String(a).toLowerCase().replace(/\.desktop$/, "");
-    const y = String(b).toLowerCase().replace(/\.desktop$/, "");
-    return x === y || x.split(".").pop() === y.split(".").pop();
+    return String(value).toLowerCase().replace(/\.desktop$/, "").split(".").pop();
 }
+
+function sameApp(a, b) { return matchKey(a) === matchKey(b); }
 
 function trayIdentityTokens(value)
 {

@@ -30,6 +30,7 @@ SettingsPage
         if (entry.kind === "compositor") return Tr.tr("settings.about.compositor");
         if (entry.kind === "dots") return Tr.tr("settings.imports.dots");
         if (entry.kind === "greeter") return Tr.tr("settings.imports.greeter");
+        if (entry.kind === "cli") return "CLI";
         return Tr.tr("common.wallpapers");
     }
 
@@ -38,14 +39,17 @@ SettingsPage
         objectName: "resourceConfirmation"
         host: pageUpdates
         visible: pageUpdates.active && ServiceResources.pending !== null
-        title: Tr.tr("settings.imports.confirm") + " · " + pageUpdates.resourceTitle(ServiceResources.pending)
+        title: ServiceResources.pending && ServiceResources.pending.kind === "cli" ? Tr.tr("settings.imports.cliConfirmTitle")
+            : Tr.tr("settings.imports.confirm") + " · " + pageUpdates.resourceTitle(ServiceResources.pending)
         description: !ServiceResources.pending ? ""
             : ServiceResources.pending.kind === "greeter" ? Tr.tr("settings.imports.confirmGreeter")
             : ServiceResources.pending.kind === "compositor" ? Tr.tr("settings.imports.confirmNiri").arg(ServiceUpdate.pretty(ServiceResources.pending.destination))
             : ServiceResources.pending.kind === "dots" ? Tr.tr("settings.imports.confirmDots").arg((ServiceResources.pending.programs || []).join(", "))
+            : ServiceResources.pending.kind === "cli" ? Tr.tr("settings.imports.confirmCli").arg(ServiceUpdate.pretty(ServiceResources.pending.destination))
             : Tr.tr("settings.imports.confirmWallpapers").arg(ServiceUpdate.pretty(ServiceResources.pending.destination))
         errorText: ServiceResources.error
-        acceptText: ServiceResources.pending && ServiceResources.pending.kind === "wallpapers" ? Tr.tr("settings.imports.import") : Tr.tr("settings.dependencies.continueInTerminal")
+        acceptText: ServiceResources.pending && ServiceResources.pending.kind === "cli" ? Tr.tr("common.refresh")
+            : ServiceResources.pending && ServiceResources.pending.kind === "wallpapers" ? Tr.tr("settings.imports.import") : Tr.tr("settings.dependencies.continueInTerminal")
         acceptEnabled: !ServiceResources.busy && !ServiceUpdate.busy
         onAccepted: ServiceResources.apply()
         onRejected: ServiceResources.pending = null
@@ -368,11 +372,13 @@ SettingsPage
                 description: resourceRow.modelData.kind === "greeter" ? Tr.tr("settings.imports.greeterHint")
                     : resourceRow.modelData.kind === "compositor" ? Tr.tr("settings.imports.niriHint").arg(ServiceUpdate.pretty(resourceRow.modelData.destination))
                     : resourceRow.modelData.kind === "dots" ? Tr.tr("settings.imports.dotsHint")
+                    : resourceRow.modelData.kind === "cli" ? Tr.tr("settings.imports.cliHint")
                     : Tr.tr("settings.imports.wallpapersHint").arg(ServiceUpdate.pretty(resourceRow.modelData.destination))
                 SettingsButton
                 {
                     objectName: "importResource-" + resourceRow.modelData.id
-                    text: ServiceResources.operation === resourceRow.modelData.id ? Tr.tr("common.working") : Tr.tr("settings.imports.import")
+                    text: ServiceResources.operation === resourceRow.modelData.id ? Tr.tr("common.working")
+                        : resourceRow.modelData.kind === "cli" ? Tr.tr("common.refresh") : Tr.tr("settings.imports.import")
                     enabled: !ServiceResources.busy && !ServiceUpdate.busy && ServiceResources.pending === null
                         && (resourceRow.modelData.kind !== "dots" || resourceRow.modelData.programs.length > 0)
                     onClicked: ServiceResources.request(resourceRow.modelData.id)

@@ -27,9 +27,9 @@ binds {
 
     // APPS & OVERLAYS
 
-    Mod+W repeat=false { spawn "zen-browser"; }
-    Mod+E repeat=false { spawn "nautilus"; }
-    Mod+T repeat=false { spawn "kitty"; }
+    Mod+W repeat=false { spawn "bloodyShell" "open" "browser"; }
+    Mod+E repeat=false { spawn "bloodyShell" "open" "file-manager"; }
+    Mod+T repeat=false { spawn "bloodyShell" "open" "terminal"; }
 
     Mod+D allow-inhibiting=false repeat=false { spawn "bloodyShell" "launcher"; }
     Mod+I allow-inhibiting=false repeat=false { spawn "bloodyShell" "settings"; }

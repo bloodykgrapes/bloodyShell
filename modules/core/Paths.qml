@@ -13,5 +13,4 @@ Singleton
     readonly property string installDir: configHome + "/quickshell/bloodyShell"
     readonly property string settingsDir: configHome + "/bloodyShell"
     readonly property string stateDir: cacheHome + "/bloodyShell"
-    readonly property string niriDir: configHome + "/niri/bloodyShell"
 }

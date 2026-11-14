@@ -1,4 +1,5 @@
 import QtQuick
+import "../../../../common" as Common
 import QtQuick.Controls.Basic
 import QtQuick.Effects
 
@@ -6,9 +7,10 @@ import "../../../../animations"
 import "../../../../common"
 import "../../../../core"
 
-Item
+Common.InteractiveControl
 {
     id: settingsCombo
+
 
     property var    options: []
     property var    current
@@ -21,6 +23,7 @@ Item
 
     readonly property int currentIndex: options.findIndex(o => String(valueOf(o)) === String(current))
     property bool open: false
+    property bool keyboardNavigation: false
 
     property real preferredWidth: 240
     implicitWidth: Math.round(preferredWidth)
@@ -76,9 +79,10 @@ Item
         syncModalState();
         if (!open)
         {
-            if (list.activeFocus && enabled && activity.active) forceActiveFocus(Qt.PopupFocusReason);
+            if (list.activeFocus && enabled && activity.active) focusFor(keyboardNavigation ? Qt.TabFocusReason : Qt.MouseFocusReason);
             return;
         }
+        keyboardNavigation = visualFocus;
         const host = popupHost();
         drop.parent = host || settingsCombo;
         placePopup();
@@ -110,9 +114,9 @@ Item
     {
         anchors.fill: parent
         radius: Theme.radiusMedium
-        color: field.pressed ? Theme.colorPressed : field.containsMouse || settingsCombo.open || settingsCombo.activeFocus ? Theme.colorHoverStrong : Theme.colorField
+        color: field.pressed ? Theme.colorPressed : settingsCombo.hovered || settingsCombo.open || settingsCombo.visualFocus ? Theme.colorHoverStrong : Theme.colorField
         border.width: 1
-        border.color: settingsCombo.open || settingsCombo.activeFocus ? Theme.colorAccent : "transparent"
+        border.color: settingsCombo.open || settingsCombo.visualFocus ? Theme.colorAccent : "transparent"
         Tint on color {}
         Tint on border.color {}
     }
@@ -131,7 +135,7 @@ Item
         anchors { right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
         icon: Icon.chevronDown
         size: 12
-        opacity: settingsCombo.open || field.containsMouse ? 1 : 0.6
+        opacity: settingsCombo.open || settingsCombo.hovered ? 1 : 0.6
         rotation: settingsCombo.open ? 180 : 0
         Ease on rotation { duration: Theme.animationDurationControl }
         Smooth on opacity {}
@@ -143,6 +147,7 @@ Item
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
+        onPressed: settingsCombo.focusFor(Qt.MouseFocusReason)
         onClicked: settingsCombo.toggle()
     }
 
@@ -161,7 +166,7 @@ Item
             anchors.fill: parent
             enabled: settingsCombo.open
             hoverEnabled: true
-            onPressed: mouse => { settingsCombo.open = false; mouse.accepted = true }
+            onPressed: mouse => { settingsCombo.keyboardNavigation = false; settingsCombo.open = false; mouse.accepted = true }
             onWheel: wheel => wheel.accepted = true
         }
         HoverHandler { enabled: settingsCombo.open; blocking: true }
@@ -322,7 +327,7 @@ Item
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onEntered: list.currentIndex = option.index
-                        onClicked: settingsCombo.choose(option.index)
+                        onClicked: { settingsCombo.keyboardNavigation = false; settingsCombo.choose(option.index); }
                     }
                 }
             }

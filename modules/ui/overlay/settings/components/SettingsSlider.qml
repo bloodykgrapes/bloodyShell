@@ -1,17 +1,20 @@
 import QtQuick
+import "../../../../common" as Common
 
 import "../../../../animations"
 import "../../../../common"
 import "../../../../core"
 
-Item
+Common.InteractiveControl
 {
     id: settingsSlider
+
 
     property real value: 0
     property real from: 0
     property real to: 1
     property real step: (to - from) / 20
+    property string valueText: Math.round(ratio(shown) * 100) + "%"
 
     signal moved(real value)
 
@@ -53,7 +56,7 @@ Item
     }
 
     Accessible.role: Accessible.Slider
-    Accessible.description: Math.round(ratio(shown) * 100) + "%"
+    Accessible.description: valueText
     Accessible.onIncreaseAction: adjust(value + step)
     Accessible.onDecreaseAction: adjust(value - step)
 
@@ -91,8 +94,8 @@ Item
             height: width
             radius: width / 2
             color: Theme.colorAccent
-            opacity: area.pressed ? 0.18 : area.containsMouse || settingsSlider.activeFocus ? 0.1 : 0
-            scale: area.pressed || area.containsMouse || settingsSlider.activeFocus ? 1 : 0.7
+            opacity: area.pressed ? 0.18 : settingsSlider.hovered || settingsSlider.visualFocus ? 0.1 : 0
+            scale: area.pressed || settingsSlider.hovered || settingsSlider.visualFocus ? 1 : 0.7
 
             Smooth on opacity {}
             Smooth on scale {}
@@ -106,7 +109,7 @@ Item
             height: width
             radius: width / 2
             color: Theme.colorAccent
-            scale: area.pressed ? 0.9 : area.containsMouse ? 1.1 : 1
+            scale: area.pressed ? 0.9 : settingsSlider.hovered ? 1.1 : 1
 
             Smooth on scale {}
         }
@@ -124,8 +127,8 @@ Item
         ShellText
         {
             anchors.centerIn: parent
-            label: Math.round(settingsSlider.ratio(settingsSlider.shown) * 100) + "%"
-            color: area.pressed || settingsSlider.activeFocus ? Theme.text1 : Theme.text2
+            label: settingsSlider.valueText
+            color: area.pressed || settingsSlider.visualFocus ? Theme.text1 : Theme.text2
             font.family: Theme.fontMono
 
             Tint on color {}
@@ -152,7 +155,7 @@ Item
         cursorShape: Qt.PointingHandCursor
         preventStealing: true
 
-        onPressed: mouse => { settingsSlider.forceActiveFocus(Qt.MouseFocusReason); update(mouse.x) }
+        onPressed: mouse => { settingsSlider.focusFor(Qt.MouseFocusReason); update(mouse.x) }
         onPositionChanged: mouse => { if (pressed) update(mouse.x) }
         onWheel: wheel =>
         {

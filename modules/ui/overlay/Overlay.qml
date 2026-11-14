@@ -124,7 +124,8 @@ PanelWindow
         }
     }
     AltTabKeyboard { }
-    ShortcutInhibitor { window: overlay; enabled: overlay.switching || overlay.authenticating || OverlayState.active || ServiceScreenshot.active }
+    // Changing outputs recreates the native surface; release its inhibitor before that happens.
+    ShortcutInhibitor { window: overlay; enabled: overlay.backingWindowVisible && overlay.modal }
 
     IpcHandler
     {

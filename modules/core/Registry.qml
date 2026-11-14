@@ -20,6 +20,10 @@ Singleton
         {label: Tr.tr("settings.appearance.standard"), value: Enums.AnimationsStandard},
         {label: Tr.tr("settings.appearance.fluid"), value: Enums.AnimationsFluid}
     ]
+    readonly property var equalizerOptions: [
+        {label: Tr.tr("settings.appearance.equalizerBars"), value: Enums.EqualizerBars},
+        {label: Tr.tr("settings.appearance.equalizerWaves"), value: Enums.EqualizerWaves}
+    ]
     readonly property var themeOptions: [
         {label: Tr.tr("settings.appearance.light"), value: Enums.ThemeLight},
         {label: Tr.tr("settings.appearance.dark"), value: Enums.ThemeDark}
@@ -62,7 +66,6 @@ Singleton
     ({
         island: { title: Tr.tr("shell.dynamicIsland"), url: Qt.resolvedUrl("../ui/osd/OSDContent.qml"), collapse: false },
         clock:         { title: Tr.tr("shell.clock"),           url: Qt.resolvedUrl("../ui/bar/widgets/WidgetClock.qml"),         collapse: false, menu: Qt.resolvedUrl("../ui/bar/menus/MenuClock.qml") },
-        notifications: { title: Tr.tr("common.notifications"),  url: Qt.resolvedUrl("../ui/bar/widgets/WidgetNotifications.qml"), collapse: false, menu: Qt.resolvedUrl("../ui/bar/menus/MenuNotifications.qml") },
         status:        { title: Tr.tr("shell.status"),          url: Qt.resolvedUrl("../ui/bar/widgets/WidgetStatus.qml"),        collapse: false },
         tray:          { title: Tr.tr("shell.tray"),            url: Qt.resolvedUrl("../ui/bar/widgets/WidgetTray.qml"),          collapse: false, menu: Qt.resolvedUrl("../ui/bar/menus/MenuTray.qml") },
         update:        { title: Tr.tr("shell.updateAvailable"), url: Qt.resolvedUrl("../ui/bar/widgets/WidgetUpdate.qml"),        collapse: false, hidden: true },

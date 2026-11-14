@@ -156,11 +156,7 @@ Menu
 
         Repeater
         {
-            model: [
-                { value: 0, label: Tr.tr("menu.battery.saver"), hint: Tr.tr("menu.battery.saverHint"), icon: Icon.profileSaver },
-                { value: 1, label: Tr.tr("common.balanced"), hint: Tr.tr("menu.battery.balancedHint"), icon: Icon.profileBalanced },
-                { value: 2, label: Tr.tr("common.performance"), hint: Tr.tr("menu.battery.performanceHint"), icon: Icon.profilePerformance }
-            ].slice(0, ServicePower.profileHasPerformance ? 3 : 2)
+            model: ServicePowerProfiles.options
 
             MenuRow
             {
@@ -169,13 +165,8 @@ Menu
                 icon: modelData.icon
                 text: modelData.label
                 subtitle: modelData.hint
-                selected: ServicePower.profileID === modelData.value
-                activeFocusOnTab: true
-                onClicked: if (!selected) ServicePower.setProfile(modelData.value)
-
-                Keys.onSpacePressed: clicked()
-                Keys.onReturnPressed: clicked()
-                Keys.onEnterPressed: clicked()
+                selected: ServicePowerProfiles.current === modelData.value
+                onClicked: ServicePowerProfiles.setCurrent(modelData.value)
 
                 Accessible.role: Accessible.RadioButton
                 Accessible.checkable: true

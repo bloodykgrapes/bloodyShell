@@ -1,12 +1,12 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell
 
 import "../../../../common"
 import "../../../../core"
 import "../../../../services"
 import "../components"
+import "../components" as Parts
 
 SettingsPage
 {
@@ -15,55 +15,7 @@ SettingsPage
     title: Tr.tr("common.dock")
     subtitle: Tr.tr("settings.dock.description")
 
-    SettingsGroup
-    {
-        SettingsRow
-        {
-            label: Tr.tr("common.enabled")
-            Toggle { checked: Config.dockEnabled; onToggled: value => Config.set("dockEnabled", value) }
-        }
-        SettingsRow
-        {
-            label: Tr.tr("common.position")
-            SettingsChoices
-            {
-                options: Registry.edgeOptions
-                current: Config.dockSide
-                onSelected: value => Config.set("dockSide", value)
-            }
-        }
-        SettingsRow
-        {
-            visible: Quickshell.screens.length > 1
-            label: Tr.tr("common.monitors")
-            stacked: true
-            SettingsToggles
-            {
-                options: Quickshell.screens.map(m => ({ label: m.name, value: m.name }))
-                checked: Config.screensShown("dockScreens")
-                onToggled: (value, on) => Config.toggleScreen("dockScreens", value, on)
-            }
-        }
-    }
-
-    SettingsGroup
-    {
-        title: Tr.tr("common.hiding")
-
-        SettingsRow
-        {
-            label: Tr.tr("common.autoHide")
-            description: Tr.tr("common.autoHideHint")
-            Toggle { checked: Config.dockHideAuto; onToggled: value => Config.set("dockHideAuto", value) }
-        }
-        SettingsRow
-        {
-            label: Tr.tr("common.showOnEmptyWorkspace")
-            description: Tr.tr("common.emptyWorkspaceHint")
-            enabled: Config.dockHideAuto
-            Toggle { checked: Config.dockHideSmart; onToggled: value => Config.set("dockHideSmart", value) }
-        }
-    }
+    Parts.SettingsPanelControls { prefix: "dock" }
 
     SettingsGroup
     {

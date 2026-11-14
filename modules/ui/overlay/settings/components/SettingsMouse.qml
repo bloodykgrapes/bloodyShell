@@ -7,6 +7,7 @@ import "../../../../services"
 SettingsGroup
 {
     id: mouseSettings
+    visible: ServiceCompositor.supports("mouse")
 
     property bool advanced: true
     property string namePrefix: "mouse"

@@ -38,7 +38,7 @@ Singleton
     {
         seconds: Config.idleDisplay
 
-        onIdle: Quickshell.execDetached(["niri", "msg", "action", "power-off-monitors"])
+        onIdle: ServiceCompositor.powerOffMonitors()
     }
 
     Watch

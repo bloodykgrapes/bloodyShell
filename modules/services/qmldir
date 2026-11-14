@@ -20,7 +20,9 @@ singleton ServiceNetwork             1.0 ServiceNetwork.qml
 singleton ServiceNotifications       1.0 ServiceNotifications.qml
 singleton ServiceOSD                 1.0 ServiceOSD.qml
 singleton ServicePower               1.0 ServicePower.qml
+singleton ServicePowerProfiles       1.0 ServicePowerProfiles.qml
 singleton ServiceRegion              1.0 ServiceRegion.qml
+singleton ServiceRecording           1.0 ServiceRecording.qml
 singleton ServiceResources           1.0 ServiceResources.qml
 singleton ServiceScreenshot          1.0 ServiceScreenshot.qml
 singleton ServiceStorage             1.0 ServiceStorage.qml

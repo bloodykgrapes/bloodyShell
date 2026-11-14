@@ -41,8 +41,19 @@ SettingsPage
         SettingsRow
         {
             label: Tr.tr("common.enabled")
-            description: Tr.tr("settings.notifications.dndHint")
-            Toggle { checked: ServiceNotifications.dnd; onToggled: value => ServiceNotifications.dnd = value }
+            description: ServiceNotifications.dnd ? ServiceNotifications.dndStatus : Tr.tr("settings.notifications.dndHint")
+            Toggle { checked: ServiceNotifications.dnd; onToggled: value => ServiceNotifications.setDnd(value) }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.notifications.dndDuration")
+            SettingsChoices
+            {
+                objectName: "settingsDndDuration"
+                options: ServiceNotifications.dndOptions
+                current: ServiceNotifications.dnd ? ServiceNotifications.dndMinutes : -1
+                onSelected: value => ServiceNotifications.setDnd(true, value)
+            }
         }
         SettingsRow
         {

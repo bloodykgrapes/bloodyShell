@@ -31,13 +31,14 @@ FocusScope
     readonly property alias surface: surface
     readonly property alias leftSidebar: leftView
     readonly property alias rightSidebar: rightView
-    readonly property real thickness: Math.max(0, Math.min(Theme.frameThickness, Math.min(width, height) / 4)) * frameReveal
-    readonly property bool reserveBar: bar !== null && !bar.autoHide
-    readonly property bool reserveDock: dock !== null && !dock.autoHide
+    readonly property real layoutThickness: Math.max(0, Math.min(Theme.frameThickness, Math.min(width, height) / 4))
+    readonly property real thickness: layoutThickness * frameReveal
+    readonly property bool reserveBar: bar !== null && !Config.barHideAuto
+    readonly property bool reserveDock: dock !== null && !Config.dockHideAuto
+    // Fullscreen changes visibility, not the work area to which windows return.
     readonly property var reservations:
     {
-        if (fullscreen) return [0, 0, 0, 0];
-        const edges = [thickness, thickness, thickness, thickness];
+        const edges = [layoutThickness, layoutThickness, layoutThickness, layoutThickness];
         if (reserveBar && bar) edges[Config.barSide] = Math.max(edges[Config.barSide], bar.reserve);
         if (reserveDock && dock && dock.container.visible)
             edges[Config.dockSide] = Math.max(edges[Config.dockSide], dock.thickness + dock.edgeGap);

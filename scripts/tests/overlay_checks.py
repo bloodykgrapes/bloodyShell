@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
+import os
 import re
+import resource
 import runpy
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -303,7 +306,93 @@ ShellRoot {
         assert not re.search(r"WALLPAPER_DISMISS_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|Failed to load configuration", output), output
 
 
+def wayland_checks():
+    display = os.environ.get("WAYLAND_DISPLAY")
+    if not display:
+        print("SKIP native overlay check: a Wayland session with two outputs is required")
+        return
+    socket = str(Path(os.environ["XDG_RUNTIME_DIR"]) / display)
+    source = (ROOT / "modules/ui/overlay/Overlay.qml").read_text()
+    inhibitor = next(line.strip() for line in source.splitlines() if line.strip().startswith("ShortcutInhibitor {"))
+    inhibitor = inhibitor.replace("ShortcutInhibitor {", "ShortcutInhibitor { id: shortcuts;", 1)
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-overlay-wayland-") as temporary:
+        base = Path(temporary)
+        for name in ("runtime", "cache", "config", "home"):
+            (base / name).mkdir(mode=0o700)
+        (base / "shell.qml").write_text('''import QtQuick
+import Quickshell
+import Quickshell.Wayland
+
+ShellRoot {
+    id: tests
+    property int phase: 0
+    property int round: 0
+    property int ticks: 0
+    function check(ok, message) { if (!ok) throw new Error(message); }
+    PanelWindow {
+        id: overlay
+        property bool modal: true
+        // The test never takes focus or pointer input from the user's applications.
+        implicitWidth: 8; implicitHeight: 8
+        visible: false; color: "transparent"
+        anchors { top: true; left: true }
+        screen: Quickshell.screens[0]
+        exclusionMode: ExclusionMode.Ignore
+        WlrLayershell.namespace: "bloodyShell:test-overlay"
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+        mask: Region {}
+        INHIBITOR
+    }
+    Timer {
+        interval: 80; repeat: true; running: true
+        onTriggered: {
+            try {
+                tests.check(Quickshell.screens.length >= 2, "Two connected Wayland outputs are required");
+                tests.check(++tests.ticks < 160, "Native surface check timed out");
+                switch (tests.phase) {
+                    case 0:
+                        tests.check(!shortcuts.enabled, "Hidden surface retained its shortcut inhibitor");
+                        overlay.screen = Quickshell.screens[tests.round % Quickshell.screens.length];
+                        overlay.visible = true; tests.phase = 1; break;
+                    case 1:
+                        if (!overlay.backingWindowVisible) return;
+                        tests.check(shortcuts.enabled, "Visible modal surface lost shortcut inhibition");
+                        overlay.screen = Quickshell.screens[(tests.round + 1) % Quickshell.screens.length];
+                        tests.phase = 2; break;
+                    case 2:
+                        if (!overlay.backingWindowVisible) return;
+                        tests.check(shortcuts.enabled, "Moving the surface did not restore shortcut inhibition");
+                        overlay.modal = false;
+                        tests.check(!shortcuts.enabled, "Closing the modal retained shortcut inhibition");
+                        overlay.modal = true;
+                        overlay.visible = false; tests.phase = 3; break;
+                    case 3:
+                        tests.check(!overlay.backingWindowVisible && !shortcuts.enabled, "Destroying the surface retained its inhibitor");
+                        if (++tests.round < Quickshell.screens.length * 6) { tests.phase = 0; break; }
+                        console.log("OVERLAY_WAYLAND_PASSED", tests.round, "hidden/visible moves, native surface recreation and inhibitor cleanup");
+                        Qt.quit(); break;
+                }
+            } catch (error) { console.error("OVERLAY_WAYLAND_FAILED", tests.phase, error); Qt.quit(); }
+        }
+    }
+}
+'''.replace("INHIBITOR", inhibitor))
+        env = dict(os.environ, QT_QPA_PLATFORM="wayland", WAYLAND_DISPLAY=socket, QS_DISABLE_CRASH_HANDLER="1",
+                   HOME=str(base / "home"), XDG_RUNTIME_DIR=str(base / "runtime"), XDG_CACHE_HOME=str(base / "cache"),
+                   XDG_CONFIG_HOME=str(base / "config"), DBUS_SESSION_BUS_ADDRESS="unix:path=/tmp/bloodyshell-test-no-session-bus")
+        result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True,
+                                timeout=18, preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)))
+        output = result.stdout + result.stderr
+        print(output)
+        assert result.returncode == 0 and "OVERLAY_WAYLAND_PASSED" in output, output
+        assert not re.search(r"OVERLAY_WAYLAND_FAILED|FATAL|ReferenceError|TypeError|Binding loop|Failed to load configuration", output), output
+
+
 if __name__ == "__main__":
-    checks()
-    desktop_menu_checks()
-    wallpaper_dismiss_checks()
+    if "--wayland" in sys.argv:
+        wayland_checks()
+    else:
+        checks()
+        desktop_menu_checks()
+        wallpaper_dismiss_checks()

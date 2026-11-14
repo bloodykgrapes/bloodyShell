@@ -15,7 +15,9 @@ Singleton
     property bool debug: false
     property bool helperSeen: false
     property bool virtualKeyboardEnabled: false
-    property bool greeterSync: false
+    property string applicationBrowser: ""
+    property string applicationFileManager: ""
+    property string applicationTerminal: ""
 
     property bool updateBeta: false
     property bool updateAuto: false
@@ -33,6 +35,7 @@ Singleton
 
     property int equalizerStyle: 0
     property bool desktopEqualizer: true
+    property real desktopEqualizerOpacity: 1
     property int desktopBlur: 0
 
     property bool barEnabled: true
@@ -76,9 +79,11 @@ Singleton
     property bool osdTypeVolume: true
 
     property bool notificationsEnabled: true
+    property var notificationsBlockedApps: []
     property int  notificationsDuration: 5000
     property bool notificationsRememberDnd: false
     property bool notificationsDnd: false
+    property double notificationsDndUntil: 0
 
     property int screenshotMode: 0
     property bool screenshotSave: false
@@ -93,6 +98,9 @@ Singleton
     property int idleLock: 120
     property int idleDisplay: 180
     property int idleSuspend: 900
+
+    property int powerProfileBattery: 0
+    property int powerProfilePlugged: 1
 
     property int    nightLightMode: 0
     property int    nightLightTemperature: 5000
@@ -162,11 +170,13 @@ Singleton
         if (typeof v !== typeof d) return false;
         if (typeof v !== "number") return true;
         if (!Number.isFinite(v)) return false;
+        if (key === "powerProfileBattery" || key === "powerProfilePlugged") return Number.isInteger(v) && v >= 0 && v <= 2;
         const ranges = {
-            themeStyle: [0, 1], themeAnimations: [0, 2], desktopBlur: [0, 2],
+            themeStyle: [0, 1], themeAnimations: [0, 2], desktopBlur: [0, 2], desktopEqualizerOpacity: [0.25, 1],
             barSide: [0, 3], dockSide: [0, 3], barType: [0, 3], dockType: [0, 3],
             frameThickness: [0, 8], scrollSpeed: [1, 4], dockIconSize: [16, 128],
             osdDuration: [0, 60000], notificationsDuration: [0, 600000],
+            notificationsDndUntil: [0, 8640000000000000],
             idleLock: [0, 86400], idleDisplay: [0, 86400], idleSuspend: [0, 86400],
             nightLightTemperature: [1000, 10000], nightLightMode: [0, 2]
         };

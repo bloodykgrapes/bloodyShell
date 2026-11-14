@@ -12,6 +12,7 @@ def run_checks():
     entries = api["catalog"]()
     assert len(entries) > 20 and len({entry["tool"] for entry in entries}) == len(entries)
     plan = api["plan"]
+    assert next(entry for entry in entries if entry["tool"] == "easyeffects")["kind"] == "optional"
     for distro in ("arch", "fedora", "debian"):
         for entry in entries:
             if entry["kind"] == "required" or entry["tool"] == "python3":

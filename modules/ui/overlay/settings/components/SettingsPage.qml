@@ -5,6 +5,7 @@ import QtQuick.Controls.Basic as Controls
 
 import "../../../../common"
 import "../../../../core"
+import "." as Parts
 
 Flickable
 {
@@ -29,15 +30,11 @@ Flickable
     flickableDirection: Flickable.VerticalFlick
     interactive: contentHeight > height
 
-    Controls.ScrollBar.vertical: Controls.ScrollBar
+    Controls.ScrollBar.vertical: Parts.SettingsScrollBar
     {
-        width: 6
-        anchors.right: parent.right
-        anchors.rightMargin: 6
-        padding: 1
-        policy: Controls.ScrollBar.AsNeeded
-        active: settingsPage.moving || hovered || pressed
-        contentItem: Rectangle { implicitWidth: 4; radius: 2; color: Theme.text4; opacity: 0.5 }
+        view: settingsPage
+        topPadding: settingsPage.pagePadding
+        bottomPadding: settingsPage.pagePadding
     }
 
     SmoothScroll { id: scroll; view: settingsPage }
@@ -63,7 +60,7 @@ Flickable
     component Heading: Column
     {
         width: parent.width
-        spacing: 6
+        spacing: 8
 
         ShellText
         {
@@ -72,7 +69,7 @@ Flickable
             wrapMode: Text.Wrap
             size: 24
             color: Theme.text1
-            font.bold: true
+            font.weight: Font.DemiBold
         }
         ShellText
         {

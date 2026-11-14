@@ -1,4 +1,4 @@
-"""Versioned optional resources and opt-in greeter exports. Dispatched by backend.py."""
+"""Versioned resource imports, CLI refresh and login-screen appearance export."""
 
 from contextlib import contextmanager
 from datetime import datetime
@@ -6,8 +6,8 @@ from pathlib import Path, PurePosixPath
 import argparse
 import configparser
 import hashlib
+import io
 import fcntl
-import filecmp
 import json
 import os
 import pwd
@@ -22,6 +22,8 @@ import uuid
 
 
 ROOT = Path(__file__).resolve().parents[2]
+FILES = runpy.run_path(str(Path(__file__).with_name("files.py")))
+COMPOSITORS = runpy.run_path(str(Path(__file__).with_name("compositors") / "__init__.py"))
 REPO = "bloodykgrapes/bloodyShell"
 VERSION = (ROOT / "version").read_text().strip()
 # Release resources must match their runtime. Source checkouts use their local files.
@@ -29,7 +31,6 @@ REF = "v" + VERSION
 IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
 VIDEOS = {".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi"}
 TRANSITIONS = {"none", "simple", "fade", "left", "right", "top", "bottom", "wipe", "wave", "grow", "center", "any", "outer", "random"}
-RESERVED_DOTS = {"niri", "sddm", "wallpapers"}
 
 
 def home():
@@ -61,29 +62,29 @@ def download(url, destination=None):
 
 
 def programs():
-    source = ROOT / "dots"
+    source = ROOT / "dots/config"
     if source.is_dir():
-        return sorted(path.name for path in source.iterdir() if path.is_dir() and path.name not in RESERVED_DOTS and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", path.name))
-    data = json.loads(download(f"https://api.github.com/repos/{REPO}/contents/dots?ref={REF}"))
+        return sorted(path.name for path in source.iterdir() if path.is_dir() and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", path.name))
+    data = json.loads(download(f"https://api.github.com/repos/{REPO}/contents/dots/config?ref={REF}"))
     if not isinstance(data, list):
         raise ValueError("Invalid repository response")
-    return sorted(program_name(item["name"]) for item in data if item.get("type") == "dir" and item.get("name") not in RESERVED_DOTS)
+    return sorted(program_name(item["name"]) for item in data if item.get("type") == "dir")
 
 
 def resource_path(resource):
     if resource == "compositor":
-        return Path("dots/niri")
+        return Path(COMPOSITORS["load"]()["INFO"]["resource"])
     if resource == "dots":
-        return Path("dots")
+        return Path("dots/config")
     if resource == "wallpapers":
         return Path("dots/wallpapers")
     if resource == "greeter":
         return Path("dots/sddm")
     if resource.startswith("dots/"):
         name = program_name(resource[5:])
-        if name in {"sddm", "wallpapers"}:
-            raise ValueError("Use the separate login-screen or wallpaper import")
-        return Path("dots") / name
+        if name in {"niri", "sddm", "wallpapers"}:
+            raise ValueError("Use the separate compositor, login-screen or wallpaper import")
+        return Path("dots/config") / name
     raise ValueError("Unknown repository resource")
 
 
@@ -108,8 +109,6 @@ def source_for(resource):
                     raise ValueError("Unsafe repository archive path")
                 if not path.is_relative_to(PurePosixPath(relative.as_posix())):
                     continue
-                if resource == "dots" and len(path.parts) > 1 and path.parts[1] in RESERVED_DOTS:
-                    continue
                 target = stage / path
                 if member.isdir():
                     target.mkdir(parents=True, exist_ok=True)
@@ -133,7 +132,7 @@ def copy_image(source, destination):
     candidate = destination
     number = 0
     while candidate.exists() or candidate.is_symlink():
-        if candidate.is_file() and not candidate.is_symlink() and filecmp.cmp(source, candidate, shallow=False):
+        if candidate.is_file() and not candidate.is_symlink() and FILES["same_contents"](source, candidate):
             return candidate, False
         number += 1
         suffix = "-bloodyShell" + (f"-{number}" if number > 1 else "")
@@ -171,11 +170,11 @@ def import_config(source, program):
     destination.parent.mkdir(parents=True, exist_ok=True)
     backup = None
     with tempfile.TemporaryDirectory(prefix=".bloodyShell-config-", dir=destination.parent) as temporary:
-        # Keep niri at the original directory depth so relative external includes
+        # Keep compositor configs at their original depth so relative includes
         # and symlinks also resolve correctly during staged validation.
-        staged = Path(temporary) if program == "niri" else Path(temporary) / program
-        if program == "niri":
-            prepare_niri(source, destination, staged)
+        staged = Path(temporary) if program in COMPOSITORS["BACKENDS"] else Path(temporary) / program
+        if program in COMPOSITORS["BACKENDS"]:
+            COMPOSITORS["load"](program)["prepare"](source, destination, staged)
         else:
             shutil.copytree(source, staged, symlinks=True)
         if destination.exists() or destination.is_symlink():
@@ -192,44 +191,16 @@ def import_config(source, program):
     return dict(destination=str(destination), backup=str(backup) if backup else "")
 
 
-def prepare_niri(source, destination, staged):
-    api = runpy.run_path(str(Path(__file__).with_name("desktop.py")))
-    managed, user = api["NIRI_MANAGED"], api["NIRI_USER"]
-    if destination.is_dir():
-        shutil.copytree(destination, staged, symlinks=True, dirs_exist_ok=True)
-    fragment_dir = staged / "bloodyShell"
-    if fragment_dir.is_symlink():
-        original = (destination / "bloodyShell").resolve()
-        fragment_dir.unlink()
-        shutil.copytree(original, fragment_dir, symlinks=True)
-    fragment_dir.mkdir(parents=True, exist_ok=True)
-    for name in managed:
-        template = source / "bloodyShell" / name
-        if not template.is_file() or template.is_symlink():
-            raise ValueError("Missing managed niri fragment: " + name)
-        target = fragment_dir / name
-        target.unlink(missing_ok=True)
-        shutil.copy2(template, target)
-    for name in user:
-        target = fragment_dir / name
-        if not target.exists() and not target.is_symlink():
-            shutil.copy2(source / "bloodyShell" / name, target)
-    loader = staged / "config.kdl"
-    loader.unlink(missing_ok=True)
-    loader.write_text("".join('include "bloodyShell/' + name + '"\n' for name in (*managed, *user)))
-    if shutil.which("niri"):
-        result = subprocess.run(["niri", "validate", "-c", str(loader)], capture_output=True, text=True, timeout=10)
-        if result.returncode:
-            raise ValueError("niri rejected the imported configuration; current files were kept: " + result.stderr.strip())
-
-
 def import_resource(resource):
+    if resource == "cli":
+        management = runpy.run_path(str(Path(__file__).with_name("management.py")))
+        return management["refresh_command"]()
     with source_for(resource) as source:
         relative = resource_path(resource)
         if resource == "wallpapers":
             return import_wallpapers(source / relative)
         if resource == "compositor":
-            return import_config(source / relative, "niri")
+            return import_config(source / relative, COMPOSITORS["load"]()["INFO"]["config"])
         if resource == "dots":
             return import_dots(source / relative)
         if resource.startswith("dots/"):
@@ -242,7 +213,7 @@ def import_resource(resource):
 
 
 def import_dots(source):
-    names = sorted(program_name(path.name) for path in source.iterdir() if path.is_dir() and path.name not in RESERVED_DOTS)
+    names = sorted(program_name(path.name) for path in source.iterdir() if path.is_dir())
     if not names:
         raise ValueError("No application configurations are available")
     imported = []
@@ -266,15 +237,23 @@ def import_dots(source):
 
 def status():
     dependencies = runpy.run_path(str(Path(__file__).with_name("management.py")))
-    return dict(terminal=dependencies["terminal"](), entries=[
-        dict(id="compositor", kind="compositor", name="niri", destination=str(config_home() / "niri")),
-        dict(id="dots", kind="dots", name="dots", programs=programs(), destination=str(config_home())),
+    compositor = COMPOSITORS["load"]()["INFO"]
+    error = ""
+    try:
+        available = programs()
+    except (OSError, RuntimeError, ValueError) as failure:
+        available = []
+        error = str(failure)
+    return dict(error=error, terminal=dependencies["terminal"](), entries=[
+        dict(id="compositor", kind="compositor", name=compositor["name"], destination=str(config_home() / compositor["config"])),
+        dict(id="dots", kind="dots", name="dots", programs=available, destination=str(config_home())),
         dict(id="greeter", kind="greeter", name="greeter", destination="/usr/share/sddm/themes/bloodyShell"),
-         dict(id="wallpapers", kind="wallpapers", name="wallpapers", destination=str(wallpapers_dir()))])
+        dict(id="wallpapers", kind="wallpapers", name="wallpapers", destination=str(wallpapers_dir())),
+        dict(id="cli", kind="cli", name="cli", destination=str(dependencies["command_location"]()[1] / "bloodyShell"))])
 
 
 def resources_main():
-    parser = argparse.ArgumentParser(description="Import optional bloodyShell repository files")
+    parser = argparse.ArgumentParser(description="Import bloodyShell repository files")
     parser.add_argument("action", choices=("status", "programs", "import"))
     parser.add_argument("resource", nargs="?")
     parser.add_argument("--wait", action="store_true")
@@ -290,7 +269,7 @@ def resources_main():
                 raise ValueError("Resource name is required")
             result = import_resource(args.resource)
             if args.human or args.wait:
-                print("Imported → " + result["destination"])
+                print(("Command refreshed → " if args.resource == "cli" else "Imported → ") + result["destination"])
                 for backup in [result.get("backup"), *result.get("backups", [])]:
                     if backup:
                         print("Backup → " + backup)
@@ -332,41 +311,33 @@ def write_export(source, directory, keyboard_layouts=None):
         ):
             raise ValueError("Invalid login-screen keyboard layouts")
         settings["keyboardLayouts"] = json.dumps([{key: entry.get(key, "") for key in ("layout", "variant")} for entry in keyboard_layouts])
-    wallpaper = Path(str(data.get("wallpaperCurrent", ""))) if data.get("greeterSync") is True else Path("/nonexistent")
+    wallpaper = Path(str(data.get("wallpaperCurrent", "")))
     if wallpaper.is_file() and wallpaper.suffix.lower() in VIDEOS:
         wallpaper = wallpaper_preview(wallpaper)
     if wallpaper.is_file() and wallpaper.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
         destination = directory / ("wallpaper" + wallpaper.suffix.lower())
-        temporary = directory / (destination.name + ".tmp")
-        shutil.copyfile(wallpaper, temporary)
-        temporary.chmod(0o644)
-        temporary.replace(destination)
+        FILES["atomic_copy"](wallpaper, destination)
         settings["wallpaperCurrent"] = str(destination)
     for old in directory.glob("wallpaper.*"):
         if str(old) != settings.get("wallpaperCurrent") and old.is_file():
             old.unlink()
     account = pwd.getpwuid(os.getuid())
-    for source_avatar in (() if data.get("greeterSync") is not True else (Path(account.pw_dir) / ".face", Path(account.pw_dir) / ".face.icon", Path("/var/lib/AccountsService/icons") / account.pw_name)):
+    for source_avatar in (Path(account.pw_dir) / ".face", Path(account.pw_dir) / ".face.icon", Path("/var/lib/AccountsService/icons") / account.pw_name):
         if not source_avatar.is_file() or not os.access(source_avatar, os.R_OK):
             continue
         avatars.mkdir(exist_ok=True)
         avatars.chmod(0o755)
-        temporary = avatars / (account.pw_name + ".tmp")
-        shutil.copyfile(source_avatar, temporary)
-        temporary.chmod(0o644)
-        temporary.replace(avatars / account.pw_name)
+        FILES["atomic_copy"](source_avatar, avatars / account.pw_name)
         settings["avatarUser"] = account.pw_name
         break
     else:
         (avatars / account.pw_name).unlink(missing_ok=True)
-    temporary = directory / "theme.conf.tmp"
     configuration = configparser.ConfigParser(interpolation=None)
     configuration.optionxform = str
     configuration["General"] = settings
-    with temporary.open("w") as output:
-        configuration.write(output)
-    temporary.chmod(0o644)
-    temporary.replace(directory / "theme.conf")
+    output = io.StringIO()
+    configuration.write(output)
+    FILES["atomic_write"](directory / "theme.conf", output.getvalue().encode())
 
 
 def export(source, directory, keyboard_layouts=None):

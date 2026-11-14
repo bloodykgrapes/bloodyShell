@@ -6,6 +6,7 @@ import Quickshell.Widgets
 
 import "../../../animations"
 import "../../../common"
+import "../../../common" as Common
 import "../../../core"
 import "../../../services"
 
@@ -16,6 +17,29 @@ Menu
     implicitWidth: 360
     centerOnWidget: true
     spacing: 10
+
+    Item
+    {
+        objectName: "mediaRecordingIndicator"
+        visible: ServiceRecording.active
+        width: parent.width
+        height: 24
+        Rectangle
+        {
+            x: 8
+            anchors.verticalCenter: parent.verticalCenter
+            width: 8; height: 8; radius: 4
+            color: Theme.colorCritical
+        }
+        ShellText
+        {
+            x: 26
+            width: parent.width - 34
+            anchors.verticalCenter: parent.verticalCenter
+            label: Tr.tr("recording.active")
+            color: Theme.colorCritical
+        }
+    }
 
     function focusControl(item)
     {
@@ -28,7 +52,8 @@ Menu
                 break;
             }
         }
-        item.forceActiveFocus(Qt.MouseFocusReason);
+        if (typeof item.focusFor === "function") item.focusFor(Qt.MouseFocusReason);
+        else item.forceActiveFocus(Qt.MouseFocusReason);
     }
 
     readonly property bool visualizerWanted: menuMedia.active && Config.animationsEnabled
@@ -276,7 +301,7 @@ Menu
             width: parent.width
             height: 40
 
-            Item
+            Common.InteractiveControl
             {
                 id: track
                 objectName: "mediaSeek"
@@ -332,7 +357,7 @@ Menu
                 {
                     anchors.verticalCenter: parent.verticalCenter
                     width: parent.width
-                    height: seek.containsMouse || seek.pressed || track.activeFocus ? 6 : 4
+                    height: seek.containsMouse || seek.pressed || track.visualFocus ? 6 : 4
                     radius: height / 2
                     color: Theme.colorField
                     Glide on height {}
@@ -353,7 +378,7 @@ Menu
                         height: 12
                         radius: 6
                         color: Theme.colorAccent
-                        scale: seek.pressed ? 1.15 : seek.containsMouse || track.activeFocus ? 1 : 0
+                        scale: seek.pressed ? 1.15 : seek.containsMouse || track.visualFocus ? 1 : 0
                         Spring on scale {}
                     }
                 }
@@ -501,9 +526,13 @@ Menu
         MenuLabel { hint: true; text: Tr.tr("common.noMedia"); visible: !ServiceMedia.available }
     }
 
-    component Control: Rectangle
+    component Control: Common.InteractiveControl
     {
         id: control
+        property alias color: surface.color
+        property alias radius: surface.radius
+        property alias border: surface.border
+        background: Rectangle { id: surface }
 
         property string icon: ""
         property string altIcon: ""
@@ -521,7 +550,7 @@ Menu
         height: size
         radius: primary ? Theme.radiusLarge : size / 2
         activeFocusOnTab: enabled
-        border.width: activeFocus ? 2 : 0
+        border.width: visualFocus ? 2 : 0
         border.color: Theme.colorAccent
         Keys.onSpacePressed: clicked()
         Keys.onReturnPressed: clicked()
@@ -529,12 +558,12 @@ Menu
         opacity: enabled ? 1 : 0.35
 
         color: area.pressed ? Theme.colorPressed
-             : primary ? (area.containsMouse ? Qt.tint(Theme.colorSelection, Theme.inkAlpha(0.1)) : Theme.colorSelection)
+             : primary ? (control.hovered ? Qt.tint(Theme.colorSelection, Theme.inkAlpha(0.1)) : Theme.colorSelection)
              : on ? Theme.colorSelection
-             : area.containsMouse ? Theme.colorHover : Theme.colorField
+             : control.hovered ? Theme.colorHover : Theme.colorField
         Tint on color {}
 
-        scale: area.pressed ? 0.92 : area.containsMouse ? 1.06 : 1
+        scale: area.pressed ? 0.92 : control.hovered ? 1.06 : 1
         Spring on scale {}
 
         Item
@@ -542,7 +571,7 @@ Menu
             anchors.centerIn: parent
             width: control.iconSize
             height: control.iconSize
-            opacity: control.on || control.primary || area.containsMouse ? 1 : 0.75
+            opacity: control.on || control.primary || control.hovered ? 1 : 0.75
 
             property real morph: control.alt ? 1 : 0
             Ease on morph { duration: Theme.animationDurationControl }
