@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../../assets/icons/logo.png" alt="desktop" width="16%">
+</p>
+
 <h1 align="center">bloodyShell</h1>
 
 <p align="center">
@@ -27,49 +31,31 @@
     &bull;
     <a href="README.de.md">Deutsch</a>
     &bull;
-    <a href="README.ja.md">日本語</a>
+    日本語
   </sub>
 </p>
 
 ---
 
-<table align="center">
-  <tr>
-    <td valign="top">
-      <table>
-        <thead>
-          <tr> <th>ディストリビューション</th> <th>対応状況</th> </tr>
-        </thead>
-        <tbody>
-          <tr> <td>Arch</td>   <td align="center">&plus;</td>  </tr>
-          <tr> <td>Debian</td> <td align="center">&plus;</td>  </tr>
-          <tr> <td>Fedora</td> <td align="center">&plus;</td>  </tr>
-          <tr> <td>NixOS</td>  <td align="center">&minus;</td> </tr>
-          <tr> <td>Ubuntu</td> <td align="center">&plus;</td>  </tr>
-        </tbody>
-      </table>
-    </td>
-    <td valign="top">
-      <table>
-        <thead>
-          <tr> <th>コンポジター</th> <th>対応状況</th> </tr>
-        </thead>
-        <tbody>
-          <tr> <td>Niri</td>     <td align="center">&plus;</td>  </tr>
-          <tr> <td>Hyprland</td> <td align="center">&minus;</td> </tr>
-          <tr> <td>Sway</td>     <td align="center">&minus;</td> </tr>
-        </tbody>
-      </table>
-    </td>
-  </tr>
-</table>
+> [!WARNING]
+> テストされていないディストリビューションやコンポジターでの正常な動作は保証できません。自己責任でご使用ください。ただし、お使いのシステムでソフトウェアの機能を完全にテストし、フィードバックを提供していただける場合は、大変ありがたく思います。
 
-> [!NOTE]
-> bloodyShell は niri 専用です。インストーラーは Arch、Debian、Fedora、Ubuntu のパッケージに対応していますが、利用できるパッケージは各リリースによって異なります。NixOS、Hyprland、Sway は現在未対応です。
+現時点では、追加のコンポジターのサポートを実装する余力がありません。
+bloodyShell は現在 niri 専用に構築されています。
+他の人気のある Wayland コンポジターのサポートは、将来のリリースで予定されています。
+
+## スクリーンショット
+
+<p align="center">
+  <img src="../../docs/images/image-1.png" alt="desktop"    width="100%">
+  <img src="../../docs/images/image-2.png" alt="launcher"   width="49.8%">
+  <img src="../../docs/images/image-3.png" alt="settings"   width="49.8%">
+  <img src="../../docs/images/image-4.png" alt="wallpapers" width="100%">
+</p>
 
 ## インストール
 
-Arch、Debian、Fedora、Ubuntu：
+Arch、Debian、Fedora、Ubuntu:
 
 ```bash
 git clone https://github.com/bloodykgrapes/bloodyShell.git
@@ -77,35 +63,37 @@ cd bloodyShell
 ./setup install
 ```
 
-インストーラーは `~/.local/bin` に `bloodyShell` コマンドを配置し、PATH を設定します。新しいターミナルを開いてください。niri のキーバインドに反映するには、ログアウトして再ログインしてください。
+Setup は `bloodyShell` コマンドをインストールします。
 
 ```bash
-bloodyShell             # シェルを起動
+bloodyShell             # 対話型メニュー
+bloodyShell start       # シェルを起動
+bloodyShell restart     # シェルを再読み込み
 bloodyShell update      # 更新を確認してインストール
 bloodyShell doctor      # 診断
-bloodyShell restart     # シェルを再起動
 ```
 
-詳細は[インストールガイド](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL)を参照してください。
+詳細は[インストールガイド](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL)をご覧ください。
 
 ## ドキュメント
 
-| ページ | 内容 |
-|---|---|
+| ページ | 説明 |
+| :--- | :---------- |
 |[ARCHITECTURE](https://github.com/bloodykgrapes/bloodyShell/wiki/ARCHITECTURE)|コード構成とアーキテクチャ|
-|[INSTALL](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL)|インストール・更新・アンインストール|
-|[KEYBINDS](https://github.com/bloodykgrapes/bloodyShell/wiki/KEYBINDS)|キーボードショートカット|
-|[PACKAGES](https://github.com/bloodykgrapes/bloodyShell/wiki/PACKAGES)|依存パッケージ|
+|[INSTALL](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL)|インストールマニュアル|
+|[KEYBINDS](https://github.com/bloodykgrapes/bloodyShell/wiki/KEYBINDS)|すべてのキーバインド|
+|[PACKAGES](https://github.com/bloodykgrapes/bloodyShell/wiki/PACKAGES)|プロジェクトの依存関係|
 
-## 謝辞
+## クレジット
 
 - [**Quickshell**](https://quickshell.outfoxxed.me/): フレームワーク
-- [**Niri**](https://github.com/niri-wm/niri): コンポジター
+- [**niri**](https://github.com/niri-wm/niri): コンポジター
+- [**iNiR**](https://github.com/snowarch/iNiR): 着想の源
 
 ---
 
 <p align="center">
-  <a href="https://github.com/bloodykgrapes/bloodyShell/graphs/contributors">貢献者</a>
+  <a href="https://github.com/bloodykgrapes/bloodyShell/graphs/contributors">コントリビューター</a>
   &bull;
   <a href="../../CHANGELOG.md">変更履歴</a>
   &bull;

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icons/logo.png" alt="desktop" width="16%">
+</p>
+
 <h1 align="center">bloodyShell</h1>
 
 <p align="center">
@@ -19,7 +23,7 @@
 
 <p align="center">
   <sub>
-    <a href="README.md">English</a>
+    English
     &bull;
     <a href="docs/readme/README.ru.md">Русский</a>
     &bull;
@@ -33,48 +37,20 @@
 
 ---
 
-<table align="center">
-  <tr>
-    <td valign="top">
-      <table>
-        <thead>
-          <tr> <th>Distro</th> <th>Support</th> </tr>
-        </thead>
-        <tbody>
-          <tr> <td>Arch</td>   <td align="center">&plus;</td>  </tr>
-          <tr> <td>Debian</td> <td align="center">&plus;</td>  </tr>
-          <tr> <td>Fedora</td> <td align="center">&plus;</td>  </tr>
-          <tr> <td>NixOS</td>  <td align="center">&minus;</td> </tr>
-          <tr> <td>Ubuntu</td> <td align="center">&plus;</td>  </tr>
-        </tbody>
-      </table>
-    </td>
-    <td valign="top">
-      <table>
-        <thead>
-          <tr> <th>Compositor</th> <th>Support</th> </tr>
-        </thead>
-        <tbody>
-          <tr> <td>Niri</td>     <td align="center">&plus;</td>  </tr>
-          <tr> <td>Hyprland</td> <td align="center">&minus;</td> </tr>
-          <tr> <td>Sway</td>     <td align="center">&minus;</td> </tr>
-        </tbody>
-      </table>
-    </td>
-  </tr>
-</table>
-
 > [!WARNING]
 > I cannot guarantee the proper operation of untested distributions or compositors. Use them at your own risk. However, if you are able to fully test the functionality of the software on your system and provide feedback, that would be greatly appreciated.
 
-At present, I am physically unable to implement support for additional composers. At this time, bloodyShell is currently tied directly to niri. However, dynamic support for additional popular Wayland composers is scheduled to be implemented in the near future.
+At present, I am physically unable to implement support for additional compositors.
+bloodyShell is currently built specifically for niri.
+Support for other popular Wayland compositors is planned for future releases.
 
 ## Screenshots
 
 <p align="center">
-  <img src="docs/images/image-1.png" alt="bloodyShell wallpaper"  width="49%">
-  <img src="docs/images/image-2.png" alt="bloodyShell launcher" width="49%">
-  <img src="docs/images/image-3.png" alt="bloodyShell settings" width="98.5%">
+  <img src="docs/images/image-1.png" alt="desktop"    width="100%">
+  <img src="docs/images/image-2.png" alt="launcher"   width="49.8%">
+  <img src="docs/images/image-3.png" alt="settings"   width="49.8%">
+  <img src="docs/images/image-4.png" alt="wallpapers" width="100%">
 </p>
 
 ## Installation
@@ -90,19 +66,19 @@ cd bloodyShell
 Setup installs the `bloodyShell` command.
 
 ```bash
-bloodyShell             # launch the shell
-bloodyShell update      # check and install update
-bloodyShell doctor      # diagnostic
+bloodyShell             # interactive menu
+bloodyShell start       # launch shell
 bloodyShell restart     # reload shell
+bloodyShell update      # check and install update
+bloodyShell doctor      # diagnostics
 ```
-
 
 See the [installation guide](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL) for details.
 
 ## Documentation
 
-| Page | About what |
-|---|---|
+| Page | Description |
+| :--- | :---------- |
 |[ARCHITECTURE](https://github.com/bloodykgrapes/bloodyShell/wiki/ARCHITECTURE)|Code structure and architecture|
 |[INSTALL](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL)|Installation manual|
 |[KEYBINDS](https://github.com/bloodykgrapes/bloodyShell/wiki/KEYBINDS)|All the keybindings|
@@ -111,7 +87,8 @@ See the [installation guide](https://github.com/bloodykgrapes/bloodyShell/wiki/I
 ## Credits
 
 - [**Quickshell**](https://quickshell.outfoxxed.me/): the framework
-- [**Niri**](https://github.com/niri-wm/niri): the compositor
+- [**niri**](https://github.com/niri-wm/niri): the compositor
+- [**iNiR**](https://github.com/snowarch/iNiR): where the inspiration came from
 
 ---
 

@@ -1,7 +1,11 @@
+<p align="center">
+  <img src="../../assets/icons/logo.png" alt="desktop" width="16%">
+</p>
+
 <h1 align="center">bloodyShell</h1>
 
 <p align="center">
-    <b>Eine Desktop-Shell für <a href="https://github.com/niri-wm/niri">niri</a>, entwickelt mit Quickshell</b>
+    <b>Eine Desktop-Shell für <a href="https://github.com/niri-wm/niri">niri</a>, gebaut mit Quickshell</b>
 </p>
 
 <p align="center">
@@ -25,7 +29,7 @@
     &bull;
     <a href="README.fr.md">Français</a>
     &bull;
-    <a href="README.de.md">Deutsch</a>
+    Deutsch
     &bull;
     <a href="README.ja.md">日本語</a>
   </sub>
@@ -33,39 +37,21 @@
 
 ---
 
-<table align="center">
-  <tr>
-    <td valign="top">
-      <table>
-        <thead>
-          <tr> <th>Distribution</th> <th>Unterstützung</th> </tr>
-        </thead>
-        <tbody>
-          <tr> <td>Arch</td>   <td align="center">&plus;</td>  </tr>
-          <tr> <td>Debian</td> <td align="center">&plus;</td>  </tr>
-          <tr> <td>Fedora</td> <td align="center">&plus;</td>  </tr>
-          <tr> <td>NixOS</td>  <td align="center">&minus;</td> </tr>
-          <tr> <td>Ubuntu</td> <td align="center">&plus;</td>  </tr>
-        </tbody>
-      </table>
-    </td>
-    <td valign="top">
-      <table>
-        <thead>
-          <tr> <th>Compositor</th> <th>Unterstützung</th> </tr>
-        </thead>
-        <tbody>
-          <tr> <td>Niri</td>     <td align="center">&plus;</td>  </tr>
-          <tr> <td>Hyprland</td> <td align="center">&minus;</td> </tr>
-          <tr> <td>Sway</td>     <td align="center">&minus;</td> </tr>
-        </tbody>
-      </table>
-    </td>
-  </tr>
-</table>
+> [!WARNING]
+> Ich kann die einwandfreie Funktion auf ungetesteten Distributionen oder Compositors nicht garantieren. Die Nutzung erfolgt auf eigene Gefahr. Wenn Sie jedoch die Funktionalität der Software auf Ihrem System vollständig testen und Rückmeldung geben können, wäre das sehr willkommen.
 
-> [!NOTE]
-> bloodyShell benötigt niri. Der Installer enthält Paketzuordnungen für Arch, Debian, Fedora und Ubuntu; die Verfügbarkeit hängt von der Distributionsversion ab. NixOS, Hyprland und Sway werden derzeit nicht unterstützt.
+Derzeit ist es mir nicht möglich, die Unterstützung zusätzlicher Compositors zu implementieren.
+bloodyShell ist derzeit speziell für niri entwickelt.
+Die Unterstützung weiterer verbreiteter Wayland-Compositors ist für zukünftige Versionen geplant.
+
+## Screenshots
+
+<p align="center">
+  <img src="../../docs/images/image-1.png" alt="desktop"    width="100%">
+  <img src="../../docs/images/image-2.png" alt="launcher"   width="49.8%">
+  <img src="../../docs/images/image-3.png" alt="settings"   width="49.8%">
+  <img src="../../docs/images/image-4.png" alt="wallpapers" width="100%">
+</p>
 
 ## Installation
 
@@ -77,37 +63,39 @@ cd bloodyShell
 ./setup install
 ```
 
-Der Installer legt den Befehl `bloodyShell` in `~/.local/bin` ab und richtet den PATH ein. Öffne danach ein neues Terminal. Melde dich für die niri-Tastenkürzel ab und wieder an.
+Setup installiert den Befehl `bloodyShell`.
 
 ```bash
-bloodyShell             # Shell starten
-bloodyShell update      # Update suchen und installieren
+bloodyShell             # interaktives Menü
+bloodyShell start       # Shell starten
+bloodyShell restart     # Shell neu laden
+bloodyShell update      # Updates prüfen und installieren
 bloodyShell doctor      # Diagnose
-bloodyShell restart     # Shell neu starten
 ```
 
-Weitere Informationen stehen in der [Installationsanleitung](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL).
+Details finden Sie in der [Installationsanleitung](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL).
 
 ## Dokumentation
 
 | Seite | Beschreibung |
-|---|---|
+| :--- | :---------- |
 |[ARCHITECTURE](https://github.com/bloodykgrapes/bloodyShell/wiki/ARCHITECTURE)|Codestruktur und Architektur|
-|[INSTALL](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL)|Installation, Updates und Deinstallation|
-|[KEYBINDS](https://github.com/bloodykgrapes/bloodyShell/wiki/KEYBINDS)|Tastenkürzel|
+|[INSTALL](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL)|Installationsanleitung|
+|[KEYBINDS](https://github.com/bloodykgrapes/bloodyShell/wiki/KEYBINDS)|Alle Tastenkürzel|
 |[PACKAGES](https://github.com/bloodykgrapes/bloodyShell/wiki/PACKAGES)|Projektabhängigkeiten|
 
 ## Danksagungen
 
-- [**Quickshell**](https://quickshell.outfoxxed.me/): Framework
-- [**Niri**](https://github.com/niri-wm/niri): Compositor
+- [**Quickshell**](https://quickshell.outfoxxed.me/): das Framework
+- [**niri**](https://github.com/niri-wm/niri): der Compositor
+- [**iNiR**](https://github.com/snowarch/iNiR): die Inspirationsquelle
 
 ---
 
 <p align="center">
   <a href="https://github.com/bloodykgrapes/bloodyShell/graphs/contributors">Mitwirkende</a>
   &bull;
-  <a href="../../CHANGELOG.md">Änderungsverlauf</a>
+  <a href="../../CHANGELOG.md">Änderungsprotokoll</a>
   &bull;
   <a href="../../LICENSE">Lizenz</a>
 </p>

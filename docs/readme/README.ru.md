@@ -1,7 +1,11 @@
+<p align="center">
+  <img src="../../assets/icons/logo.png" alt="desktop" width="16%">
+</p>
+
 <h1 align="center">bloodyShell</h1>
 
 <p align="center">
-    <b>Оболочка рабочего стола для <a href="https://github.com/niri-wm/niri">niri</a> на Quickshell</b>
+    <b>Оболочка рабочего стола для <a href="https://github.com/niri-wm/niri">niri</a> на базе Quickshell</b>
 </p>
 
 <p align="center">
@@ -21,7 +25,7 @@
   <sub>
     <a href="../../README.md">English</a>
     &bull;
-    <a href="README.ru.md">Русский</a>
+    Русский
     &bull;
     <a href="README.fr.md">Français</a>
     &bull;
@@ -33,39 +37,21 @@
 
 ---
 
-<table align="center">
-  <tr>
-    <td valign="top">
-      <table>
-        <thead>
-          <tr> <th>Дистрибутив</th> <th>Поддержка</th> </tr>
-        </thead>
-        <tbody>
-          <tr> <td>Arch</td>   <td align="center">&plus;</td>  </tr>
-          <tr> <td>Debian</td> <td align="center">&plus;</td>  </tr>
-          <tr> <td>Fedora</td> <td align="center">&plus;</td>  </tr>
-          <tr> <td>NixOS</td>  <td align="center">&minus;</td> </tr>
-          <tr> <td>Ubuntu</td> <td align="center">&plus;</td>  </tr>
-        </tbody>
-      </table>
-    </td>
-    <td valign="top">
-      <table>
-        <thead>
-          <tr> <th>Композитор</th> <th>Поддержка</th> </tr>
-        </thead>
-        <tbody>
-          <tr> <td>Niri</td>     <td align="center">&plus;</td>  </tr>
-          <tr> <td>Hyprland</td> <td align="center">&minus;</td> </tr>
-          <tr> <td>Sway</td>     <td align="center">&minus;</td> </tr>
-        </tbody>
-      </table>
-    </td>
-  </tr>
-</table>
+> [!WARNING]
+> Я не могу гарантировать корректную работу на непроверенных дистрибутивах и композиторах. Используйте их на свой страх и риск. Однако, если вы сможете полностью протестировать функциональность программного обеспечения на своей системе и поделиться обратной связью, буду весьма признателен.
 
-> [!NOTE]
-> bloodyShell работает с niri. Установщик содержит пакеты для Arch, Debian, Fedora и Ubuntu; их доступность зависит от версии дистрибутива. Поддержки NixOS, Hyprland и Sway пока нет.
+В настоящее время я физически не могу реализовать поддержку дополнительных композиторов.
+bloodyShell в данный момент создан специально для niri.
+Поддержка других популярных Wayland-композиторов планируется в будущих выпусках.
+
+## Скриншоты
+
+<p align="center">
+  <img src="../../docs/images/image-1.png" alt="desktop"    width="100%">
+  <img src="../../docs/images/image-2.png" alt="launcher"   width="49.8%">
+  <img src="../../docs/images/image-3.png" alt="settings"   width="49.8%">
+  <img src="../../docs/images/image-4.png" alt="wallpapers" width="100%">
+</p>
 
 ## Установка
 
@@ -77,13 +63,14 @@ cd bloodyShell
 ./setup install
 ```
 
-Установщик добавляет команду `bloodyShell` в `~/.local/bin` и настраивает PATH. Откройте новый терминал; для горячих клавиш niri выйдите из сеанса и войдите снова.
+Setup устанавливает команду `bloodyShell`.
 
 ```bash
-bloodyShell             # запуск оболочки
-bloodyShell update      # проверить и установить обновление
-bloodyShell doctor      # диагностика
+bloodyShell             # интерактивное меню
+bloodyShell start       # запуск оболочки
 bloodyShell restart     # перезапуск оболочки
+bloodyShell update      # проверка и установка обновлений
+bloodyShell doctor      # диагностика
 ```
 
 Подробности — в [руководстве по установке](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL).
@@ -91,23 +78,24 @@ bloodyShell restart     # перезапуск оболочки
 ## Документация
 
 | Страница | Описание |
-|---|---|
+| :--- | :---------- |
 |[ARCHITECTURE](https://github.com/bloodykgrapes/bloodyShell/wiki/ARCHITECTURE)|Структура кода и архитектура|
-|[INSTALL](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL)|Установка, обновление и удаление|
-|[KEYBINDS](https://github.com/bloodykgrapes/bloodyShell/wiki/KEYBINDS)|Горячие клавиши|
+|[INSTALL](https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL)|Руководство по установке|
+|[KEYBINDS](https://github.com/bloodykgrapes/bloodyShell/wiki/KEYBINDS)|Все горячие клавиши|
 |[PACKAGES](https://github.com/bloodykgrapes/bloodyShell/wiki/PACKAGES)|Зависимости проекта|
 
 ## Благодарности
 
 - [**Quickshell**](https://quickshell.outfoxxed.me/): фреймворк
-- [**Niri**](https://github.com/niri-wm/niri): композитор
+- [**niri**](https://github.com/niri-wm/niri): композитор
+- [**iNiR**](https://github.com/snowarch/iNiR): источник вдохновения
 
 ---
 
 <p align="center">
   <a href="https://github.com/bloodykgrapes/bloodyShell/graphs/contributors">Участники</a>
   &bull;
-  <a href="../../CHANGELOG.md">История изменений</a>
+  <a href="../../CHANGELOG.md">Список изменений</a>
   &bull;
   <a href="../../LICENSE">Лицензия</a>
 </p>
