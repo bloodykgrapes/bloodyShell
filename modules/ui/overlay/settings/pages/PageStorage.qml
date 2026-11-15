@@ -111,103 +111,92 @@ SettingsPage
     }
     SettingsDisclosure
     {
-        title: Tr.tr("settings.storage.advanced")
-        description: Tr.tr("settings.storage.advancedHint")
-        icon: Icon.settingsStorage
-        onExpandedChanged:
+        objectName: "storageMountOptions"
+        title: Tr.tr("settings.storage.mountDisk")
+        description: Tr.tr("settings.storage.mountDiskHint")
+        icon: Icon.mount
+        onExpandedChanged: if (!expanded) ServiceStorage.cancelMount()
+
+        SettingsRow
         {
-            if (!expanded) ServiceStorage.cancelMount();
-            else if (Config.animationsFluid) mountOptions.enter(0);
-            else mountOptions.opacity = 1;
+            label: Tr.tr("settings.storage.detectedDisks")
+            description: ServiceStorage.devicesLoaded && ServiceStorage.availableDevices.length === 0
+                ? Tr.tr("settings.storage.noUnmountedDisks") : Tr.tr("settings.storage.selectDisk")
+
+            Item
+            {
+                id: diskControls
+                implicitWidth: diskChoice.preferredWidth + refresh.implicitWidth + 8
+                implicitHeight: Math.max(diskChoice.height, refresh.height)
+                width: Theme.controlWidth(diskControls, implicitWidth)
+                SettingsCombo
+                {
+                    id: diskChoice
+                    anchors.verticalCenter: parent.verticalCenter
+                    preferredWidth: 300
+                    width: Math.max(0, parent.width - refresh.width - 8)
+                    enabled: !ServiceStorage.busy && !ServiceStorage.confirming
+                    options: ServiceStorage.availableDevices.map(device => ({ label: ServiceStorage.deviceLabel(device), value: device.path }))
+                    current: ServiceStorage.selectedPath
+                    placeholderText: Tr.tr("settings.storage.selectDisk")
+                    onSelected: value => ServiceStorage.selectDevice(value)
+                }
+                SettingsIconButton
+                {
+                    id: refresh
+                    anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                    icon: Icon.reload
+                    enabled: !ServiceStorage.busy && !ServiceStorage.loading
+                    onClicked: ServiceStorage.refresh()
+                }
+            }
         }
 
-        SettingsGroup
+        SettingsRow
         {
-            id: mountOptions
-            title: Tr.tr("settings.storage.mountDisk")
-            subtitle: Tr.tr("settings.storage.detectedHint")
-
-            SettingsRow
+            label: Tr.tr("settings.storage.mountMode")
+            description: ServiceStorage.mountMode === "once" ? Tr.tr("settings.storage.onceHint") : Tr.tr("settings.storage.startupHint")
+            SettingsChoices
             {
-                label: Tr.tr("settings.storage.detectedDisks")
-                description: ServiceStorage.devicesLoaded && ServiceStorage.availableDevices.length === 0
-                    ? Tr.tr("settings.storage.noUnmountedDisks") : Tr.tr("settings.storage.selectDisk")
-
-                Item
-                {
-                    id: diskControls
-                    implicitWidth: diskChoice.preferredWidth + refresh.implicitWidth + 8
-                    implicitHeight: Math.max(diskChoice.height, refresh.height)
-                    width: Theme.controlWidth(diskControls, implicitWidth)
-                    SettingsCombo
-                    {
-                        id: diskChoice
-                        anchors.verticalCenter: parent.verticalCenter
-                        preferredWidth: 300
-                        width: Math.max(0, parent.width - refresh.width - 8)
-                        enabled: !ServiceStorage.busy && !ServiceStorage.confirming
-                        options: ServiceStorage.availableDevices.map(device => ({ label: ServiceStorage.deviceLabel(device), value: device.path }))
-                        current: ServiceStorage.selectedPath
-                        placeholderText: Tr.tr("settings.storage.selectDisk")
-                        onSelected: value => ServiceStorage.selectDevice(value)
-                    }
-                    SettingsIconButton
-                    {
-                        id: refresh
-                        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-                        icon: Icon.reload
-                        enabled: !ServiceStorage.busy && !ServiceStorage.loading
-                        onClicked: ServiceStorage.refresh()
-                    }
-                }
+                objectName: "storageMountMode"
+                enabled: !ServiceStorage.busy && !ServiceStorage.confirming
+                options: [{ label: Tr.tr("settings.storage.mountOnce"), value: "once" }, { label: Tr.tr("settings.storage.mountAtStartup"), value: "persistent" }]
+                current: ServiceStorage.mountMode
+                onSelected: value => ServiceStorage.setMountMode(value)
             }
+        }
 
-            SettingsRow
+        SettingsRow
+        {
+            visible: ServiceStorage.mountMode === "persistent"
+            label: Tr.tr("settings.storage.mountPoint")
+            description: Tr.tr("settings.storage.mountPointHint")
+            SettingsInput
             {
-                label: Tr.tr("settings.storage.mountMode")
-                description: ServiceStorage.mountMode === "once" ? Tr.tr("settings.storage.onceHint") : Tr.tr("settings.storage.startupHint")
-                SettingsChoices
-                {
-                    objectName: "storageMountMode"
-                    enabled: !ServiceStorage.busy && !ServiceStorage.confirming
-                    options: [{ label: Tr.tr("settings.storage.mountOnce"), value: "once" }, { label: Tr.tr("settings.storage.mountAtStartup"), value: "persistent" }]
-                    current: ServiceStorage.mountMode
-                    onSelected: value => ServiceStorage.setMountMode(value)
-                }
+                preferredWidth: 280
+                enabled: !ServiceStorage.busy && !ServiceStorage.confirming
+                text: ServiceStorage.mountPoint
+                placeholderText: "/mnt/data"
+                onTextEdited: value => ServiceStorage.setMountPoint(value)
             }
+        }
 
-            SettingsRow
-            {
-                visible: ServiceStorage.mountMode === "persistent"
-                label: Tr.tr("settings.storage.mountPoint")
-                description: Tr.tr("settings.storage.mountPointHint")
-                SettingsInput
-                {
-                    preferredWidth: 280
-                    enabled: !ServiceStorage.busy && !ServiceStorage.confirming
-                    text: ServiceStorage.mountPoint
-                    placeholderText: "/mnt/data"
-                    onTextEdited: value => ServiceStorage.setMountPoint(value)
-                }
-            }
+        SettingsRow
+        {
+            visible: ServiceStorage.selectedDevice !== null && ServiceStorage.selectedDevice.readOnly
+            label: Tr.tr("settings.storage.readOnly")
+            description: Tr.tr("settings.storage.readOnlyHint")
+        }
 
-            SettingsRow
+        SettingsRow
+        {
+            visible: !ServiceStorage.confirming
+            label: ServiceStorage.busy ? Tr.tr("common.working") : Tr.tr("settings.storage.readyToMount")
+            SettingsButton
             {
-                visible: ServiceStorage.selectedDevice !== null && ServiceStorage.selectedDevice.readOnly
-                label: Tr.tr("settings.storage.readOnly")
-                description: Tr.tr("settings.storage.readOnlyHint")
-            }
-
-            SettingsRow
-            {
-                visible: !ServiceStorage.confirming
-                label: ServiceStorage.busy ? Tr.tr("common.working") : Tr.tr("settings.storage.readyToMount")
-                SettingsButton
-                {
-                    text: Tr.tr("settings.storage.mount")
-                    enabled: ServiceStorage.selectedDevice !== null && !ServiceStorage.selectedDevice.mounted && !ServiceStorage.busy && !ServiceStorage.loading
-                    onClicked: ServiceStorage.prepareMount()
-                }
+                text: Tr.tr("settings.storage.mount")
+                enabled: ServiceStorage.selectedDevice !== null && !ServiceStorage.selectedDevice.mounted && !ServiceStorage.busy && !ServiceStorage.loading
+                onClicked: ServiceStorage.prepareMount()
             }
         }
     }

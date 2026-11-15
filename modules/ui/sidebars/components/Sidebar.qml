@@ -46,6 +46,13 @@ FocusScope
 
     Region { id: inputMask; item: sidebar.opened ? sidebar : null }
 
+    SurfaceShadow
+    {
+        surface: card
+        cornerRadius: Theme.barRadius
+        visible: sidebar.floating && sidebar.progress > 0.001
+    }
+
     Item
     {
         id: card
@@ -61,6 +68,8 @@ FocusScope
             visible: sidebar.floating
             radius: Theme.barRadius
             color: Theme.frameColor
+            border.width: 1
+            border.color: Theme.colorPanelEdge
         }
 
         MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }

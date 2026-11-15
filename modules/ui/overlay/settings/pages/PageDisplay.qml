@@ -21,7 +21,6 @@ SettingsPage
     SettingsGroup
     {
         title: Tr.tr("settings.display.nightLight")
-        subtitle: Tr.tr("settings.display.nightLightHint")
 
         SettingsRow
         {

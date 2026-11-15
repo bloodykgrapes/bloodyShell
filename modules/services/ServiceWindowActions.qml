@@ -107,6 +107,21 @@ Singleton
             || best[0].window;
     }
 
+    function notificationWindow(notification)
+    {
+        if (!notification) return null;
+        const matches = ServiceCompositor.windowList.filter(window =>
+            window.app_id && ServiceApplications.notificationFrom(notification, window.app_id));
+        if (matches.length === 0) return null;
+
+        const desktopId = String(notification.desktopEntry || "").toLowerCase().replace(/\.desktop$/, "");
+        const exact = matches.filter(window => String(window.app_id).toLowerCase().replace(/\.desktop$/, "") === desktopId);
+        const candidates = exact.length > 0 ? exact : matches;
+        return candidates.find(window => lastFocused[AppIdentity.appKey(window)] === window.id)
+            || candidates.find(window => window.is_focused === true)
+            || candidates[0];
+    }
+
     function activateTrayItem(item)
     {
         if (!item) return "none";

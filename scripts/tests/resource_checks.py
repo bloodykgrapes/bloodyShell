@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import runpy
 import shutil
+import signal
 import subprocess
 import tarfile
 import tempfile
@@ -25,10 +26,11 @@ def checks():
         home = base / "home"
         config = base / "config"
         source = base / "source"
-        images = source / "dots/wallpapers"
+        images = source / "images"
         images.mkdir(parents=True)
         (images / "one.png").write_bytes(b"bundled image")
         (images / "two.jpg").write_bytes(b"second image")
+        (images / "three.JFIF").write_bytes(b"jpeg image")
         (images / "readme.txt").write_text("not an image")
         personal = home / "Pictures/Wallpapers"
         personal.mkdir(parents=True)
@@ -37,9 +39,11 @@ def checks():
         settings.parent.mkdir(parents=True)
         original = dict(configVersion=1, wallpaperDirectory=str(images), wallpaperCurrent=str(images / "one.png"), custom="kept")
         settings.write_text(json.dumps(original))
-        with patch.dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(config), XDG_STATE_HOME=str(base / "state")), patch.dict(scope, ROOT=source):
+        with patch.dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(config), XDG_STATE_HOME=str(base / "state")), patch.dict(scope, ROOT=source, download=lambda *args: json.dumps(dict(tree=[dict(type="blob", path="images/repo.png")]))):
             result = api["import_wallpapers"](images)
-            assert result["imported"] == 2
+            assert result["imported"] == 3
+            assert (personal / "three.JFIF").read_bytes() == b"jpeg image"
+            assert api["wallpaper_file"](personal / "three.JFIF") == personal / "three.JFIF"
             assert (personal / "one.png").read_bytes() == b"personal image"
             assert (personal / "one-bloodyShell.png").read_bytes() == b"bundled image"
             assert json.loads(settings.read_text()) == original, "Import must preserve shell settings"
@@ -81,8 +85,8 @@ def checks():
             (source / "dots/sddm").mkdir()
             (source / "dots/sddm/Main.qml").write_text("login theme stays separate")
             catalog = api["status"]()
-            assert [entry["id"] for entry in catalog["entries"]] == ["compositor", "dots", "greeter", "wallpapers", "cli"]
-            assert catalog["entries"][1]["programs"] == ["fastfetch", "gtk-3.0", "gtk-4.0", "kitty"]
+            assert [entry["id"] for entry in catalog["entries"]] == ["greeter", "compositor", "dots", "wallpapers"]
+            assert next(entry for entry in catalog["entries"] if entry["id"] == "dots")["programs"] == ["fastfetch", "gtk-3.0", "gtk-4.0", "kitty"]
             installed_niri = config / "niri"
             installed_niri.mkdir()
             (installed_niri / "config.kdl").write_text("personal compositor")
@@ -95,12 +99,14 @@ def checks():
             assert (installed_niri / "config.kdl").read_text() == "personal compositor", "Dots imported compositor settings"
             original_import = api["import_config"]
             before_group = (config / "fastfetch/config.jsonc").read_text()
+            original_inode = (config / "fastfetch").stat().st_ino
+            existing_backups = set((base / "state").rglob("*-import-*"))
             (other / "config.jsonc").write_text("would be rolled back")
-            def failing_import(folder, name):
+            def failing_import(folder, name, transaction=None):
                 if name == "kitty":
                     raise OSError("fixture import failed")
-                return original_import(folder, name)
-            with patch.dict(scope, import_config=failing_import):
+                return original_import(folder, name, transaction)
+            with patch.dict(scope, import_config=failing_import), patch("shutil.move", side_effect=AssertionError("Rollback must use local originals")):
                 try:
                     api["import_resource"]("dots")
                 except OSError:
@@ -108,6 +114,19 @@ def checks():
                 else:
                     raise AssertionError("Grouped import failure was ignored")
             assert (config / "fastfetch/config.jsonc").read_text() == before_group, "Grouped import left a partial replacement"
+            assert (config / "fastfetch").stat().st_ino == original_inode, "Rollback copied an old backup instead of restoring the original folder"
+            assert set((base / "state").rglob("*-import-*")) == existing_backups, "Failed group left backup files"
+            assert not list(config.glob(".bloodyShell-*")), "Failed group left staging folders"
+            for names in (["fastfetch", "missing"], ["fastfetch", "../bad"], ["fastfetch", "niri"]):
+                try:
+                    api["import_resource"]("dots", names=names)
+                except ValueError:
+                    pass
+                else:
+                    raise AssertionError("Invalid configs list was accepted")
+                assert (config / "fastfetch").stat().st_ino == original_inode, "Names must be validated before any config is changed"
+            subset = api["import_resource"]("dots", names=["fastfetch", "fastfetch"])
+            assert len(subset["imports"]) == 1 and (config / "fastfetch/config.jsonc").read_text() == "would be rolled back"
             for name in ("dots/../bad", "dots/..", "dots/", "unknown", "dots/a/b", "dots/niri", "dots/sddm", "dots/wallpapers"):
                 try:
                     api["resource_path"](name)
@@ -118,22 +137,36 @@ def checks():
 
             installed = base / "installed"
             installed.mkdir()
-            (installed / "setup").write_text('test "$1" = sddm && test -f "$BLOODYSHELL_RESOURCE_DIR/dots/sddm/Main.qml"\nprintf "%s" "$BLOODYSHELL_RESOURCE_DIR" > "$HOME/greeter-source"\n')
+            (installed / "scripts/lib").mkdir(parents=True)
+            (installed / "scripts/lib/system.sh").write_text('test -f "$BLOODYSHELL_RESOURCE_DIR/dots/sddm/Main.qml"\nprintf "%s" "$BLOODYSHELL_RESOURCE_DIR" > "$HOME/greeter-source"\n')
             archive = base / "repository.tar.gz"
             with tarfile.open(archive, "w:gz") as package:
-                for name, text in (("dots/sddm/Main.qml", "greeter"), ("dots/config/kitty/kitty.conf", "remote config"), ("dots/wallpapers/repo.png", "remote wallpaper"), ("outside/unused", "unused")):
+                for name, text in (("dots/sddm/Main.qml", "greeter"), ("dots/config/kitty/kitty.conf", "remote config"), ("outside/unused", "unused")):
                     member = tarfile.TarInfo("repository-main/" + name)
                     contents = text.encode()
                     member.size = len(contents)
                     member.mode = 0o644
                     package.addfile(member, io.BytesIO(contents))
 
+            wallpaper_archive = base / "wallpapers.tar.gz"
+            with tarfile.open(wallpaper_archive, "w:gz") as package:
+                member = tarfile.TarInfo("wallpapers-main/images/repo.png")
+                contents = b"remote wallpaper"
+                member.size = len(contents)
+                package.addfile(member, io.BytesIO(contents))
+            downloads = []
+
             def download(url, target=None):
+                downloads.append(url)
+                wallpapers = "/" + api["WALLPAPERS_REPO"] + "/" in url
                 if target:
-                    shutil.copyfile(archive, target)
+                    expected = f"https://github.com/{api['WALLPAPERS_REPO']}/archive/refs/heads/main.tar.gz" if wallpapers else f"https://github.com/{api['REPO']}/archive/refs/tags/{api['REF']}.tar.gz"
+                    assert url == expected, url
+                    shutil.copyfile(wallpaper_archive if wallpapers else archive, target)
                 else:
-                    assert "/contents/dots/config?ref=" in url, url
-                    return json.dumps([dict(type="dir", name="kitty"), dict(type="file", name="ignored")])
+                    assert "/git/trees/" in url and "recursive=1" in url, url
+                    names = ["images/repo.png"] if wallpapers else ["dots/config/kitty/kitty.conf", "dots/sddm/Main.qml"]
+                    return json.dumps(dict(tree=[dict(type="blob", path=name) for name in names]))
 
             with patch.dict(scope, ROOT=installed, download=download):
                 assert api["programs"]() == ["kitty"]
@@ -142,10 +175,25 @@ def checks():
                 assert (Path(remote["backup"]) / "kitty.conf").read_text() == "new config"
                 api["import_resource"]("wallpapers")
                 assert (personal / "repo.png").read_text() == "remote wallpaper"
+                assert downloads[-1] == "https://github.com/" + api["WALLPAPERS_REPO"] + "/archive/refs/heads/main.tar.gz", "Wallpapers used the shell release archive"
                 api["import_resource"]("greeter")
                 assert (home / "greeter-source").read_text()
                 assert not Path((home / "greeter-source").read_text()).exists(), "Temporary repository files were not cleaned up"
                 assert not list(base.rglob("unused"))
+                before_images = {path: path.read_bytes() for path in personal.rglob("*") if path.is_file()}
+                for name, kind in (("images/../escape.png", tarfile.REGTYPE), ("images/link.png", tarfile.SYMTYPE)):
+                    with tarfile.open(wallpaper_archive, "w:gz") as package:
+                        member = tarfile.TarInfo("wallpapers-main/" + name)
+                        member.type = kind
+                        member.linkname = "/tmp/escape"
+                        package.addfile(member)
+                    try:
+                        api["import_resource"]("wallpapers")
+                    except ValueError:
+                        pass
+                    else:
+                        raise AssertionError("Unsafe wallpaper archive was accepted")
+                    assert before_images == {path: path.read_bytes() for path in personal.rglob("*") if path.is_file()}, "Rejected wallpaper archive changed personal images"
                 for unsafe, kind in (("repository-main/dots/config/kitty/../../escape", tarfile.REGTYPE), ("repository-main/dots/config/kitty/link", tarfile.SYMTYPE)):
                     with tarfile.open(archive, "w:gz") as package:
                         member = tarfile.TarInfo(unsafe)
@@ -160,6 +208,64 @@ def checks():
                         raise AssertionError("Unsafe archive was accepted")
             assert (personal / "one.png").read_bytes() == b"personal image"
     print("Wallpaper imports, collision handling, repeated imports, unchanged settings, dotfile backups, remote imports and archive checks passed without changing user files.")
+
+
+def availability_checks():
+    api = runpy.run_path(str(ROOT / "scripts/lib/resources.py"))
+    scope = api["status"].__globals__
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-import-source-") as temporary:
+        base = Path(temporary)
+        source, installed = base / "source folder", base / "installed"
+        files = {"version": api["VERSION"], "shell.qml": "fixture", "dots/config/kitty/kitty.conf": "config",
+                 "dots/niri/config.kdl": "compositor", "dots/sddm/Main.qml": "greeter"}
+        for name, value in files.items():
+            path = source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(value)
+        shutil.copytree(ROOT / "dots/niri", source / "dots/niri", dirs_exist_ok=True)
+        for name in api["GREETER_FILES"]:
+            (source / "dots/sddm" / name).write_text("greeter fixture")
+        (installed / "scripts").mkdir(parents=True)
+        (installed / "scripts/bloodyShell").write_text("fixture")
+        env = dict(HOME=str(base / "home"), XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(base / "state"),
+                   XDG_BIN_HOME=str(base / "bin"), XDG_RUNTIME_DIR=str(base / "runtime"))
+        calls = []
+        def remote(url, destination=None):
+            calls.append((url, destination))
+            assert destination is None, "Listing resources downloaded an archive"
+            paths = ["images/video.webm"] if api["WALLPAPERS_REPO"] in url else ["dots/config/kitty/kitty.conf"]
+            return json.dumps(dict(tree=[dict(type="blob", path=name) for name in paths]))
+        with patch.dict(os.environ, env):
+            with patch.dict(scope, ROOT=source, download=remote):
+                catalog = api["resource_catalog"]()
+                assert catalog["error"] == "" and all(catalog["available"].values())
+                assert len(calls) == 1 and api["WALLPAPERS_REPO"] in calls[0][0]
+                with patch.dict(scope, download=lambda *args: (_ for _ in ()).throw(AssertionError("Local application listing used the network"))):
+                    assert api["programs"]() == ["kitty"]
+            calls.clear()
+            with patch.dict(scope, ROOT=installed, download=remote):
+                catalog = api["status"]()
+            entries = {entry["id"]: entry for entry in catalog["entries"]}
+            assert len(calls) == 2 and "/git/trees/" + api["REF"] in calls[0][0]
+            assert api["WALLPAPERS_REPO"] + "/git/trees/main?recursive=1" in calls[1][0]
+            assert "cli" not in entries and entries["dots"]["available"] and entries["wallpapers"]["available"]
+            assert not any(entries[name]["available"] for name in ("greeter", "compositor")) and catalog["error"]
+            with patch.dict(scope, ROOT=source, download=lambda *args: (_ for _ in ()).throw(RuntimeError("repository unavailable"))):
+                unavailable = api["resource_catalog"]()
+            assert not unavailable["available"]["wallpapers"] and all(unavailable["available"][name] for name in ("dots", "greeter", "compositor"))
+            assert "Wallpapers:" in unavailable["error"], "Wallpaper failure hid independent shell resources"
+            def missing_shell(url, destination=None):
+                if api["WALLPAPERS_REPO"] not in url:
+                    raise RuntimeError("release unavailable")
+                return remote(url, destination)
+            with patch.dict(scope, ROOT=installed, download=missing_shell):
+                unavailable = api["resource_catalog"]()
+            assert unavailable["available"]["wallpapers"] and not any(unavailable["available"][name] for name in ("dots", "greeter", "compositor"))
+            for response in (dict(tree=[], truncated=True), dict(tree=[]), dict(tree=[dict(type="blob", mode="120000", path="images/link.png")])):
+                with patch.dict(scope, ROOT=source, download=lambda *args: json.dumps(response)):
+                    unavailable = api["resource_catalog"]()
+                assert not unavailable["available"]["wallpapers"] and unavailable["error"]
+    print("Independent wallpaper repository availability, lightweight catalogs, pinned shell releases, local configs and isolated failures passed.")
 
 
 def cli_checks():
@@ -192,18 +298,22 @@ def cli_checks():
             assert list((state / "bloodyShell/backups").glob("cli-*/launcher/command")), "Replaced command was not backed up"
             assert (home / ".bashrc").read_text().count("# >>> bloodyShell PATH >>>") == 1
             catalog = runpy.run_path(str(ROOT / "scripts/lib/resources.py"))["status"]()
-            assert catalog["entries"][-1]["id"] == "cli" and catalog["entries"][-1]["destination"] == str(command)
+            assert all(entry["id"] != "cli" for entry in catalog["entries"])
             resources = runpy.run_path(str(ROOT / "scripts/lib/resources.py"))
-            def unavailable_programs():
+            def unavailable_catalog():
                 raise RuntimeError("Repository unavailable")
-            with patch.dict(resources["status"].__globals__, programs=unavailable_programs):
+            with patch.dict(resources["status"].__globals__, resource_catalog=unavailable_catalog):
                 offline = resources["status"]()
-            assert offline["error"] == "Repository unavailable" and offline["entries"][1]["programs"] == []
-            assert offline["entries"][-1]["id"] == "cli", "Repository failure hid local CLI refresh"
+            assert offline["error"] == "Repository unavailable" and next(entry for entry in offline["entries"] if entry["id"] == "dots")["programs"] == []
+            assert all(not entry["available"] for entry in offline["entries"])
             repeated = management["refresh_command"]()
             assert not repeated["changed"] and not repeated["backups"], "Repeated refresh rewrote an unchanged command"
             command.write_bytes(command.read_bytes() + b"\n# User edit\n")
             edited = command.read_bytes()
+            with management["operation_lock"]():
+                blocked = subprocess.run(["bash", str(ROOT / "setup"), "cli"], env=env, capture_output=True, text=True, timeout=5)
+                assert blocked.returncode != 0 and "in progress" in blocked.stderr.lower(), blocked.stdout + blocked.stderr
+                assert command.read_bytes() == edited, "CLI refresh bypassed the operation lock"
             updated = management["refresh_command"]()
             assert updated["changed"] and command.read_bytes() == (ROOT / "scripts/bloodyShell").read_bytes()
             assert any(Path(path).read_bytes() == edited for path in updated["backups"]), "Edited CLI was not backed up"
@@ -211,6 +321,60 @@ def cli_checks():
             repaired = management["refresh_command"]()
             assert repaired["changed"] and command.read_bytes() == (ROOT / "scripts/bloodyShell").read_bytes()
     print("CLI refresh passed: checkout source, custom command directory, PATH, backups, unchanged runtime, no tracking records, idempotence, backup of user edits and missing-command repair.")
+
+
+def clear_checks():
+    resources = runpy.run_path(str(ROOT / "scripts/lib/resources.py"))
+    management = runpy.run_path(str(ROOT / "scripts/lib/management.py"))
+    scope = management["clear_greeter"].__globals__
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-clear-resources-") as temporary:
+        base = Path(temporary)
+        home = base / "home"
+        home.mkdir()
+        theme, dropin, shared = base / "themes/bloodyShell", base / "sddm.conf.d/zz-bloodyShell.conf", base / "shared/bloodyShell"
+        other = base / "sddm.conf.d/personal.conf"
+        other.parent.mkdir(parents=True)
+        other.write_text("personal login configuration")
+        calls = []
+        def install_fixture():
+            theme.mkdir(parents=True, exist_ok=True)
+            (theme / "Main.qml").write_text("theme")
+            dropin.write_text("shell login configuration")
+            shared.mkdir(parents=True, exist_ok=True)
+            (shared / "wallpaper.png").write_text("exported image")
+        def sudo(args, **kwargs):
+            assert args[:4] == ["sudo", "rm", "-rf", "--"], args
+            assert set(args[4:]) == {str(theme), str(dropin), str(shared)}, args
+            calls.append(args)
+            for name in args[4:]:
+                management["remove_path"](Path(name))
+            return subprocess.CompletedProcess(args, 0)
+        env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(home / "config"), XDG_STATE_HOME=str(home / "state"), XDG_BIN_HOME=str(home / "bin"))
+        with patch.dict(os.environ, env, clear=True), patch.dict(scope, SDDM_THEME=theme, SDDM_CONFIG=dropin, SDDM_STATE=shared):
+            install_fixture()
+            with patch("runpy.run_path", return_value=management), patch("subprocess.run", side_effect=sudo):
+                cleared = resources["clear_resource"]("greeter")
+                assert cleared["destination"] == str(theme) and len(cleared["removed"]) == 3
+                assert not theme.exists() and not dropin.exists() and not shared.exists()
+                assert not resources["clear_resource"]("greeter")["removed"] and len(calls) == 1
+            assert other.read_text() == "personal login configuration"
+            install_fixture()
+            with patch("runpy.run_path", return_value=management), patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, ["sudo"])):
+                try:
+                    resources["clear_resource"]("greeter")
+                except subprocess.CalledProcessError:
+                    pass
+                else:
+                    raise AssertionError("Failed administrator authorization succeeded")
+            assert theme.exists() and dropin.exists() and shared.exists()
+            for resource in ("cli", "compositor", "dots", "wallpapers", "dots/kitty", "../cli", "unknown"):
+                try:
+                    resources["clear_resource"](resource)
+                except ValueError:
+                    pass
+                else:
+                    raise AssertionError("Unsupported resource was cleared: " + resource)
+    print("Resource clear passed: fixed SDDM paths, preserved personal files, authorization failure, idempotence and rejected config/wallpaper clearing; no actual sudo command ran.")
 
 
 def file_checks():
@@ -303,8 +467,57 @@ def backend_checks():
     print("Backend file checks passed: validated writes, immediate rollback, no tracking records, removed tracking commands, private temporary files and child-process cleanup.")
 
 
+def cancellation_checks():
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-cancellation-") as temporary:
+        base = Path(temporary)
+        worker, runner = base / "worker.py", base / "runner.py"
+        worker.write_text('''import os, subprocess, sys, time
+from pathlib import Path
+base = Path(sys.argv[1])
+code = "import os, signal, sys, time; from pathlib import Path; signal.signal(signal.SIGTERM, signal.SIG_IGN); Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)"
+subprocess.Popen([sys.executable, "-c", code, str(base / "child")])
+(base / "worker").write_text(str(os.getpid()))
+while True: time.sleep(1)
+''')
+        runner.write_text(f'''import runpy, subprocess, sys
+files = runpy.run_path({str(ROOT / "scripts/lib/files.py")!r})
+with files["operation_signals"]():
+    files["run"]([sys.executable, {str(worker)!r}, sys.argv[1]], capture_output=True, timeout=0.5 if len(sys.argv) > 2 else 60)
+''')
+        for sig in (signal.SIGTERM, signal.SIGHUP, None):
+            case = base / (sig.name if sig is not None else "timeout")
+            case.mkdir()
+            command = [sys.executable, str(runner), str(case)] + (["timeout"] if sig is None else [])
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            try:
+                deadline = time.monotonic() + 4
+                while not (case / "child").exists() or not (case / "worker").exists():
+                    assert process.poll() is None and time.monotonic() < deadline, "Worker did not start"
+                    time.sleep(0.01)
+                if sig is not None:
+                    process.send_signal(sig)
+                output, error = process.communicate(timeout=6)
+                assert process.returncode == 128 + sig if sig is not None else "TimeoutExpired" in error, output + error
+                for name in ("worker", "child"):
+                    stat = Path("/proc", (case / name).read_text(), "stat")
+                    assert not stat.exists() or stat.read_text().rsplit(")", 1)[1].split()[0] == "Z", "Cancellation left a worker running"
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate(timeout=3)
+                if (case / "worker").exists():
+                    try:
+                        os.killpg(int((case / "worker").read_text()), signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+    print("Managed workers stop on SIGTERM, terminal hangup and timeout, including children that ignore SIGTERM.")
+
+
 if __name__ == "__main__":
     checks()
+    availability_checks()
     cli_checks()
+    clear_checks()
     file_checks()
     backend_checks()
+    cancellation_checks()

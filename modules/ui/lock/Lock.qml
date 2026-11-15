@@ -1,243 +1,94 @@
 import QtQuick
 import QtQuick.Window
-import Quickshell.Widgets
 
-import "../../common"
+import "../../animations"
 import "../../core"
 import "../../services"
 import "components"
-import "../keyboard"
 
-Item
+FocusScope
 {
     id: lock
-
-    property real intro: Config.animationsEnabled ? 0 : 1
-    readonly property real introBack: Config.animationsEnabled ? intro : 1
-    readonly property bool keyboardOpened: Config.virtualKeyboardEnabled && ServiceVirtualKeyboard.visible && ServiceVirtualKeyboard.output === (lock.Window.window && lock.Window.window.screen ? lock.Window.window.screen.name : "")
-    property real keyboardReveal: keyboardOpened ? 1 : 0
-    Behavior on keyboardReveal { enabled: Config.animationsEnabled; NumberAnimation { duration: Theme.animationDurationControl; easing.type: Easing.OutCubic } }
-
-    NumberAnimation
+    focus: true
+    readonly property bool shown: visible && (!Window.window || Window.window.visible)
+    readonly property bool keyboardOpened: prompt.keyboardOpened
+    property real promptProgress: ServiceLock.promptVisible ? 1 : 0
+    readonly property real promptReveal: Config.animationsEnabled ? promptProgress : ServiceLock.promptVisible ? 1 : 0
+    Ease on promptProgress
     {
-        id: introAnim
-        target: lock; property: "intro"; from: 0; to: 1
-        duration: Config.animationsFluid ? 800 : 360
-        easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized
+        enabled: Config.animationsEnabled && lock.shown
+        duration: Config.animationsFluid ? 460 : 280
     }
-    Component.onCompleted: if (Config.animationsEnabled) introAnim.start()
 
     property real outro: ServiceLock.leaving ? 1 : 0
-    Behavior on outro { enabled: Config.animationsEnabled; NumberAnimation { duration: ServiceLock.unlockDuration; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingAccelerate } }
+    Behavior on outro
+    {
+        enabled: Config.animationsEnabled && lock.shown
+        NumberAnimation
+        {
+            duration: ServiceLock.unlockDuration
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Theme.easingAccelerate
+        }
+    }
     readonly property real leave: Config.animationsEnabled ? outro : ServiceLock.leaving ? 1 : 0
 
-    LockBackdrop { anchors.fill: parent; appear: lock.introBack; leave: lock.leave }
+    function showPrompt(text = "")
+    {
+        ServiceLock.showPrompt();
+        if (!ServiceLock.promptVisible) return;
+        prompt.focusInput();
+        if (text) prompt.insertText(text);
+    }
 
+    function focusOverview()
+    {
+        if (shown && Window.window && !ServiceLock.promptVisible) forceActiveFocus();
+    }
+
+    Component.onCompleted: Qt.callLater(focusOverview)
+    onVisibleChanged: if (visible) Qt.callLater(focusOverview)
     Connections
     {
-        target: Config
-        function onAnimationsEnabledChanged()
+        target: ServiceLock
+        function onPromptVisibleChanged()
         {
-            if (Config.animationsEnabled) return;
-            introAnim.stop();
-            lock.intro = 1;
-            shake.stop();
-            unlockShift.x = 0;
+            if (!ServiceLock.promptVisible)
+            {
+                ServiceVirtualKeyboard.hide();
+                lock.focusOverview();
+            }
         }
     }
-
-    MouseArea { anchors.fill: parent; onClicked: field.focusInput() }
-
-    Item
+    Keys.onPressed: event =>
     {
-        id: contentArea
-        anchors { left: parent.left; right: parent.right; top: parent.top; bottom: footer.top; margins: 28 }
+        if (ServiceLock.leaving || ServiceLock.preparingForSleep) { event.accepted = true; return; }
+        if (!ServiceLock.promptVisible)
+        {
+            if (event.key === Qt.Key_Escape) { event.accepted = true; return; }
+            if ([Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt, Qt.Key_Meta].includes(event.key)) return;
+            const text = !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+                && event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter ? event.text : "";
+            showPrompt(text);
+        }
+        else if (event.key === Qt.Key_Escape) ServiceLock.hidePrompt();
+        else return;
+        event.accepted = true;
+    }
+
+    LockBackdrop { anchors.fill: parent; leave: lock.leave; promptReveal: lock.promptReveal }
+    LockOverview { anchors.fill: parent; dismiss: lock.promptReveal }
+    MouseArea
+    {
+        objectName: "lockWakeArea"
+        anchors.fill: parent
+        acceptedButtons: Qt.AllButtons
         enabled: !ServiceLock.leaving && !ServiceLock.preparingForSleep
-
-        Column
-        {
-            id: content
-            objectName: "lockContent"
-            anchors.centerIn: parent
-            width: 380
-            spacing: 28
-            scale: Math.max(0.1, Math.min(1, contentArea.width / width, contentArea.height / implicitHeight))
-
-            LockReveal
-            {
-                objectName: "lockClockReveal"
-                LockClock { width: parent.width }
-            }
-
-            Column
-            {
-                id: unlock
-
-                anchors.horizontalCenter: parent.horizontalCenter
-                width: parent.width
-                spacing: 14
-
-                SequentialAnimation
-                {
-                    id: shake
-                    NumberAnimation { target: unlockShift; property: "x"; to: -6; duration: Config.animationsFluid ? 75 : 50; easing.type: Easing.InOutQuad }
-                    NumberAnimation { target: unlockShift; property: "x"; to: 5;  duration: Config.animationsFluid ? 70 : 50 }
-                    NumberAnimation { target: unlockShift; property: "x"; to: -3; duration: Config.animationsFluid ? 60 : 40 }
-                    NumberAnimation { target: unlockShift; property: "x"; to: 0;  duration: Config.animationsFluid ? 65 : 40 }
-                }
-                Connections
-                {
-                    target: ServiceLock
-                    function onFailuresChanged()
-                    {
-                        if (ServiceLock.failures === 0) return;
-                        field.clear();
-                        field.focusInput();
-                        if (Config.animationsEnabled) shake.restart();
-                    }
-                }
-
-                LockReveal
-                {
-                    order: 1
-                    spacing: 14
-
-                    Item
-                    {
-                        width: parent.width
-                        height: avatar.height
-
-                        LockShadow { target: avatar }
-
-                        ClippingRectangle
-                        {
-                            id: avatar
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            width: 88
-                            height: width
-                            radius: width / 2
-                            color: "transparent"
-                            border.width: 1
-                            border.color: Theme.lockSurfaceEdge
-
-                            LockSurface { anchors.fill: parent; radius: avatar.radius; edge: false }
-                            Image
-                            {
-                                anchors.centerIn: parent
-                                visible: face.status !== Image.Ready
-                                source: Icon.user
-                                width: Math.round(avatar.width * 0.42)
-                                height: width
-                                sourceSize: Qt.size(width * 2, height * 2)
-                            }
-                            Image
-                            {
-                                id: face
-                                anchors.fill: parent
-                                source: ServiceUser.avatar !== "" ? "file://" + ServiceUser.avatar : ""
-                                sourceSize: Qt.size(208, 208)
-                                fillMode: Image.PreserveAspectCrop
-                                asynchronous: true
-                                cache: false
-                            }
-                        }
-                    }
-
-                    ShellText
-                    {
-                        width: parent.width
-                        horizontalAlignment: Text.AlignHCenter
-                        label: ServiceUser.fullName !== "" ? ServiceUser.fullName : ServiceUser.user
-                        size: 20
-                        color: Theme.lockText1
-                        font.weight: Font.DemiBold
-                        layer.enabled: true
-                        layer.effect: LockTextShadow {}
-                    }
-                }
-
-                LockReveal
-                {
-                    objectName: "lockPasswordReveal"
-                    order: 2
-
-                    LockPasswordField
-                    {
-                        id: field
-                        transform: Translate { id: unlockShift }
-                        width: parent.width
-                        busy: ServiceLock.checking
-                        failed: ServiceLock.failed
-                        closed: ServiceLock.leaving || ServiceLock.preparingForSleep
-                        onSubmitted: password => ServiceLock.submit(password)
-                        onEdited: ServiceLock.failed = false
-                    }
-                }
-
-                Column
-                {
-                    width: parent.width
-                    spacing: 12
-                    visible: ServiceMedia.available || (Config.lockNotifications && ServiceNotifications.count > 0)
-
-                    LockReveal
-                    {
-                        order: 3
-                        visible: ServiceMedia.available
-                        LockMedia { width: parent.width }
-                    }
-                    LockReveal
-                    {
-                        order: 4
-                        visible: Config.lockNotifications && notifications.count > 0
-                        LockNotifications { id: notifications; width: parent.width }
-                    }
-                }
-            }
-        }
+        Accessible.ignored: ServiceLock.promptVisible
+        Accessible.role: Accessible.Button
+        Accessible.name: Tr.tr("lock.unlockHint")
+        Accessible.onPressAction: lock.showPrompt()
+        onClicked: lock.showPrompt()
     }
-
-    LockReveal
-    {
-        id: footer
-        objectName: "lockFooter"
-        anchors { right: parent.right; bottom: parent.bottom; margins: 28; bottomMargin: 28 + (keyboardContent.height + 20) * lock.keyboardReveal }
-        width: actions.implicitWidth
-        order: 5
-        enabled: !ServiceLock.leaving && !ServiceLock.preparingForSleep
-
-        Row
-        {
-            id: actions
-            spacing: 8
-
-            LockButton
-            {
-                objectName: "lockKeyboardButton"
-                visible: Config.virtualKeyboardEnabled
-                icon: Icon.keyboard; label: Tr.tr("keyboard.title")
-                onClicked:
-                {
-                    ServiceVirtualKeyboard.toggle(lock.Window.window && lock.Window.window.screen ? lock.Window.window.screen.name : "");
-                    field.focusInput();
-                }
-            }
-            LockButton { icon: Icon.computerSleep;    label: Tr.tr("power.sleep"); onClicked: ServicePower.run("suspend") }
-            LockButton { icon: Icon.computerReboot;   label: Tr.tr("power.restart"); onClicked: ServicePower.run("reboot") }
-            LockButton { icon: Icon.computerPowerOff; label: Tr.tr("power.shutDown"); onClicked: ServicePower.run("poweroff") }
-        }
-    }
-
-    Loader
-    {
-        id: keyboardContent
-        active: Config.virtualKeyboardEnabled
-        visible: lock.keyboardReveal > 0.001
-        anchors.horizontalCenter: parent.horizontalCenter
-        width: Math.max(1, Math.min(840, lock.width - 32))
-        height: item ? item.implicitHeight : 0
-        y: lock.height - (height + 16) * lock.keyboardReveal
-        opacity: lock.keyboardReveal
-        sourceComponent: KeyboardContent { enabled: lock.keyboardOpened && !ServiceLock.checking && !ServiceLock.leaving && !ServiceLock.preparingForSleep }
-    }
+    LockPrompt { id: prompt; anchors.fill: parent; reveal: lock.promptReveal; leave: lock.leave }
 }

@@ -30,7 +30,7 @@ Singleton
 
     function allowed(type)
     {
-        if (!Config.osdEnabled) return false;
+        if (!Config.islandEnabled) return false;
 
         switch (type)
         {
@@ -50,6 +50,12 @@ Singleton
     readonly property bool typeAllowed: allowed(type)
     onTypeAllowedChanged: if (active && !forced && !typeAllowed) hide()
 
+    Connections
+    {
+        target: Config
+        function onIslandEnabledChanged() { if (!Config.islandEnabled) osd.hide() }
+    }
+
     function hide()
     {
         hideTimer.stop();
@@ -59,7 +65,7 @@ Singleton
     function show(type, icon, text, value, dim, force, detail, context, timeoutOverride)
     {
         if (!armed && !force) return;
-        if (!(force ? Config.osdEnabled : allowed(type))) return;
+        if (!(force ? Config.islandEnabled : allowed(type))) return;
 
         osd.forced = force === true;
         osd.type = type;

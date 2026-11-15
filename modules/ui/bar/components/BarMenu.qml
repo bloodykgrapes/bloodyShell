@@ -22,7 +22,6 @@ Item
     readonly property real contentWidth: front.item ? front.item.implicitWidth : 0
     readonly property bool centerOnWidget: front.item && front.item.centerOnWidget === true
 
-    property bool   pending: false
     property bool   useB: false
     property string url: ""
     readonly property var front: useB ? slotB : slotA
@@ -91,19 +90,14 @@ Item
 
     function schedule()
     {
-        if (pending) return;
-        pending = true;
-
-        Qt.callLater(function()
-        {
-            pending = false;
-            sync();
-        });
+        syncTimer.restart();
     }
 
     onActiveChanged:       schedule()
     onMenuChanged:         schedule()
     Component.onCompleted: schedule()
+
+    Timer { id: syncTimer; interval: 0; onTriggered: barMenu.sync() }
 
     Timer
     {

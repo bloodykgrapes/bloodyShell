@@ -58,6 +58,7 @@ Item
                 label: settingsRow.label
                 wrapMode: Text.Wrap
                 size: 13
+                font.weight: Font.Medium
                 color: Theme.text1
             }
 
@@ -89,7 +90,7 @@ Item
         {
             width: parent.width
             label: settingsRow.description
-            size: 11
+            size: 12
             color: Theme.text3
             wrapMode: Text.Wrap
         }

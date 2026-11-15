@@ -320,7 +320,7 @@ Singleton
         add(appId);
         add(appId.split(".").pop());
         const entry = findEntry(appId);
-        if (entry) { add(entry.id); add(entry.name); }
+        if (entry) { add(entry.id); add(entry.name); add(entry.startupClass); }
 
         return remember(tokenCache, appId, out, 128);
     }

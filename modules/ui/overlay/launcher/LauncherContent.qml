@@ -45,7 +45,7 @@ Rectangle
     radius: Theme.launcherRadius
     color: Theme.colorSolid
     border.width: 1
-    border.color: Theme.colorHairline
+    border.color: Theme.colorPanelEdge
     clip: true
 
     function hide() { OverlayState.hide("launcher") }
@@ -129,7 +129,7 @@ Rectangle
         radius: Theme.radiusLarge
         color: Theme.colorField
         border.width: 1
-        border.color: input.activeFocus ? Qt.rgba(Theme.colorAccent.r, Theme.colorAccent.g, Theme.colorAccent.b, 0.32) : "transparent"
+        border.color: input.activeFocus ? Theme.colorFocus : Theme.colorHairline
         Tint on border.color {}
 
         ShellIcon
@@ -261,7 +261,11 @@ Rectangle
             width: list.width
             height: launcherContent.rowH
             radius: Theme.radiusLarge
-            color: Theme.colorSelection
+            gradient: Gradient
+            {
+                GradientStop { position: 0; color: Qt.tint(Theme.colorSelection, Theme.inkAlpha(0.035)) }
+                GradientStop { position: 1; color: Theme.colorSelection }
+            }
 
             y: list.currentItem ? list.currentItem.y : 0
             Glide on y { enabled: Config.animationsEnabled && !launcherContent.instant && !launcherContent.mouseMode; duration: 240 }
@@ -342,7 +346,7 @@ Rectangle
                     label: launcherContent.marked(row.modelData.name)
                     textFormat: Text.StyledText
                     size: 14
-                    font.weight: Font.Medium
+                    font.weight: row.selected ? Font.DemiBold : Font.Medium
                     color: row.selected ? Theme.text1 : Theme.text2
                     Tint on color {}
                 }
@@ -407,7 +411,7 @@ Rectangle
         width: parent.width - Theme.launcherPadding * 2
         height: launcherContent.footerH
 
-        Rectangle { width: parent.width; height: 1; color: Theme.settingsColorLine }
+        Rectangle { width: parent.width; height: 1; color: Theme.colorHairline }
 
         ShellText
         {

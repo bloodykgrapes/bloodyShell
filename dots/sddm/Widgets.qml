@@ -56,6 +56,89 @@ QtObject
         elide: Text.ElideRight
     }
 
+    component Avatar: Rectangle
+    {
+        id: avatar
+        objectName: "greeterAvatar"
+        property var sources: []
+        readonly property bool ready: portrait.ready
+
+        width: 88
+        height: width
+        radius: width / 2
+        color: Theme.surface
+        border.width: 1
+        border.color: Theme.colorLine
+        onSourcesChanged: picture.attempt = 0
+
+        Image
+        {
+            id: picture
+            objectName: "greeterAvatarImage"
+            property int attempt: 0
+            visible: false
+            source: attempt < avatar.sources.length ? Theme.fileUrl(avatar.sources[attempt]) : ""
+            sourceSize: Qt.size(208, 208)
+            asynchronous: true
+            onSourceChanged: portrait.updateImage()
+            onStatusChanged:
+            {
+                if (status === Image.Error) attempt++;
+                portrait.updateImage();
+            }
+        }
+
+        Canvas
+        {
+            id: portrait
+            anchors { fill: parent; margins: 1 }
+            antialiasing: true
+            property string loadedSource: ""
+            property bool ready: false
+
+            function updateImage()
+            {
+                const next = String(picture.source);
+                if (next !== loadedSource)
+                {
+                    if (loadedSource) unloadImage(loadedSource);
+                    loadedSource = next;
+                }
+                if (next && picture.status === Image.Ready && !isImageLoaded(next) && !isImageLoading(next) && !isImageError(next))
+                    loadImage(next, Qt.size(208, 208));
+                ready = next !== "" && picture.status === Image.Ready && isImageLoaded(next);
+                requestPaint();
+            }
+            onImageLoaded: updateImage()
+            onAvailableChanged: if (available) updateImage()
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onPaint:
+            {
+                const context = getContext("2d");
+                context.reset();
+                if (!ready || picture.implicitWidth <= 0 || picture.implicitHeight <= 0) return;
+                const scale = Math.max(width / picture.implicitWidth, height / picture.implicitHeight);
+                const imageWidth = picture.implicitWidth * scale, imageHeight = picture.implicitHeight * scale;
+                context.beginPath();
+                context.ellipse(0, 0, width, height);
+                context.clip();
+                context.drawImage(loadedSource, (width - imageWidth) / 2, (height - imageHeight) / 2, imageWidth, imageHeight);
+            }
+        }
+
+        Image
+        {
+            objectName: "greeterAvatarPlaceholder"
+            anchors.centerIn: parent
+            visible: !portrait.ready
+            source: Theme.icon("user")
+            width: Math.round(parent.width * 0.42)
+            height: width
+            sourceSize: Qt.size(width * 2, height * 2)
+        }
+    }
+
     component Button: Rectangle
     {
         id: button

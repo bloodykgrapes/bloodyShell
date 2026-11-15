@@ -8,10 +8,11 @@ Column
     id: lockClock
 
     readonly property date now: clock.date
+    property int clockSize: 152
     SystemClock { id: clock; precision: SystemClock.Minutes }
 
     spacing: 0
-    layer.enabled: true
+    layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
     layer.effect: LockTextShadow {}
 
     Text
@@ -21,7 +22,7 @@ Column
         text: { const date = lockClock.now.toLocaleDateString(Tr.locale, "dddd, d MMMM"); return date.charAt(0).toUpperCase() + date.slice(1) }
         color: "#e2e2e7"
         font.family: Theme.fontText
-        font.pixelSize: 16
+        font.pixelSize: 20
         font.weight: Font.Medium
         font.letterSpacing: 0.5
     }
@@ -32,7 +33,7 @@ Column
         text: Qt.formatTime(lockClock.now, Config.barWidgetClock24 ? "HH:mm" : "h:mm")
         color: "#ffffff"
         font.family: Theme.fontText
-        font.pixelSize: 104
+        font.pixelSize: lockClock.clockSize
         font.weight: Font.DemiBold
         font.letterSpacing: -4
     }
@@ -43,7 +44,7 @@ Column
         text: Qt.formatTime(lockClock.now, "AP")
         color: "#e2e2e7"
         font.family: Theme.fontText
-        font.pixelSize: 12
+        font.pixelSize: 14
         font.letterSpacing: 2
     }
 }

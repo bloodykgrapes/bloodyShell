@@ -12,15 +12,17 @@ Item
     property string title: ""
     property bool   hold: false
     property bool   current: false
+    property bool   danger: false
     property int    order: 0
     signal hovered()
     signal triggered()
 
-    readonly property bool pressed: area.pressed
+    readonly property bool pressed: area.pressed || fill.running
+    readonly property color tone: danger ? Theme.colorCritical : Theme.colorAccent
     onEnabledChanged: if (!enabled) release()
 
-    width: 104
-    height: 104
+    width: 112
+    height: 136
 
     property real progress: 0
     readonly property int holdTime: 800
@@ -57,55 +59,80 @@ Item
         }
     }
 
-    Column
+    Rectangle
     {
-        anchors.centerIn: parent
-        spacing: 10
-        scale: powerTile.pressed && !powerTile.hold ? 0.92 : powerTile.current ? 1.06 : 1
+        anchors.fill: parent
+        radius: 22
+        color: Qt.rgba(Theme.text1.r, Theme.text1.g, Theme.text1.b, Theme.light ? 0.045 : 0.055)
+        opacity: powerTile.current ? 0 : 1
+        Smooth on opacity {}
+    }
+
+    Item
+    {
+        anchors.fill: parent
+        scale: powerTile.pressed ? 0.96 : 1
         Spring on scale {}
 
-        ShellIcon
+        Rectangle
         {
+            id: iconPlate
+            anchors.top: parent.top
+            anchors.topMargin: 16
             anchors.horizontalCenter: parent.horizontalCenter
-            icon: powerTile.icon
-            size: 28
-            zoom: 1.1
-            opacity: powerTile.current ? 1 : 0.75
-            Smooth on opacity {}
+            width: 48
+            height: 48
+            radius: 16
+            color: Qt.rgba(powerTile.tone.r, powerTile.tone.g, powerTile.tone.b, powerTile.current ? 0.26 : powerTile.danger ? 0.12 : 0.10)
+            scale: powerTile.current ? 1.08 : 1
+            Spring on scale {}
+            Tint on color {}
+
+            ShellIcon
+            {
+                anchors.centerIn: parent
+                icon: powerTile.icon
+                size: 28
+                zoom: 1.1
+                opacity: powerTile.current ? 1 : 0.85
+                Smooth on opacity {}
+            }
         }
         Item
         {
+            anchors.top: iconPlate.bottom
+            anchors.topMargin: 12
             anchors.horizontalCenter: parent.horizontalCenter
             width: Math.max(0, powerTile.width - 12)
-            height: Math.max(name.implicitHeight, hint.implicitHeight)
+            height: name.implicitHeight + hint.implicitHeight + 4
 
             ShellText
             {
                 id: name
-                anchors.centerIn: parent
+                anchors { top: parent.top; horizontalCenter: parent.horizontalCenter }
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
                 maximumLineCount: 2
                 label: powerTile.title
-                size: 12
-                color: powerTile.current ? Theme.text1 : Theme.text2
-                opacity: hint.opacity > 0.5 ? 0 : 1
-                Smooth on opacity {}
+                size: 13
+                color: powerTile.danger ? Theme.colorCritical : powerTile.current ? Theme.text1 : Theme.text2
+                font.weight: Font.Medium
+                Tint on color {}
             }
 
             ShellText
             {
                 id: hint
-                anchors.centerIn: parent
+                anchors { top: name.bottom; topMargin: 4; horizontalCenter: parent.horizontalCenter }
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
                 maximumLineCount: 2
                 label: Tr.tr("power.hold")
-                size: 12
-                color: Theme.text1
-                opacity: powerTile.hold && powerTile.current ? 1 : 0
+                size: 10
+                color: powerTile.danger ? Theme.colorCritical : Theme.text3
+                opacity: powerTile.hold ? (powerTile.current ? 1 : 0.7) : 0
                 Smooth on opacity {}
             }
         }

@@ -18,6 +18,7 @@ INFO = {"id":"niri", "name":"niri", "resource":"dots/niri", "config":"niri", "co
 
 NIRI_MANAGED = ("00-environment.kdl", "01-layout.kdl", "02-window.kdl", "03-layer.kdl", "04-binds.kdl")
 NIRI_USER = ("05-user.kdl", "06-user-input.kdl", "07-user-output.kdl")
+INFO["files"] = ("config.kdl", *("bloodyShell/" + name for name in (*NIRI_MANAGED, *NIRI_USER)))
 
 
 def niri_write(name, content):

@@ -1,7 +1,6 @@
 import QtQuick
 import "../../../../common" as Common
 import QtQuick.Controls.Basic
-import QtQuick.Effects
 
 import "../../../../animations"
 import "../../../../common"
@@ -116,7 +115,7 @@ Common.InteractiveControl
         radius: Theme.radiusMedium
         color: field.pressed ? Theme.colorPressed : settingsCombo.hovered || settingsCombo.open || settingsCombo.visualFocus ? Theme.colorHoverStrong : Theme.colorField
         border.width: 1
-        border.color: settingsCombo.open || settingsCombo.visualFocus ? Theme.colorAccent : "transparent"
+        border.color: settingsCombo.open || settingsCombo.visualFocus ? Theme.colorFocus : Theme.colorHairline
         Tint on color {}
         Tint on border.color {}
     }
@@ -126,7 +125,8 @@ Common.InteractiveControl
         anchors { left: parent.left; leftMargin: 12; right: chevron.left; rightMargin: 8; verticalCenter: parent.verticalCenter }
         elide: Text.ElideRight
         label: settingsCombo.currentIndex >= 0 ? settingsCombo.labelOf(settingsCombo.options[settingsCombo.currentIndex]) : settingsCombo.placeholderText
-        color: settingsCombo.currentIndex >= 0 ? Theme.text1 : Theme.text4
+        color: settingsCombo.currentIndex >= 0 ? Theme.text1 : Theme.text3
+        size: 13
     }
 
     ShellIcon
@@ -174,6 +174,7 @@ Common.InteractiveControl
         Item
         {
             id: panel
+            objectName: "settingsComboPanel"
 
             readonly property real full: Math.min(list.contentHeight + 10, 320, Math.max(0, drop.height - 16))
             readonly property bool scrollable: list.contentHeight + 10 > full
@@ -203,24 +204,11 @@ Common.InteractiveControl
                 Translate { y: (panel.upward ? 6 : -6) * (1 - panel.shown) }
             ]
 
-            RectangularShadow
+            MenuReveal
             {
-                anchors.fill: card
-                radius: card.radius
-                blur: 24
-                offset.y: 6
-                color: Qt.rgba(0, 0, 0, Theme.light ? 0.18 : 0.45)
-            }
-            Rectangle
-            {
-                id: card
                 anchors.fill: parent
-                radius: Theme.radiusLarge
-                color: Theme.colorSolid
-                border.color: Theme.colorLine
-                border.width: 1
-
-                Rectangle { anchors.fill: parent; anchors.margins: 1; radius: parent.radius - 1; color: Theme.settingsColorCard }
+                progress: 1
+                color: Theme.settingsColorCard
             }
 
             MouseArea { anchors.fill: parent; hoverEnabled: true }

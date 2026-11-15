@@ -16,6 +16,77 @@ Singleton
     property bool   canNtp: true
     property string locale: ""
 
+    readonly property var calendarLocale:
+    {
+        const candidates = [Quickshell.env("LC_ALL"), Quickshell.env("LC_TIME"), Quickshell.env("LANG"), locale];
+        for (const candidate of candidates)
+        {
+            const name = String(candidate || "").split(/[.@]/)[0];
+            // C/POSIX has no region, so continue to the next regional locale.
+            if (!name || ["C", "POSIX"].includes(name.toUpperCase())) continue;
+            const region = Qt.locale(name);
+            if (region.name !== "C") return region;
+        }
+        return Qt.locale();
+    }
+    property var timezoneCountries: ({})
+    property var timezoneAliases: ({})
+    property var weekStarts: ({})
+    readonly property string zoneinfoDirectory: Quickshell.env("TZDIR") || "/usr/share/zoneinfo"
+    readonly property string timezoneCountry:
+    {
+        let zone = timezone;
+        const visited = new Set();
+        while (!timezoneCountries[zone] && timezoneAliases[zone] && !visited.has(zone))
+        {
+            visited.add(zone);
+            zone = timezoneAliases[zone];
+        }
+        return timezoneCountries[zone] || "";
+    }
+    readonly property int firstDayOfWeek: timezoneCountry && weekStarts["001"] !== undefined
+        ? (weekStarts[timezoneCountry] ?? weekStarts["001"]) : calendarLocale.firstDayOfWeek % 7
+
+    FileView
+    {
+        path: serviceRegion.zoneinfoDirectory + "/zone.tab"
+        blockLoading: true
+        printErrors: false
+        onLoaded:
+        {
+            const countries = {};
+            for (const line of text().split("\n"))
+            {
+                if (line.startsWith("#")) continue;
+                const fields = line.split("\t");
+                if (fields.length >= 3) countries[fields[2]] = fields[0].split(",")[0];
+            }
+            serviceRegion.timezoneCountries = countries;
+        }
+    }
+    FileView
+    {
+        path: serviceRegion.zoneinfoDirectory + "/tzdata.zi"
+        blockLoading: true
+        printErrors: false
+        onLoaded:
+        {
+            const aliases = {};
+            for (const line of text().split("\n"))
+            {
+                const link = /^(?:L|Link)\s+(\S+)\s+(\S+)/.exec(line);
+                if (link) aliases[link[2]] = link[1];
+            }
+            serviceRegion.timezoneAliases = aliases;
+        }
+    }
+    FileView
+    {
+        path: Paths.shellDir + "/assets/calendar/week-start.json"
+        blockLoading: true
+        onLoaded: serviceRegion.weekStarts = JSON.parse(text()).firstDay
+    }
+
     property var timezones: []
     property var locales: []
 
@@ -25,11 +96,12 @@ Singleton
 
     function refresh()
     {
-        timeReader.running = true;
-        localeReader.running = true;
+        refreshCalendar();
         if (timezones.length === 0) zoneLister.running = true;
         if (locales.length === 0) localeLister.running = true;
     }
+
+    function refreshCalendar() { timeReader.running = true; localeReader.running = true; }
 
     function run(command, after)
     {

@@ -68,6 +68,7 @@ Common.InteractiveControl
             label: settingsTab.title
             wrapMode: Text.Wrap
             size: 13
+            font.weight: settingsTab.selected ? Font.DemiBold : Font.Medium
             color: settingsTab.selected ? Theme.text1 : Theme.text2
             Tint on color { duration: 200 }
         }

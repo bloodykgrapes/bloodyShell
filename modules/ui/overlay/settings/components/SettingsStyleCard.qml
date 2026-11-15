@@ -144,7 +144,7 @@ Common.InteractiveControl
         }
         PreviewPanel
         {
-            visible: settingsStyleCard.framed
+            visible: settingsStyleCard.themeStyle
             x: 16; y: 38
             width: parent.width - 32; height: Math.max(20, parent.height - 60)
             radius: 6

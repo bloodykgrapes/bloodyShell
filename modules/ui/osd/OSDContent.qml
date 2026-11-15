@@ -14,7 +14,13 @@ Widget
     objectName: "dynamicIsland"
 
     menu: Qt.resolvedUrl("../bar/menus/MenuMedia.qml")
-    readonly property string output: QsWindow.window && QsWindow.window.screen ? QsWindow.window.screen.name : ""
+    readonly property Item host:
+    {
+        for (let item = parent; item; item = item.parent)
+            if (item.islandOutput !== undefined) return item;
+        return null;
+    }
+    readonly property string output: host ? host.islandOutput : QsWindow.window && QsWindow.window.screen ? QsWindow.window.screen.name : ""
     readonly property var presentation: menuOpen ? ServiceIsland.mediaView() : ServiceIsland.view(output)
     property var shown: ({ kind: "", title: "", subtitle: "", icon: "", value: -1 })
     property var pending: presentation
@@ -22,20 +28,12 @@ Widget
     property real contentShift: 0
     property bool wasEmpty: true
     readonly property bool notification: shown.kind === "notification"
-    readonly property real limit:
-    {
-        for (let item = parent; item; item = item.parent)
-            if (item.centerLimit !== undefined) return Math.min(300, Math.max(32, item.centerLimit - Theme.barPadding * 2));
-        return 300;
-    }
+    readonly property bool recording: !menuOpen && shown.kind === "recording"
+    readonly property real limit: host ? Math.min(300, Math.max(32, host.centerLimit - Theme.barPadding * 2)) : 300
     readonly property bool compact: !notification && (vertical || limit < 120)
-    readonly property real menuProgress:
-    {
-        for (let item = parent; item; item = item.parent)
-            if (item.isIsland) return item.progress;
-        return 0;
-    }
-    implicitWidth: vertical && !notification ? 32 : hit.implicitWidth
+    readonly property real surfaceReveal: host ? host.islandReveal : 1
+    readonly property real menuProgress: host ? host.islandMenuProgress : 0
+    implicitWidth: recording ? 10 : vertical && !notification ? 32 : hit.implicitWidth
     implicitHeight: hit.implicitHeight
     active: menuOpen || presentation.kind !== ""
 
@@ -50,7 +48,11 @@ Widget
             if (!Config.animationsEnabled) { change.stop(); contentOpacity = 1; contentShift = 0; }
             shown = next;
         }
-        else if (!change.running) change.start();
+        else
+        {
+            change.stop();
+            change.start();
+        }
         wasEmpty = false;
     }
 
@@ -98,14 +100,14 @@ Widget
         id: hit
         objectName: "islandCompactContent"
         visible: !island.menuOpen
-        implicitWidth: island.notification
+        implicitWidth: island.recording ? 10 : island.notification
             ? island.vertical ? Math.min(340, Math.max(160, (QsWindow.window ? QsWindow.window.width : 400) - 64)) : island.limit
             : island.vertical ? 32 : Math.min(island.limit, Math.max(130, textProbe.advanceWidth + 76))
-        implicitHeight: island.notification ? Math.max(84, textColumn.implicitHeight + 24) : 32
+        implicitHeight: island.recording ? 10 : island.notification ? Math.max(84, textColumn.implicitHeight + 24) : 32
         hoverEnabled: true
-        acceptedButtons: island.shown.kind === "osd" || island.shown.kind === "recording" ? Qt.NoButton : Qt.LeftButton | Qt.MiddleButton
+        acceptedButtons: island.recording || island.shown.kind === "osd" || island.shown.kind === "recording" ? Qt.NoButton : Qt.LeftButton | Qt.MiddleButton
         cursorShape: acceptedButtons !== Qt.NoButton ? Qt.PointingHandCursor : Qt.ArrowCursor
-        opacity: island.contentOpacity * (1 - island.menuProgress)
+        opacity: island.contentOpacity * island.surfaceReveal * (1 - island.menuProgress)
         transform: Translate
         {
             x: island.vertical ? island.contentShift * (island.side === Enums.EdgeLeft ? 1 : -1) : 0
@@ -114,8 +116,10 @@ Widget
         scale: pressed ? 0.97 : 1
         Spring on scale {}
 
-        Accessible.role: island.shown.kind === "recording" ? Accessible.StaticText : Accessible.Button
-        Accessible.name: (island.shown.title || "") + " " + (island.shown.subtitle || "")
+        Accessible.role: island.recording ? Accessible.StaticText : Accessible.Button
+        Accessible.ignored: island.recording
+        Accessible.name: island.recording ? island.presentation.title + " " + island.presentation.subtitle
+            : (island.shown.title || "") + " " + (island.shown.subtitle || "")
         onClicked: mouse =>
         {
             if (island.shown.kind === "notification") ServiceIsland.activate();
@@ -136,12 +140,13 @@ Widget
         ClippingRectangle
         {
             id: cover
+            visible: !island.recording
             x: island.compact ? (hit.width - width) / 2 : island.notification ? 10 : 3
             y: island.notification ? 12 : (hit.height - height) / 2
             width: island.notification ? 40 : 28
             height: width
             radius: island.notification ? 12 : 9
-            color: island.shown.kind === "recording" ? Qt.rgba(Theme.colorCritical.r, Theme.colorCritical.g, Theme.colorCritical.b, 0.15) : Theme.inkAlpha(0.07)
+            color: Theme.inkAlpha(0.07)
 
             Image
             {
@@ -167,19 +172,11 @@ Widget
                 icon: island.shown.icon || Icon.music
                 size: 16
             }
-            Rectangle
-            {
-                objectName: "recordingMark"
-                anchors.centerIn: parent
-                width: 10; height: 10; radius: 5
-                color: Theme.colorCritical
-                visible: island.shown.kind === "recording"
-            }
         }
         Column
         {
             id: textColumn
-            visible: !island.compact
+            visible: !island.compact && !island.recording
             x: cover.x + cover.width + 9
             y: island.notification ? 12 : (hit.height - implicitHeight) / 2
             width: Math.max(0, hit.width - x - 26)
@@ -222,7 +219,7 @@ Widget
             color: Theme.colorCritical
             border.width: 1
             border.color: Theme.colorSolid
-            visible: ServiceRecording.active && island.shown.kind !== "recording"
+            visible: ServiceRecording.active && !island.recording
         }
         Equalizer
         {

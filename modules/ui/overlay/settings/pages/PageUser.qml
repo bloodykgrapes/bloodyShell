@@ -63,8 +63,9 @@ SettingsPage
                     Image
                     {
                         id: face
+                        objectName: "userPicturePreview"
                         anchors.fill: parent
-                        source: ServiceUser.avatarPreview !== "" ? "file://" + ServiceUser.avatarPreview : ""
+                        source: ServiceAppearance.fileUrl(ServiceUser.avatarPreview)
                         sourceSize: Qt.size(152, 152)
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
@@ -81,6 +82,7 @@ SettingsPage
 
                     SettingsButton
                     {
+                        objectName: "chooseUserPicture"
                         text: ServiceUser.avatarBusy ? Tr.tr("common.working") : Tr.tr("settings.user.choosePicture")
                         icon: Icon.user
                         enabled: ServiceUser.loaded && !ServiceUser.busy && !ServiceUser.confirming
@@ -114,7 +116,6 @@ SettingsPage
     SettingsGroup
     {
         title: Tr.tr("settings.user.accountDetails")
-        subtitle: Tr.tr("settings.user.sessionHint")
 
         SettingsRow { label: Tr.tr("settings.user.userId"); AccountInput { field: "uid" } }
         SettingsRow { label: Tr.tr("settings.user.primaryGroupId"); AccountInput { field: "gid" } }
@@ -161,6 +162,7 @@ SettingsPage
             }
             SettingsButton
             {
+                objectName: "applyUserChanges"
                 text: Tr.tr("common.apply")
                 enabled: ServiceUser.loaded && ServiceUser.hasChanges && !ServiceUser.busy
                 onClicked: ServiceUser.prepareApply()
@@ -201,13 +203,15 @@ SettingsPage
     FileDialog
     {
         id: avatarDialog
+        objectName: "userPictureDialog"
         parentWindow: pageUser.Window.window
         title: Tr.tr("settings.user.chooseProfilePicture")
         options: FileDialog.DontUseNativeDialog
         popupType: Controls.Popup.Item
         modality: Qt.WindowModal
         fileMode: FileDialog.OpenFile
-        nameFilters: [Tr.tr("common.images") + " (*.png *.jpg *.jpeg *.webp *.bmp *.gif)"]
-        onAccepted: ServiceUser.setAvatar(selectedFile)
+        currentFolder: ServiceAppearance.fileUrl(ServiceUser.homeDirectory)
+        nameFilters: [Tr.tr("common.images") + " (" + ServiceUser.avatarExtensions.map(extension => "*." + extension).join(" ") + ")"]
+        onAccepted: ServiceUser.setAvatar(avatarDialog.selectedFile)
     }
 }

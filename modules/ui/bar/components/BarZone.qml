@@ -20,6 +20,7 @@ Item
     property bool adaptive: false
     property bool detached: false
     readonly property real contentThickness: row.slots.reduce((thickness, slot) => Math.max(thickness, slot && slot.shown ? slot.crossSize : 0), 0)
+    readonly property Item singleWidget: row.slots.length === 1 && row.slots[0] ? row.slots[0].widget : null
     property real thickness: Theme.barThickness
     property real band: thickness
     property real stripDepth: 0

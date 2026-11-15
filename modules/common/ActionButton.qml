@@ -85,6 +85,7 @@ Common.InteractiveControl
             width: button.maximumWidth > 0 ? Math.min(implicitWidth, Math.max(0, button.maximumWidth - 30 - (glyph.visible ? glyph.width + content.spacing : 0))) : implicitWidth
             label: button.iconOnly ? "" : button.text
             color: button.danger ? Theme.colorCritical : Theme.text1
+            font.weight: Font.Medium
             Tint on color {}
         }
     }

@@ -60,7 +60,11 @@ FocusScope
         anchors.fill: parent
         enabled: screenshot.ready && !ServiceScreenshot.working
         mode: Config.screenshotMode === Enums.ScreenshotScreen ? Enums.ScreenshotScreen : Enums.ScreenshotArea
+        onSelected: if (Config.screenshotsInstantly) screenshot.submit()
     }
+
+    SurfaceShadow { surface: modePanel; cornerRadius: modePanel.radius; opacity: screenshot.progress }
+    SurfaceShadow { surface: controls; cornerRadius: controls.radius; opacity: screenshot.progress }
 
     Rectangle
     {
@@ -73,7 +77,7 @@ FocusScope
         radius: 20
         color: Theme.colorSolid
         border.width: 1
-        border.color: Theme.colorHairline
+        border.color: Theme.colorPanelEdge
         opacity: screenshot.progress
 
         MouseArea { anchors.fill: parent }
@@ -103,7 +107,7 @@ FocusScope
         radius: 10
         color: Theme.colorSolid
         border.width: 1
-        border.color: Theme.colorHairline
+        border.color: Theme.colorPanelEdge
         ShellText
         {
             id: information
@@ -129,7 +133,7 @@ FocusScope
         radius: 22
         color: Theme.colorSolid
         border.width: 1
-        border.color: Theme.colorHairline
+        border.color: Theme.colorPanelEdge
         opacity: screenshot.progress
 
         MouseArea { anchors.fill: parent }
@@ -165,10 +169,10 @@ FocusScope
                 x: controls.compact ? (parent.width - width) / 2 : 0
                 y: controls.compact ? 0 : (parent.height - height) / 2
                 width: Math.min(implicitWidth, parent.width)
-                options: [{label: Tr.tr("screenshot.copy"), value: false}, {label: Tr.tr("screenshot.save"), value: true}]
-                current: Config.screenshotSave
+                options: [{label: Tr.tr("screenshot.copy"), value: "copy"}, {label: Tr.tr("screenshot.save"), value: "save"}]
+                current: Config.screenshotsAction
                 enabled: !ServiceScreenshot.working
-                onSelected: value => Config.set("screenshotSave", value)
+                onSelected: value => Config.set("screenshotsAction", value)
             }
             Row
             {

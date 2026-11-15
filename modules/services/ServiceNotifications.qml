@@ -211,12 +211,12 @@ Singleton
     function activate(n)
     {
         if (!n) return;
+        const win = ServiceWindowActions.notificationWindow(n);
         const action = (n.actions || []).find(a => a.identifier === "default");
-        if (action) { action.invoke(); return; }
-
-        const win = ServiceCompositor.windowList.find(w => w.app_id && ServiceApplications.notificationFrom(n, w.app_id));
+        SidebarState.close();
+        if (action) action.invoke();
         if (win) ServiceCompositor.focusWindow(win.id);
-        dismiss(n);
+        if (!action) dismiss(n);
     }
 
     function dismissAll()

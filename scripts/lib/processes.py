@@ -10,12 +10,12 @@ import runpy
 import shlex
 import shutil
 import socket
-import subprocess
 import sys
 import tempfile
 
 
 SOURCE = Path(__file__).resolve().parents[2] / "modules/src"
+FILES = runpy.run_path(str(Path(__file__).with_name("files.py")))
 NATIVE_PLUGINS = {
     "keyboard": dict(source="keyboard", library="keyboardstate", module="Keyboard", wrapper="Monitor.qml",
                      unit="KeyboardMonitor.cpp", moc="keyboard.moc", packages=("Qt6Quick",)),
@@ -26,7 +26,7 @@ NATIVE_PLUGINS = {
 
 
 def output(args):
-    return subprocess.check_output(args, text=True, stderr=subprocess.PIPE).strip()
+    return FILES["run"](args, check=True, capture_output=True, text=True, timeout=10).stdout.strip()
 
 
 def write_changed(path, data):
@@ -37,7 +37,7 @@ def write_changed(path, data):
 def compile_plugin(spec, source, cache, library):
     compiler = shutil.which("c++") or shutil.which("g++")
     if not compiler:
-        raise RuntimeError("Native keyboard support needs a C++ compiler. Run bloodyShell install to prepare it.")
+        raise RuntimeError("Native keyboard support needs a C++ compiler. Select Input tools in ./setup from the source folder.")
     libexec = Path(output(["pkg-config", "--variable=libexecdir", "Qt6Core"]))
     moc = next((path for path in (libexec / "moc", libexec / "libexec/moc") if path.is_file()), None)
     if not moc:
@@ -48,16 +48,16 @@ def compile_plugin(spec, source, cache, library):
     if "protocol" in spec:
         scanner = shutil.which("wayland-scanner")
         if not scanner:
-            raise RuntimeError("The virtual keyboard needs wayland-scanner. Run bloodyShell install to prepare it.")
+            raise RuntimeError("The virtual keyboard needs wayland-scanner. Select Input tools in ./setup from the source folder.")
         protocol = str(source / spec["protocol"])
-        subprocess.run([scanner, "client-header", protocol, str(cache / "virtual-keyboard-client.h")], check=True)
-        subprocess.run([scanner, "private-code", protocol, str(cache / "virtual-keyboard-protocol.c")], check=True)
-        subprocess.run(["cc", "-fPIC", "-c", str(cache / "virtual-keyboard-protocol.c"), "-o", str(cache / "protocol.o")], check=True)
+        FILES["run"]([scanner, "client-header", protocol, str(cache / "virtual-keyboard-client.h")], check=True)
+        FILES["run"]([scanner, "private-code", protocol, str(cache / "virtual-keyboard-protocol.c")], check=True)
+        FILES["run"](["cc", "-fPIC", "-c", str(cache / "virtual-keyboard-protocol.c"), "-o", str(cache / "protocol.o")], check=True)
         objects.append(str(cache / "protocol.o"))
-    subprocess.run([str(moc), *includes, str(source / spec["unit"]), "-o", str(cache / spec["moc"])], check=True)
+    FILES["run"]([str(moc), *includes, str(source / spec["unit"]), "-o", str(cache / spec["moc"])], check=True)
     temporary = library.with_suffix(".so.tmp")
     try:
-        subprocess.run([compiler, "-std=c++17", "-shared", "-fPIC", "-O2", "-I" + str(cache),
+        FILES["run"]([compiler, "-std=c++17", "-shared", "-fPIC", "-O2", "-I" + str(cache),
                         str(source / spec["unit"]), *objects, "-o", str(temporary), *flags], check=True)
         temporary.replace(library)
     finally:
@@ -107,8 +107,7 @@ def visualizer_main():
     bars = int(sys.argv[1])
     if not 1 <= bars <= 256:
         raise ValueError("Invalid visualizer bar count")
-    files = runpy.run_path(str(Path(__file__).with_name("files.py")))
-    with tempfile.TemporaryDirectory(prefix="visualizer-", dir=files["private_runtime"]()) as temporary:
+    with tempfile.TemporaryDirectory(prefix="visualizer-", dir=FILES["private_runtime"]()) as temporary:
         config = Path(temporary) / "cava.conf"
         # Keep headroom before Cava's output limiter; ServiceMedia controls the display gain.
         config.write_text(f"[general]\nbars = {bars}\nframerate = 30\nsleep_timer = 1\nautosens = 0\nsensitivity = 1\n[output]\nmethod = raw\nraw_target = /dev/stdout\ndata_format = ascii\nascii_max_range = 65535\nbar_delimiter = 59\nframe_delimiter = 10\n[smoothing]\nnoise_reduction = 70\n")

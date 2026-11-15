@@ -73,10 +73,10 @@ Widget
                     Accessible.checked: current
                     Accessible.onPressAction: ServiceCompositor.focusWorkspace(output, wsIdx)
 
-                    property real length: current ? 21 : 6
+                    property real length: current ? Theme.workspaceActiveLength : Theme.workspaceDotSize
                     Glide on length {}
 
-                    readonly property real span: length + 6
+                    readonly property real span: length + Theme.workspaceDotPadding * 2
 
                     width:  widgetWorkspaces.vertical ? Theme.barWidgetHeight : span
                     height: widgetWorkspaces.vertical ? span : Theme.barWidgetHeight
@@ -92,8 +92,8 @@ Widget
                         anchors.centerIn: parent
                         radius: Math.min(width, height) / 2
 
-                        width:  widgetWorkspaces.vertical ? 6 : hit.length
-                        height: widgetWorkspaces.vertical ? hit.length : 6
+                        width:  widgetWorkspaces.vertical ? Theme.workspaceDotSize : hit.length
+                        height: widgetWorkspaces.vertical ? hit.length : Theme.workspaceDotSize
 
                         color: hit.urgent && !hit.current ? Theme.colorAttention
                             : hit.current ? Theme.colorAccent

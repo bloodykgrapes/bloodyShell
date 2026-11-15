@@ -1,4 +1,5 @@
 //@ pragma ShellId bloodyShell
+//@ pragma Env QSG_DISTANCEFIELD_ANTIALIASING=gray
 
 import QtQuick
 import Quickshell

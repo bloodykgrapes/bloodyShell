@@ -17,6 +17,7 @@ Singleton
     readonly property bool secure: sessionLock.secure
     readonly property int unlockDuration: !Config.animationsEnabled ? 0 : Config.animationsFluid ? 380 : 220
     property bool checking: false
+    property bool promptVisible: false
 
     property bool failed: false
     property int  failures: 0
@@ -38,15 +39,26 @@ Singleton
         unlockLater.stop();
         leaving = false;
         if (state.locked) return;
+        promptVisible = false;
         failed = false;
         MenuState.close();
         state.locked = true;
     }
 
     property string pending: ""
+    function showPrompt()
+    {
+        if (state.locked && !leaving && !preparingForSleep) promptVisible = true;
+    }
+    function hidePrompt()
+    {
+        if (checking || leaving || preparingForSleep) return;
+        promptVisible = false;
+        failed = false;
+    }
     function submit(password)
     {
-        if (!state.locked || checking || leaving || preparingForSleep) return;
+        if (!state.locked || !promptVisible || checking || leaving || preparingForSleep) return;
         if (password === "") { fail(""); return; }
         pending = password;
         failed = false;
@@ -132,6 +144,7 @@ Singleton
     function prepareForSleep(sleeping)
     {
         preparingForSleep = sleeping;
+        promptVisible = false;
         checking = false;
         pending = "";
         pam.abort();

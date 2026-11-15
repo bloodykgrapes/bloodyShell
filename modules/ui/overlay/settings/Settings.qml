@@ -2,6 +2,7 @@ import QtQuick
 
 import "." as Content
 import "../../../core"
+import "../../../common"
 import ".."
 
 OverlayView
@@ -22,6 +23,7 @@ OverlayView
 
         MouseArea { anchors.fill: parent }
 
-        Content.SettingsContent { anchors.fill: parent }
+        SurfaceShadow { surface: card; cornerRadius: Theme.settingsRadius }
+        Content.SettingsContent { id: card; anchors.fill: parent }
     }
 }

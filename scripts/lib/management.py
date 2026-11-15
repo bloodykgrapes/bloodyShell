@@ -1,13 +1,14 @@
-"""Dependency catalog, command installation and diagnostics. Dispatched by backend.py."""
+"""Dependency catalog, diagnostics, runtime updates, command installation and uninstall."""
 
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import argparse
+import ast
 from contextlib import contextmanager
 import fcntl
 import json
 import os
+import pwd
 import re
-import signal
 import runpy
 import shlex
 import shutil
@@ -24,13 +25,46 @@ SYSTEM_COMMAND = Path("/usr/local/bin/bloodyShell")
 FILES = runpy.run_path(str(Path(__file__).with_name("files.py")))
 
 
+DEPENDENCIES = (
+    'required|qs|Runs the shell|quickshell|copr:errornointernet/quickshell quickshell|-',
+    'required|niri|Compositor|niri|niri|niri',
+    'required|awww|Wallpapers|awww|-|-',
+    'required|grim|Screenshots|grim|grim|grim',
+    'required|wl-copy|Screenshot clipboard|wl-clipboard|wl-clipboard|wl-clipboard',
+    'required|curl|Updates|curl|curl|curl',
+    'required|nmcli|Network and enterprise Wi-Fi|networkmanager python-gobject libnm|NetworkManager python3-gobject NetworkManager-libnm|network-manager python3-gi gir1.2-nm-1.0',
+    'required|wpctl|Sound|pipewire wireplumber|pipewire wireplumber|pipewire wireplumber',
+    'required|upower|Battery|upower|upower|upower',
+    'required|findmnt|Storage discovery|util-linux|util-linux|util-linux',
+    'optional|udisksctl|Mount disks for the current session.|udisks2|udisks2|udisks2',
+    'optional|pkexec|Administrator authorization.|polkit|polkit|pkexec',
+    'required|python3|Shell helpers|python|python3|python3',
+    'required|gsettings|App theme|glib2|glib2|libglib2.0-bin',
+    'optional|brightnessctl|Screen brightness control.|brightnessctl|brightnessctl|brightnessctl',
+    'optional|bluetoothctl|Bluetooth device support.|bluez bluez-utils|bluez|bluez',
+    'optional|wlsunset|Warmer screen colors at night.|wlsunset|wlsunset|wlsunset',
+    'required|ffmpeg|Screenshot cropping and wallpaper colors|ffmpeg|ffmpeg-free|ffmpeg',
+    'optional|lpstat|Printer management.|cups system-config-printer|cups system-config-printer|cups system-config-printer',
+    'optional|notify-send|Update notifications.|libnotify|libnotify|libnotify-bin',
+    'optional|cava|Audio visualizer.|cava|cava|cava',
+    'optional|easyeffects|Sound effects and audio presets.|easyeffects|easyeffects|easyeffects',
+    'optional|playerctl|Media keyboard shortcuts.|playerctl|playerctl|playerctl',
+    'optional|nautilus|File manager.|nautilus|nautilus|nautilus',
+    'optional|kitty|Terminal.|kitty|kitty|kitty',
+    'optional|fastfetch|System information.|fastfetch|fastfetch|fastfetch',
+    'optional|gum|Keyboard menus for package setup.|gum|gum|gum',
+    'optional|sddm|Login screen.|sddm qt6-declarative qt6-svg|sddm qt6-qtdeclarative qt6-qtsvg|sddm qml6-module-qtquick-controls qml6-module-qtquick-effects qml6-module-qtquick-shapes',
+    'optional|qt6-multimedia|Video wallpaper playback.|qt6-multimedia qt6-multimedia-ffmpeg|qt6-qtmultimedia|qml6-module-qtmultimedia',
+)
+
+
 def catalog():
-    text = (ROOT / "setup").read_text().split("readonly DEPENDENCIES=(", 1)[1].split("\n)", 1)[0]
-    return [dict(zip(("kind", "tool", "feature", "arch", "fedora", "debian"), match.split("|")))
-            for match in re.findall(r'^\s*"([^"\n]+)"', text, re.M)]
+    return [dict(zip(("kind", "tool", "feature", "arch", "fedora", "debian"), row.split("|"))) for row in DEPENDENCIES]
 
 
 def available(tool):
+    if tool == "qs":
+        return bool(shutil.which("qs") or shutil.which("quickshell"))
     if tool == "qt6-multimedia":
         paths = [Path(value) for key in ("QML_IMPORT_PATH", "QML2_IMPORT_PATH") for value in os.environ.get(key, "").split(os.pathsep) if value]
         paths.extend((Path("/usr/lib/qt6/qml"), Path("/usr/lib64/qt6/qml")))
@@ -68,6 +102,10 @@ def terminal():
         if path:
             return [path] + args
     return []
+
+
+def state_directory():
+    return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "bloodyShell"
 
 
 def packages(entry, distro):
@@ -111,12 +149,15 @@ def dependencies_status():
     entries = catalog()
     protected = {name for item in entries if item["kind"] == "required" for name in packages(item, distro)}
     return {"terminal": terminal(), "entries": [
-        {"tool": item["tool"], "required": item["kind"] == "required" or item["tool"] == "python3", "installed": available(item["tool"]),
+        {"tool": item["tool"], "feature": item["feature"], "required": item["kind"] == "required" or item["tool"] == "python3", "installed": available(item["tool"]),
          "packages": packages(item, distro), "removable": item["kind"] != "required" and item["tool"] != "python3" and not protected.intersection(packages(item, distro)),
          "supported": bool(packages(item, distro))} for item in entries]}
 
 
 def dependencies_main():
+    if sys.argv[1:] == ["catalog"]:
+        print("\n".join(DEPENDENCIES))
+        return 0
     if len(sys.argv) == 3 and sys.argv[1] == "check":
         known = {entry["tool"] for entry in catalog()}
         return 0 if sys.argv[2] in known and available(sys.argv[2]) else 1
@@ -149,9 +190,8 @@ def checks():
     def record(name, ok, required=True, detail=""):
         results.append(dict(name=name, ok=bool(ok), required=required, detail=detail))
 
-    dependencies = runpy.run_path(str(ROOT / "scripts/lib/management.py"))
-    for entry in dependencies["catalog"]():
-        record(entry["tool"], dependencies["available"](entry["tool"]), entry["kind"] == "required", entry["feature"])
+    for entry in catalog():
+        record(entry["tool"], available(entry["tool"]), entry["kind"] == "required", entry["feature"])
     record("SDDM theme", (ROOT / "dots/sddm/Main.qml").is_file() or Path("/usr/share/sddm/themes/bloodyShell/Main.qml").is_file(), False,
            "Optional; import from Settings → Updates")
     for path in (ROOT / "assets/shaders").glob("*.frag"):
@@ -257,7 +297,8 @@ def path_blocks(binary):
         if shell == "zsh" or (zsh / name).exists():
             profiles.append(zsh / name)
     blocks = {path: PATH_START + posix + PATH_END for path in profiles}
-    if shell == "fish" or (config / "fish").is_dir():
+    login_shell = Path(pwd.getpwuid(os.getuid()).pw_shell).name
+    if shell == "fish" or login_shell == "fish" or (config / "fish").is_dir():
         fish = "'" + str(binary.absolute()).replace("\\", "\\\\").replace("'", "\\'") + "'"
         blocks[config / "fish/conf.d/bloodyShell-path.fish"] = PATH_START + f'if not contains -- {fish} $PATH\n    set -gx PATH {fish} $PATH\nend\n' + PATH_END
     # niri-session and other user services inherit environment.d on login.
@@ -311,67 +352,7 @@ def rollback_path_plan(planned):
             FILES["atomic_write"](target, entry["before"], entry["mode"])
 
 
-def release_main():
-    if len(sys.argv) != 3:
-        raise RuntimeError("Usage: extract-release ARCHIVE DESTINATION")
-    archive, target = map(Path, sys.argv[1:])
-    if target.is_symlink() or not target.is_dir() or any(target.iterdir()):
-        raise RuntimeError("Release extraction needs an empty directory")
-    root = None
-    total = 0
-    seen = set()
-    links = []
-    with tarfile.open(archive, "r:gz") as package:
-        for member in package:
-            path = PurePosixPath(member.name)
-            if path.is_absolute() or ".." in path.parts or not path.parts:
-                raise RuntimeError("Unsafe release archive path")
-            if root is None:
-                root = path.parts[0]
-            if path.parts[0] != root:
-                raise RuntimeError("Release archive must contain one root directory")
-            if len(path.parts) == 1:
-                if not member.isdir():
-                    raise RuntimeError("Invalid release archive root")
-                continue
-            relative = Path(*path.parts[1:])
-            if relative in seen:
-                raise RuntimeError("Duplicate path in release archive")
-            seen.add(relative)
-            if len(seen) > 100000:
-                raise RuntimeError("Release archive contains too many files")
-            destination = target / relative
-            if member.isdir():
-                destination.mkdir(parents=True, exist_ok=True)
-            elif member.isfile():
-                total += member.size
-                if total > 512 * 1024 * 1024:
-                    raise RuntimeError("Release archive is too large")
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                with package.extractfile(member) as source, destination.open("xb") as output:
-                    shutil.copyfileobj(source, output)
-                destination.chmod(member.mode & 0o755)
-            elif member.issym():
-                link = PurePosixPath(member.linkname)
-                if link.is_absolute():
-                    raise RuntimeError("Absolute link in release archive")
-                resolved = (destination.parent / str(link)).resolve()
-                if not resolved.is_relative_to(target.resolve()):
-                    raise RuntimeError("Link escapes release archive")
-                links.append((destination, str(link)))
-            else:
-                raise RuntimeError("Special file in release archive")
-        for destination, link in links:
-            if not destination.parent.resolve().is_relative_to(target.resolve()):
-                raise RuntimeError("Link escapes release archive")
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.symlink_to(link)
-        for destination, _ in links:
-            if not destination.resolve(strict=True).is_relative_to(target.resolve()):
-                raise RuntimeError("Link escapes release archive")
-
-
-RUNTIME_FILES = ("shell.qml", "setup", "version")
+RUNTIME_FILES = ("shell.qml", "version")
 RUNTIME_DIRS = ("assets", "modules", "scripts", "translations")
 
 
@@ -382,10 +363,7 @@ def runtime_member(relative):
     ) and not any(relative.is_relative_to(path) for path in (Path("scripts/tests"), Path("scripts/tools")))
 
 
-def stage_main():
-    if len(sys.argv) != 4:
-        raise RuntimeError("Usage: stage-runtime SOURCE DESTINATION BIN_DIR")
-    source, target, binary = (Path(value).absolute() for value in sys.argv[1:])
+def stage_runtime(source, target, binary):
     if target.is_symlink() or not target.is_dir() or any(target.iterdir()) or target.is_relative_to(source):
         raise RuntimeError("Runtime staging needs an empty directory outside the source")
     expected = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "quickshell/bloodyShell"
@@ -424,25 +402,178 @@ def stage_main():
             raise RuntimeError("Runtime contains an unsafe link")
         if path.is_file() and path.suffix == ".py":
             compile(path.read_bytes(), str(path), "exec")
+        if path.is_file() and path.suffix == ".sh":
+            subprocess.run(["bash", "-n", str(path)], check=True)
     compile((target / "scripts/bloodyShell").read_bytes(), str(target / "scripts/bloodyShell"), "exec")
-    for name in ("scripts/bloodyShell", "scripts/lib/backend.py", "scripts/lib/management.py"):
+    for name in ("scripts/bloodyShell", "scripts/lib/backend.py", "scripts/lib/management.py", "scripts/lib/setup.py", "scripts/lib/system.sh"):
         if not (target / name).is_file():
             raise RuntimeError("Package is missing " + name)
-    subprocess.run(["bash", "-n", str(target / "setup")], check=True)
+    backend = ast.parse((target / "scripts/lib/backend.py").read_text())
+    registry = next((ast.literal_eval(node.value) for node in backend.body if isinstance(node, ast.Assign)
+                     and any(isinstance(name, ast.Name) and name.id == "MODULES" for name in node.targets)), {})
+    if not isinstance(registry, dict) or not {"setup", "update", "doctor", "uninstall", "resources"}.issubset(registry):
+        raise RuntimeError("Package is missing the CLI maintenance backend")
     path_plan(binary)
 
 
-@contextmanager
-def command_signals():
-    def interrupt(signum, frame):
-        raise SystemExit(128 + signum)
-    previous = {sig: signal.signal(sig, interrupt) for sig in (signal.SIGTERM, signal.SIGINT)}
-    try:
-        yield
-    finally:
-        for sig, handler in previous.items():
-            signal.signal(sig, handler)
+VERSION_PATTERN = re.compile(r"v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?\Z")
 
+
+def version_key(value):
+    match = VERSION_PATTERN.fullmatch(value)
+    if not match:
+        raise ValueError("Invalid release version: " + value)
+    core = tuple(int(part) for part in match.groups()[:3])
+    prerelease = match[4]
+    parts = prerelease.split(".") if prerelease else []
+    if any(not part or part.isdigit() and len(part) > 1 and part.startswith("0") for part in parts):
+        raise ValueError("Invalid release version: " + value)
+    return core, not bool(prerelease), tuple((0, int(part)) if part.isdigit() else (1, part) for part in parts)
+
+
+def install_runtime(source, target, binary, backup):
+    """Replace the runtime while the caller holds the shared operation lock."""
+    if not FILES["safe_path"](target) or (target / ".git").exists():
+        raise RuntimeError("Refusing to replace a symlink installation or source checkout")
+    if source == target:
+        install_command(source / "scripts/bloodyShell", binary, backup / "launcher")
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    previous = backup / "shell"
+    committed = fresh_backup = False
+    with tempfile.TemporaryDirectory(prefix=".bloodyShell-runtime-", dir=target.parent) as temporary:
+        staged = Path(temporary) / "runtime"
+        rollback = Path(temporary) / "previous"
+        staged.mkdir()
+        stage_runtime(source, staged, binary)
+        try:
+            if target.exists():
+                previous.parent.mkdir(parents=True, exist_ok=True)
+                if previous.exists():
+                    raise RuntimeError("The update backup already exists")
+                fresh_backup = True
+                FILES["copy_path"](target, previous)
+                os.replace(target, rollback)
+            os.replace(staged, target)
+            subprocess.run([sys.executable, str(target / "scripts/bloodyShell"), "internal", "install-command",
+                            str(target / "scripts/bloodyShell"), str(binary), str(backup / "launcher")], check=True, stdout=subprocess.DEVNULL)
+            committed = True
+        finally:
+            if not committed:
+                if rollback.exists():
+                    remove_path(target)
+                    os.replace(rollback, target)
+                elif not staged.exists():
+                    remove_path(target)
+                if fresh_backup:
+                    remove_path(previous)
+
+
+def runtime_main():
+    if len(sys.argv) != 4:
+        raise ValueError("Usage: install-runtime SOURCE BIN_DIR BACKUP_DIR")
+    source, binary, backup = (Path(value).absolute() for value in sys.argv[1:])
+    target = command_location()[0]
+    with command_signals():
+        install_runtime(source, target, binary, backup)
+    print("Shell → " + str(target), flush=True)
+    return 0
+
+
+def restart_runtime():
+    target = command_location()[0]
+    if not os.environ.get("WAYLAND_DISPLAY") or not (target / "scripts/bloodyShell").is_file():
+        return None
+    result = FILES["run"]([sys.executable, str(target / "scripts/bloodyShell"), "restart"],
+                          capture_output=True, text=True, timeout=15)
+    return result.returncode == 0
+
+
+def update_main():
+    parser = argparse.ArgumentParser(prog="bloodyShell update", description="Check for and install a bloodyShell release")
+    parser.add_argument("--beta", action="store_true")
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--tag")
+    options = parser.parse_args()
+    if os.geteuid() == 0:
+        raise RuntimeError("Run update as your normal user, without sudo")
+    target, binary = command_location()
+    state = state_directory()
+    status_file = Path(os.environ.get("BLOODYSHELL_STATUS") or
+                       Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "bloodyShell/update.status")
+    def status(value):
+        status_file.parent.mkdir(parents=True, exist_ok=True)
+        FILES["atomic_write"](status_file, (value + "\n").encode(), 0o600)
+    def step(index, message):
+        status(f"step {index}/3 {message}")
+        print(message, flush=True)
+    def download(url, destination=None):
+        command = ["curl", "-fsSL", "--retry", "2", "--max-time", "120" if destination else "20"]
+        if destination is not None:
+            command += ["-o", str(destination)]
+        result = FILES["run"]([*command, url], capture_output=True, text=True, timeout=130)
+        if result.returncode:
+            raise RuntimeError(result.stderr.strip() or "GitHub is unreachable")
+        return result.stdout
+    try:
+        status("running")
+        with command_signals(), operation_lock(state):
+            if not (target / "shell.qml").is_file():
+                raise RuntimeError("The shell is not installed. Run ./setup from the source folder.")
+            current = (target / "version").read_text().strip() if (target / "version").is_file() else "0.0.0"
+            step(1, "Checking for updates")
+            tag = options.tag
+            if tag is None:
+                releases = json.loads(download("https://api.github.com/repos/bloodykgrapes/bloodyShell/releases?per_page=30"))
+                if not isinstance(releases, list):
+                    raise ValueError("Invalid release response")
+                candidates = []
+                for release in releases:
+                    if not isinstance(release, dict) or release.get("draft") or release.get("prerelease") and not options.beta:
+                        continue
+                    candidate = release.get("tag_name", "")
+                    try:
+                        key = version_key(candidate)
+                    except (TypeError, ValueError):
+                        continue
+                    if options.beta or key[1]:
+                        candidates.append((key, candidate))
+                if not candidates:
+                    raise RuntimeError("No releases are available")
+                tag = max(candidates)[1]
+            release_key = version_key(tag)
+            if not options.force and release_key <= version_key(current):
+                install_command(ROOT / "scripts/bloodyShell", binary, state / "backups" / ("cli-" + str(time.time_ns())))
+                print("Up to date · " + current, flush=True)
+                status("done " + current)
+                return 0
+            step(2, "Downloading " + tag.removeprefix("v"))
+            with tempfile.TemporaryDirectory(prefix="bloodyShell-release-") as temporary:
+                temporary = Path(temporary)
+                archive, source = temporary / "release.tar.gz", temporary / "source"
+                source.mkdir()
+                download(f"https://github.com/bloodykgrapes/bloodyShell/archive/refs/tags/{tag}.tar.gz", archive)
+                FILES["extract_archive"](archive, source, allow_links=True)
+                if (source / "version").read_text().strip().removeprefix("v") != tag.removeprefix("v"):
+                    raise ValueError("Package version does not match the release tag")
+                step(3, "Installing " + tag.removeprefix("v"))
+                backup = state / "backups" / (time.strftime("%Y-%m-%d_%H-%M-%S") + "-update-" + str(time.time_ns()))
+                install_runtime(source, target, binary, backup)
+            status("done " + tag.removeprefix("v"))
+        # Release the operation lock before starting the new shell.
+        if restart_runtime() is False:
+            print("Updated. Run bloodyShell doctor to check why the shell could not restart.", flush=True)
+        print("Updated to " + tag.removeprefix("v"), flush=True)
+        return 0
+    except BaseException as error:
+        status("failed " + (str(error).replace("\n", " ") if str(error) else "Update cancelled"))
+        if isinstance(error, tarfile.TarError):
+            raise RuntimeError("Invalid release archive: " + str(error)) from error
+        raise
+
+
+command_signals = FILES["operation_signals"]
+remove_path = FILES["remove_path"]
 
 def install_main():
     with command_signals():
@@ -496,11 +627,11 @@ def command_location():
 
 def refresh_command():
     runtime, binary = command_location()
-    if not (runtime / "shell.qml").is_file() or (runtime / ".git").exists():
-        raise RuntimeError("Install the shell with ./setup install before refreshing its command")
     source = ROOT / "scripts/bloodyShell"
-    backup = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "bloodyShell/backups" / ("cli-" + str(time.time_ns())) / "launcher"
-    with command_signals():
+    backup = state_directory() / "backups" / ("cli-" + str(time.time_ns())) / "launcher"
+    with command_signals(), operation_lock():
+        if not (runtime / "shell.qml").is_file() or (runtime / ".git").exists():
+            raise RuntimeError("Install the shell with ./setup install before refreshing its command")
         result = install_command(source, binary, backup)
     return dict(result, destination=result["command"])
 
@@ -509,7 +640,7 @@ TRACKING_FILES = ("install.json", "changes.json", "changes.lock")
 
 
 def discard_tracking_files():
-    directory = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "bloodyShell"
+    directory = state_directory()
     if not FILES["safe_path"](directory):
         raise RuntimeError("Unsafe state directory: " + str(directory))
     for name in TRACKING_FILES:
@@ -521,9 +652,20 @@ SDDM_CONFIG = Path("/etc/sddm.conf.d/zz-bloodyShell.conf")
 SDDM_STATE = Path("/var/lib/bloodyShell")
 
 
+def sddm_paths():
+    return [path for path in (SDDM_THEME, SDDM_CONFIG, SDDM_STATE) if path.exists() or path.is_symlink()]
+
+
+def clear_greeter():
+    paths = [str(path) for path in sddm_paths()]
+    if paths:
+        subprocess.run(["sudo", "rm", "-rf", "--", *paths], check=True)
+    return dict(destination=str(SDDM_THEME), removed=paths)
+
+
 def uninstall_locations():
     config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-    state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "bloodyShell"
+    state = state_directory()
     cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "bloodyShell"
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir())
     runtime /= "bloodyShell" if os.environ.get("XDG_RUNTIME_DIR") else "bloodyShell-" + str(os.getuid())
@@ -540,13 +682,6 @@ def check_uninstall_path(path):
         raise RuntimeError("Uninstall refused an unsafe path: " + str(path))
     if path.exists() and not path.is_symlink() and path.stat().st_uid != os.getuid():
         raise RuntimeError("Uninstall path belongs to another user: " + str(path))
-
-
-def remove_path(path):
-    if path.is_symlink() or path.is_file():
-        path.unlink()
-    elif path.is_dir():
-        shutil.rmtree(path)
 
 
 def path_block_cleanup(paths, apply=False):
@@ -585,14 +720,15 @@ def uninstall_plan(locations, delete_settings=False, delete_sddm=False):
     for path in remove:
         check_uninstall_path(path)
     remove = [str(path) for path in dict.fromkeys(remove) if path.exists() or path.is_symlink()]
-    sddm = [str(path) for path in (SDDM_THEME, SDDM_CONFIG, SDDM_STATE) if path.exists() or path.is_symlink()] if delete_sddm else []
+    sddm = [str(path) for path in sddm_paths()] if delete_sddm else []
     return dict(runtime=str(root), command=str(locations["command"]), remove=remove, sddm=sddm,
                 path_files=path_block_cleanup(locations["profiles"]), delete_settings=delete_settings,
                 delete_sddm=delete_sddm, kept_cache=[])
 
 
 @contextmanager
-def uninstall_lock(state):
+def operation_lock(state=None):
+    state = state if state is not None else state_directory()
     check_uninstall_path(state)
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
     fd = os.open(state / "operation.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
@@ -602,13 +738,6 @@ def uninstall_lock(state):
         except BlockingIOError:
             raise RuntimeError("Another installation, update or uninstall is in progress") from None
         yield
-
-
-def uninstall_question(text):
-    try:
-        return input(text + " [y/N] ").strip().lower() in ("y", "yes")
-    except EOFError:
-        return False
 
 
 def uninstall_main():
@@ -621,11 +750,9 @@ def uninstall_main():
     if os.geteuid() == 0:
         raise RuntimeError("Run uninstall as your normal user, without sudo")
     locations = uninstall_locations()
-    if options.apply and not options.json and sys.stdin.isatty():
-        if not options.delete_sddm and any(path.exists() or path.is_symlink() for path in (SDDM_THEME, SDDM_CONFIG, SDDM_STATE)):
-            options.delete_sddm = uninstall_question("Delete SDDM theme?")
-        if not options.delete_settings and (locations["settings"].exists() or locations["settings"].is_symlink()):
-            options.delete_settings = uninstall_question("Delete shell settings?")
+    if not options.apply and not options.json and sys.stdin.isatty() and sys.stdout.isatty():
+        ui = runpy.run_path(str(ROOT / "scripts/lib/setup.py"))
+        return ui["uninstall_wizard"](options.delete_settings, options.delete_sddm)
     plan = uninstall_plan(locations, options.delete_settings, options.delete_sddm)
     if not options.apply:
         if options.json:
@@ -637,9 +764,9 @@ def uninstall_main():
                 print("Remove bloodyShell PATH block: " + name)
             print("Preview only. Use uninstall --apply to proceed. Shell settings and SDDM are optional; niri configs, application configs and backups are kept.")
         return 0
-    with uninstall_lock(locations["state"]):
+    with operation_lock(locations["state"]):
         if plan["sddm"]:
-            subprocess.run(["sudo", "-v"], check=True)
+            subprocess.run(["sudo", *(["-n"] if options.json else []), "-v"], check=True)
         control = runpy.run_path(str(ROOT / "scripts/bloodyShell"))
         command = shutil.which("qs") or shutil.which("quickshell")
         if command:
@@ -660,7 +787,7 @@ def uninstall_main():
             plan["kept_cache"] = [str(path) for path in locations["caches"] if str(path) in plan["remove"]]
             plan["remove"] = [name for name in plan["remove"] if name not in plan["kept_cache"]]
         if plan["sddm"]:
-            subprocess.run(["sudo", "rm", "-rf", "--", *plan["sddm"]], check=True)
+            clear_greeter()
         plan["path_files"] = path_block_cleanup(locations["profiles"], apply=True)
         for name in plan["remove"]:
             remove_path(Path(name))

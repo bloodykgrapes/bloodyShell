@@ -56,6 +56,7 @@ def native_ui_checks(check_protocol=True):
         builder = rebuilt / "scripts/lib/processes.py"
         builder.parent.mkdir(parents=True)
         shutil.copy2(ROOT / "scripts/lib/processes.py", builder)
+        shutil.copy2(ROOT / "scripts/lib/files.py", builder.with_name("files.py"))
         source = rebuilt / "modules/src/virtualKeyboard/VirtualKeyboard.cpp"
         source.write_text(source.read_text() + "\n// Simulate a rebuilt keyboard plugin during a shell reload.\n")
         rebuilt_url = subprocess.check_output(["python3", "-c", "import runpy; runpy.run_path(" + repr(str(builder)) + ")['virtual_keyboard_main']()"], env=env, text=True).strip()
@@ -191,6 +192,9 @@ def shell_checks(parent, url, parent_env):
 import QtQuick
 import Quickshell
 Singleton {
+    property bool promptVisible:false
+    function showPrompt() { promptVisible=true; }
+    function hidePrompt() { if (!checking) promptVisible=false; }
     property bool locked:true; property bool checking:false; property bool failed:false; property bool leaving:false
     property bool preparingForSleep:false; property int failures:0; property int unlockDuration:0
     property var submissions:[]
@@ -226,6 +230,11 @@ ShellRoot {
                 const panel=Qt.createComponent(Qt.resolvedUrl("modules/ui/keyboard/VirtualKeyboardFixture.qml"));
                 window.check(panel.status===Component.Ready,"Keyboard panel does not compile: " + panel.errorString());
                 Config.set("virtualKeyboardEnabled",true); ServiceKeyboard.layouts=[{layout:"us",variant:""},{layout:"ru",variant:""}];
+                ServiceVirtualKeyboard.show(); tryVerify(()=>ServiceVirtualKeyboard.ready,8000); wait(60);
+                window.check(ServiceLock.promptVisible && lock.keyboardOpened,"Keyboard request did not reveal sign-in");
+                ServiceLock.hidePrompt(); wait(60);
+                window.check(!ServiceVirtualKeyboard.visible,"Returning to the overview retained the keyboard");
+                click(lock,"lockWakeArea"); wait(500);
                 click(lock,"lockKeyboardButton"); tryVerify(()=>ServiceVirtualKeyboard.ready,8000); wait(60);
                 window.check(ServiceVirtualKeyboard.visible && lock.keyboardOpened,"Lock keyboard did not open");
                 const field=window.find(lock,"lockPasswordInput"); field.forceActiveFocus();

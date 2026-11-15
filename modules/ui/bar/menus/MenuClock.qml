@@ -6,6 +6,7 @@ import Quickshell
 import "../../../animations"
 import "../../../common"
 import "../../../core"
+import "../../../services"
 
 Menu
 {
@@ -16,11 +17,13 @@ Menu
     activeFocusOnTab: true
 
     readonly property var en: Tr.locale
-    readonly property int weekStart: Qt.locale().firstDayOfWeek % 7
+    readonly property int weekStart: ServiceRegion.firstDayOfWeek
     property int offset: 0
     readonly property date today: clock.date
     readonly property date month: new Date(today.getFullYear(), today.getMonth() + offset, 1)
     readonly property var cells: datesFor(month)
+
+    Component.onCompleted: ServiceRegion.refreshCalendar()
 
     function capital(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s }
     function datesFor(date)
@@ -254,6 +257,7 @@ Menu
             ShellText
             {
                 required property int index
+                objectName: "calendarWeekday-" + index
                 width: grid.cell
                 height: 24
                 horizontalAlignment: Text.AlignHCenter

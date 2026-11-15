@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Controls.Basic as Controls
 import Quickshell.Widgets
 
 import "../../../animations"
@@ -9,7 +8,6 @@ import "../../../common"
 import "../../../core"
 import "../../../services"
 import "components"
-import "components" as Parts
 
 Rectangle
 {
@@ -46,7 +44,7 @@ Rectangle
     radius: Theme.settingsRadius
     color: Theme.settingsColorBackground
     border.width: 1
-    border.color: Theme.colorHairline
+    border.color: Theme.colorPanelEdge
     clip: true
 
     focus: true
@@ -117,7 +115,7 @@ Rectangle
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 3
 
-                ShellText { width: parent.width; label: "bloodyShell"; size: 15; color: Theme.text1; font.weight: Font.DemiBold }
+                ShellText { width: parent.width; label: "bloodyShell"; size: 15; color: Theme.text1; font.family: Theme.fontBrand; font.weight: Font.DemiBold }
                 ShellText { width: parent.width; label: Tr.tr("common.settings"); size: 11; color: Theme.text3 }
             }
         }
@@ -143,12 +141,6 @@ Rectangle
             onContentHeightChanged: revealTimer.restart()
 
             SmoothScroll { id: navigationScroll; view: navigation }
-
-            Controls.ScrollBar.vertical: Parts.SettingsScrollBar
-            {
-                view: navigation
-                compact: true
-            }
 
             Rectangle
             {
@@ -196,19 +188,15 @@ Rectangle
                         width: tabColumn.width
                         spacing: 2
 
-                        ShellText
+                        SettingsSectionHeading
                         {
                             x: 12
                             width: Math.max(0, parent.width - 24)
                             visible: entry.groupStart && entry.modelData.group !== 0
                             topPadding: 12
                             bottomPadding: 6
-                            label: Registry.settingsGroups[entry.modelData.group].toUpperCase()
-                            size: 10
-                            color: Theme.text3
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: 0.8
-                            wrapMode: Text.Wrap
+                            title: Registry.settingsGroups[entry.modelData.group].toUpperCase()
+                            centered: true
                         }
 
                         SettingsTab

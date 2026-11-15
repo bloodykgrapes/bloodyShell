@@ -21,7 +21,7 @@ Menu
     Item
     {
         objectName: "mediaRecordingIndicator"
-        visible: ServiceRecording.active
+        visible: ServiceIsland.recordingActive
         width: parent.width
         height: 24
         Rectangle

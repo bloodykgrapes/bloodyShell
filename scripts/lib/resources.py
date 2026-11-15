@@ -1,8 +1,8 @@
 """Versioned resource imports, CLI refresh and login-screen appearance export."""
 
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from datetime import datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import argparse
 import configparser
 import hashlib
@@ -19,18 +19,21 @@ import sys
 import tarfile
 import tempfile
 import uuid
+from urllib.parse import quote
 
 
 ROOT = Path(__file__).resolve().parents[2]
 FILES = runpy.run_path(str(Path(__file__).with_name("files.py")))
 COMPOSITORS = runpy.run_path(str(Path(__file__).with_name("compositors") / "__init__.py"))
 REPO = "bloodykgrapes/bloodyShell"
+WALLPAPERS_REPO = "bloodykgrapes/bloodyShell.wallpapers"
+WALLPAPERS_REF = "main"
 VERSION = (ROOT / "version").read_text().strip()
-# Release resources must match their runtime. Source checkouts use their local files.
-REF = "v" + VERSION
-IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
+REF = "v" + VERSION.removeprefix("v")
+IMAGES = {".jpg", ".jpeg", ".jfif", ".png", ".webp", ".bmp", ".gif"}
 VIDEOS = {".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi"}
 TRANSITIONS = {"none", "simple", "fade", "left", "right", "top", "bottom", "wipe", "wave", "grow", "center", "any", "outer", "random"}
+GREETER_FILES = ("Main.qml", "Widgets.qml", "Theme.qml", "metadata.desktop", "theme.conf", "niri.kdl")
 
 
 def home():
@@ -55,20 +58,57 @@ def download(url, destination=None):
     command = ["curl", "-fsSL", "--retry", "1", "--max-time", "120" if destination else "20"]
     if destination:
         command += ["-o", str(destination)]
-    result = subprocess.run(command + [url], capture_output=True, text=True)
+    result = FILES["run"](command + [url], capture_output=True, text=True, timeout=130)
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or "Could not download repository files")
     return result.stdout
 
 
+def repository_paths(repository, reference):
+    ref = quote(reference, safe="")
+    data = json.loads(download(f"https://api.github.com/repos/{repository}/git/trees/{ref}?recursive=1"))
+    if not isinstance(data, dict) or not isinstance(data.get("tree"), list) or data.get("truncated"):
+        raise ValueError("Could not read the complete import file list.")
+    return {item["path"] for item in data["tree"] if isinstance(item, dict) and item.get("type") == "blob"
+            and isinstance(item.get("path"), str) and item.get("mode") != "120000"}
+
+
+def shell_paths():
+    if (ROOT / "dots").is_dir():
+        return {path.relative_to(ROOT).as_posix() for path in (ROOT / "dots").rglob("*") if path.is_file() and not path.is_symlink()}
+    return repository_paths(REPO, REF)
+
+
+def config_programs(paths):
+    return sorted({path.split("/")[2] for path in paths if path.startswith("dots/config/") and len(path.split("/")) >= 4
+                   and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", path.split("/")[2])})
+
+
+def resource_catalog():
+    errors, names = [], []
+    available = dict(dots=False, greeter=False, compositor=False, wallpapers=False)
+    try:
+        paths = shell_paths()
+        names = config_programs(paths)
+        compositor = COMPOSITORS["load"]()["INFO"]
+        available.update(dots=bool(names), greeter=all("dots/sddm/" + name in paths for name in GREETER_FILES),
+                         compositor=all(compositor["resource"] + "/" + name in paths for name in compositor["files"]))
+        if not (ROOT / "dots").is_dir() and not all(available[key] for key in ("dots", "greeter", "compositor")):
+            errors.append("Import files are missing from " + REF + ".")
+    except (OSError, RuntimeError, ValueError) as error:
+        errors.append("Shell files: " + str(error))
+    try:
+        paths = repository_paths(WALLPAPERS_REPO, WALLPAPERS_REF)
+        available["wallpapers"] = any(path.startswith("images/") and Path(path).suffix.lower() in IMAGES | VIDEOS for path in paths)
+        if not available["wallpapers"]:
+            errors.append("No wallpapers are available in " + WALLPAPERS_REPO + "/images.")
+    except (OSError, RuntimeError, ValueError) as error:
+        errors.append("Wallpapers: " + str(error))
+    return dict(programs=names, available=available, error="\n".join(errors))
+
+
 def programs():
-    source = ROOT / "dots/config"
-    if source.is_dir():
-        return sorted(path.name for path in source.iterdir() if path.is_dir() and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", path.name))
-    data = json.loads(download(f"https://api.github.com/repos/{REPO}/contents/dots/config?ref={REF}"))
-    if not isinstance(data, list):
-        raise ValueError("Invalid repository response")
-    return sorted(program_name(item["name"]) for item in data if item.get("type") == "dir")
+    return config_programs(shell_paths())
 
 
 def resource_path(resource):
@@ -77,7 +117,7 @@ def resource_path(resource):
     if resource == "dots":
         return Path("dots/config")
     if resource == "wallpapers":
-        return Path("dots/wallpapers")
+        return Path("images")
     if resource == "greeter":
         return Path("dots/sddm")
     if resource.startswith("dots/"):
@@ -91,40 +131,25 @@ def resource_path(resource):
 @contextmanager
 def source_for(resource):
     relative = resource_path(resource)
-    if (ROOT / relative).is_dir():
-        yield ROOT
-        return
+    if resource == "wallpapers":
+        repository, namespace, reference = WALLPAPERS_REPO, "heads", WALLPAPERS_REF
+    else:
+        if (ROOT / "dots").is_dir():
+            if not (ROOT / relative).is_dir():
+                raise ValueError("Missing resource folder: " + str(ROOT / relative))
+            yield ROOT
+            return
+        repository, namespace, reference = REPO, "tags", REF
     with tempfile.TemporaryDirectory(prefix="bloodyShell-import-") as temporary:
         stage = Path(temporary)
-        archive = stage / "source.tar.gz"
-        download(f"https://github.com/{REPO}/archive/refs/tags/{REF}.tar.gz", archive)
-        with tarfile.open(archive, "r:gz") as package:
-            total = 0
-            for member in package:
-                parts = PurePosixPath(member.name).parts
-                if len(parts) < 2:
-                    continue
-                path = PurePosixPath(*parts[1:])
-                if path.is_absolute() or ".." in path.parts:
-                    raise ValueError("Unsafe repository archive path")
-                if not path.is_relative_to(PurePosixPath(relative.as_posix())):
-                    continue
-                target = stage / path
-                if member.isdir():
-                    target.mkdir(parents=True, exist_ok=True)
-                elif member.isfile():
-                    total += member.size
-                    if total > 512 * 1024 * 1024:
-                        raise ValueError("Repository resource is too large")
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    with package.extractfile(member) as src, target.open("wb") as dest:
-                        shutil.copyfileobj(src, dest)
-                    target.chmod(member.mode & 0o755)
-                else:
-                    raise ValueError("Repository resources cannot contain links or special files")
-        if not (stage / relative).is_dir():
+        archive, extracted = stage / "source.tar.gz", stage / "source"
+        extracted.mkdir()
+        ref = quote(reference, safe="")
+        download(f"https://github.com/{repository}/archive/refs/{namespace}/{ref}.tar.gz", archive)
+        FILES["extract_archive"](archive, extracted, prefix=relative)
+        if not (extracted / relative).is_dir():
             raise ValueError("The repository does not contain this resource")
-        yield stage
+        yield extracted
 
 
 def copy_image(source, destination):
@@ -164,12 +189,15 @@ def import_wallpapers(source):
     return dict(destination=str(directory), imported=copied)
 
 
-def import_config(source, program):
+@contextmanager
+def config_change(source, program):
     program_name(program)
     destination = config_home() / program
     destination.parent.mkdir(parents=True, exist_ok=True)
     backup = None
-    with tempfile.TemporaryDirectory(prefix=".bloodyShell-config-", dir=destination.parent) as temporary:
+    original = destination.exists() or destination.is_symlink()
+    with tempfile.TemporaryDirectory(prefix=".bloodyShell-config-", dir=destination.parent) as temporary, \
+            tempfile.TemporaryDirectory(prefix=".bloodyShell-rollback-", dir=destination.parent) as rollback:
         # Keep compositor configs at their original depth so relative includes
         # and symlinks also resolve correctly during staged validation.
         staged = Path(temporary) if program in COMPOSITORS["BACKENDS"] else Path(temporary) / program
@@ -177,21 +205,42 @@ def import_config(source, program):
             COMPOSITORS["load"](program)["prepare"](source, destination, staged)
         else:
             shutil.copytree(source, staged, symlinks=True)
-        if destination.exists() or destination.is_symlink():
-            stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + "-import-" + uuid.uuid4().hex[:8]
-            backup = Path(os.environ.get("XDG_STATE_HOME") or home() / ".local/state") / "bloodyShell/backups" / stamp / program
-            backup.parent.mkdir(parents=True)
-            shutil.move(str(destination), backup)
+        previous = Path(rollback) / program
         try:
+            if original:
+                stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + "-import-" + uuid.uuid4().hex[:8]
+                backup = Path(os.environ.get("XDG_STATE_HOME") or home() / ".local/state") / "bloodyShell/backups" / stamp / program
+                backup.parent.mkdir(parents=True)
+                FILES["copy_path"](destination, backup)
+                os.replace(destination, previous)
             os.replace(staged, destination)
-        except OSError:
+            yield dict(destination=str(destination), backup=str(backup) if backup else "")
+        except BaseException:
+            if previous.exists() or previous.is_symlink():
+                FILES["remove_path"](destination)
+                os.replace(previous, destination)
+            elif not original and not staged.exists():
+                FILES["remove_path"](destination)
             if backup is not None:
-                shutil.move(str(backup), destination)
+                FILES["remove_path"](backup)
+                try:
+                    backup.parent.rmdir()
+                except OSError:
+                    pass
             raise
-    return dict(destination=str(destination), backup=str(backup) if backup else "")
 
 
-def import_resource(resource):
+def import_config(source, program, transaction=None):
+    change = config_change(source, program)
+    if transaction is not None:
+        return transaction.enter_context(change)
+    with change as result:
+        return result
+
+
+def import_resource(resource, transaction=None, names=None):
+    if names is not None and resource != "dots":
+        raise ValueError("Application names only apply to the configs import")
     if resource == "cli":
         management = runpy.run_path(str(Path(__file__).with_name("management.py")))
         return management["refresh_command"]()
@@ -200,38 +249,37 @@ def import_resource(resource):
         if resource == "wallpapers":
             return import_wallpapers(source / relative)
         if resource == "compositor":
-            return import_config(source / relative, COMPOSITORS["load"]()["INFO"]["config"])
+            return import_config(source / relative, COMPOSITORS["load"]()["INFO"]["config"], transaction)
         if resource == "dots":
-            return import_dots(source / relative)
+            return import_dots(source / relative, names, transaction)
         if resource.startswith("dots/"):
-            return import_config(source / relative, resource[5:])
+            return import_config(source / relative, resource[5:], transaction)
         environment = dict(os.environ, BLOODYSHELL_RESOURCE_DIR=str(source))
-        result = subprocess.run(["bash", str(ROOT / "setup"), "sddm"], env=environment)
+        result = subprocess.run(["bash", str(ROOT / "scripts/lib/system.sh")], env=environment)
         if result.returncode:
             raise RuntimeError("Greeter setup failed")
         return dict(destination="/usr/share/sddm/themes/bloodyShell")
 
 
-def import_dots(source):
-    names = sorted(program_name(path.name) for path in source.iterdir() if path.is_dir())
+def clear_resource(resource):
+    if resource != "greeter":
+        raise ValueError("Only the login screen can be cleared")
+    management = runpy.run_path(str(Path(__file__).with_name("management.py")))
+    with management["operation_lock"]():
+        return management["clear_greeter"]()
+
+
+def import_dots(source, names=None, transaction=None):
+    names = sorted({program_name(name) for name in names} if names is not None else
+                   {program_name(path.name) for path in source.iterdir() if path.is_dir()})
     if not names:
         raise ValueError("No application configurations are available")
-    imported = []
-    try:
-        for name in names:
-            imported.append(import_config(source / name, name))
-    except BaseException:
-        # Treat the grouped action as one operation: restore earlier imports if
-        # a later application configuration cannot be installed.
-        for result in reversed(imported):
-            destination = Path(result["destination"])
-            if destination.is_symlink() or destination.is_file():
-                destination.unlink()
-            else:
-                shutil.rmtree(destination)
-            if result["backup"]:
-                shutil.move(result["backup"], destination)
-        raise
+    for name in names:
+        resource_path("dots/" + name)
+        if not (source / name).is_dir():
+            raise ValueError("No application configuration is available for " + name)
+    with ExitStack() as local:
+        imported = [import_config(source / name, name, transaction if transaction is not None else local) for name in names]
     return dict(destination=str(config_home()), imports=imported, backups=[result["backup"] for result in imported if result["backup"]])
 
 
@@ -239,27 +287,30 @@ def status():
     dependencies = runpy.run_path(str(Path(__file__).with_name("management.py")))
     compositor = COMPOSITORS["load"]()["INFO"]
     error = ""
+    catalog = dict(programs=[], available={})
     try:
-        available = programs()
+        catalog = resource_catalog()
+        error = catalog["error"]
     except (OSError, RuntimeError, ValueError) as failure:
-        available = []
         error = str(failure)
     return dict(error=error, terminal=dependencies["terminal"](), entries=[
-        dict(id="compositor", kind="compositor", name=compositor["name"], destination=str(config_home() / compositor["config"])),
-        dict(id="dots", kind="dots", name="dots", programs=available, destination=str(config_home())),
-        dict(id="greeter", kind="greeter", name="greeter", destination="/usr/share/sddm/themes/bloodyShell"),
-        dict(id="wallpapers", kind="wallpapers", name="wallpapers", destination=str(wallpapers_dir())),
-        dict(id="cli", kind="cli", name="cli", destination=str(dependencies["command_location"]()[1] / "bloodyShell"))])
+        dict(id="greeter", kind="greeter", name="greeter", available=catalog["available"].get("greeter", False), destination=str(dependencies["SDDM_THEME"]), installed=bool(dependencies["sddm_paths"]())),
+        dict(id="compositor", kind="compositor", name=compositor["name"], available=catalog["available"].get("compositor", False), destination=str(config_home() / compositor["config"])),
+        dict(id="dots", kind="dots", name="dots", programs=catalog["programs"], available=catalog["available"].get("dots", False), destination=str(config_home())),
+        dict(id="wallpapers", kind="wallpapers", name="wallpapers", available=catalog["available"].get("wallpapers", False), destination=str(wallpapers_dir()))])
 
 
 def resources_main():
     parser = argparse.ArgumentParser(description="Import bloodyShell repository files")
-    parser.add_argument("action", choices=("status", "programs", "import"))
+    parser.add_argument("action", choices=("status", "programs", "import", "clear"))
     parser.add_argument("resource", nargs="?")
+    parser.add_argument("--only", nargs="+")
     parser.add_argument("--wait", action="store_true")
     parser.add_argument("--human", action="store_true")
     args = parser.parse_args()
     try:
+        if args.only is not None and (args.action != "import" or args.resource != "dots"):
+            raise ValueError("--only requires import dots")
         if args.action == "status":
             print(json.dumps(status()))
         elif args.action == "programs":
@@ -267,16 +318,23 @@ def resources_main():
         else:
             if not args.resource:
                 raise ValueError("Resource name is required")
-            result = import_resource(args.resource)
+            if args.action == "clear":
+                result = clear_resource(args.resource)
+            elif args.resource == "cli":
+                result = import_resource(args.resource)
+            else:
+                management = runpy.run_path(str(Path(__file__).with_name("management.py")))
+                with management["operation_lock"]():
+                    result = import_resource(args.resource, names=args.only)
             if args.human or args.wait:
-                print(("Command refreshed → " if args.resource == "cli" else "Imported → ") + result["destination"])
+                print(("Cleared → " if args.action == "clear" else "Command refreshed → " if args.resource == "cli" else "Imported → ") + result["destination"])
                 for backup in [result.get("backup"), *result.get("backups", [])]:
                     if backup:
                         print("Backup → " + backup)
             else:
                 print(json.dumps(result))
         return 0
-    except (OSError, ValueError, RuntimeError, tarfile.TarError) as error:
+    except (OSError, ValueError, RuntimeError, tarfile.TarError, subprocess.SubprocessError) as error:
         print(str(error), file=sys.stderr)
         return 1
     finally:
@@ -289,9 +347,9 @@ def resources_main():
 
 def write_export(source, directory, keyboard_layouts=None):
     data = json.loads(source.read_text()) if source.is_file() else {}
+    existing = configparser.ConfigParser(interpolation=None)
+    existing.read(directory / "theme.conf")
     if keyboard_layouts is None:
-        existing = configparser.ConfigParser(interpolation=None)
-        existing.read(directory / "theme.conf")
         try:
             keyboard_layouts = json.loads(existing.get("General", "keyboardLayouts", fallback="null"))
         except (ValueError, configparser.Error):
@@ -311,16 +369,12 @@ def write_export(source, directory, keyboard_layouts=None):
         ):
             raise ValueError("Invalid login-screen keyboard layouts")
         settings["keyboardLayouts"] = json.dumps([{key: entry.get(key, "") for key in ("layout", "variant")} for entry in keyboard_layouts])
-    wallpaper = Path(str(data.get("wallpaperCurrent", "")))
-    if wallpaper.is_file() and wallpaper.suffix.lower() in VIDEOS:
-        wallpaper = wallpaper_preview(wallpaper)
-    if wallpaper.is_file() and wallpaper.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
-        destination = directory / ("wallpaper" + wallpaper.suffix.lower())
-        FILES["atomic_copy"](wallpaper, destination)
-        settings["wallpaperCurrent"] = str(destination)
-    for old in directory.glob("wallpaper.*"):
-        if str(old) != settings.get("wallpaperCurrent") and old.is_file():
-            old.unlink()
+    wallpaper = existing.get("General", "wallpaperCurrent", fallback="")
+    if wallpaper:
+        settings["wallpaperCurrent"] = wallpaper
+        selection = existing.get("General", "wallpaperSource", fallback="")
+        if selection:
+            settings["wallpaperSource"] = selection
     account = pwd.getpwuid(os.getuid())
     for source_avatar in (Path(account.pw_dir) / ".face", Path(account.pw_dir) / ".face.icon", Path("/var/lib/AccountsService/icons") / account.pw_name):
         if not source_avatar.is_file() or not os.access(source_avatar, os.R_OK):
@@ -340,11 +394,20 @@ def write_export(source, directory, keyboard_layouts=None):
     FILES["atomic_write"](directory / "theme.conf", output.getvalue().encode())
 
 
-def export(source, directory, keyboard_layouts=None):
+@contextmanager
+def greeter_lock(directory, create=False):
     if directory.is_symlink():
         raise ValueError("Login-screen storage must not be a symlink")
-    with (directory / ".appearance.lock").open("a") as lock:
+    flags = os.O_NOFOLLOW | os.O_RDONLY | (os.O_CREAT if create else 0)
+    with os.fdopen(os.open(directory / ".appearance.lock", flags, 0o644), "r") as lock:
+        if create and os.fstat(lock.fileno()).st_mode & 0o777 != 0o644:
+            os.fchmod(lock.fileno(), 0o644)
         fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def export(source, directory, keyboard_layouts=None):
+    with greeter_lock(directory, create=True):
         write_export(source, directory, keyboard_layouts)
 
 
@@ -362,6 +425,104 @@ def greeter_main():
     except (OSError, ValueError) as error:
         print("Greeter appearance: " + str(error), file=sys.stderr)
         sys.exit(1)
+
+
+GREETER_STATE = Path("/var/lib/bloodyShell")
+
+
+def greeter_wallpaper_status(directory=GREETER_STATE, expected=""):
+    configuration = configparser.ConfigParser(interpolation=None)
+    configuration.read(directory / "theme.conf")
+    management = runpy.run_path(str(Path(__file__).with_name("management.py")))
+    wallpaper = configuration.get("General", "wallpaperCurrent", fallback="")
+    matches = False
+    if expected and wallpaper:
+        try:
+            matches = hashlib.sha256(Path(expected).expanduser().read_bytes()).digest() == hashlib.sha256(Path(wallpaper).read_bytes()).digest()
+        except OSError:
+            pass
+    return dict(installed=(directory / "theme.conf").is_file(), writable=os.access(directory, os.W_OK), wallpaper=wallpaper, matches=matches,
+                selection=configuration.get("General", "wallpaperSource", fallback=""), terminal=management["terminal"]())
+
+
+def set_greeter_wallpaper(value, directory=GREETER_STATE):
+    image = wallpaper_file(value)
+    if image.suffix.lower() not in IMAGES:
+        raise ValueError("Choose an image for the login screen")
+    if directory.is_symlink() or not (directory / "theme.conf").is_file():
+        raise ValueError("Install the bloodyShell login screen first")
+    # This is one shared selection; per-user appearance exports never replace it.
+    with greeter_lock(directory):
+        configuration = configparser.ConfigParser(interpolation=None)
+        configuration.optionxform = str
+        configuration.read(directory / "theme.conf")
+        content = image.read_bytes()
+        target = directory / ("wallpaper-" + hashlib.sha256(content).hexdigest() + image.suffix.lower())
+        previous = Path(configuration.get("General", "wallpaperCurrent", fallback=""))
+        configuration["General"]["wallpaperCurrent"] = str(target)
+        configuration["General"]["wallpaperSource"] = str(image)
+        output = io.StringIO()
+        configuration.write(output)
+        writable = os.access(directory, os.W_OK)
+        # Authenticate as the shared directory's account, never write as root
+        # into storage that account can modify.
+        elevated = ["sudo", "-u", "#" + str(directory.stat().st_uid)]
+        created = not target.exists()
+        try:
+            if writable:
+                FILES["atomic_write"](target, content)
+                FILES["atomic_write"](directory / "theme.conf", output.getvalue().encode())
+            else:
+                with tempfile.TemporaryDirectory(prefix="bloodyShell-login-wallpaper-") as temporary:
+                    stage = Path(temporary)
+                    (stage / "wallpaper").write_bytes(content)
+                    (stage / "theme.conf").write_text(output.getvalue())
+                    stage.chmod(0o755)
+                    (stage / "wallpaper").chmod(0o644)
+                    (stage / "theme.conf").chmod(0o644)
+                    staged = directory / (".theme-" + uuid.uuid4().hex)
+                    try:
+                        subprocess.run([*elevated, "install", "-m", "644", "--", str(stage / "wallpaper"), str(target)], check=True)
+                        subprocess.run([*elevated, "install", "-m", "644", "--", str(stage / "theme.conf"), str(staged)], check=True)
+                        subprocess.run([*elevated, "mv", "-f", "--", str(staged), str(directory / "theme.conf")], check=True)
+                    finally:
+                        subprocess.run([*elevated, "-n", "rm", "-f", "--", str(staged)], check=False)
+        except BaseException:
+            if created:
+                if writable:
+                    target.unlink(missing_ok=True)
+                else:
+                    subprocess.run([*elevated, "-n", "rm", "-f", "--", str(target)], check=False)
+            raise
+        if previous != target and previous.parent == directory and re.fullmatch(r"wallpaper-[a-f0-9]{64}\.[a-z]+", previous.name):
+            if writable:
+                previous.unlink(missing_ok=True)
+            else:
+                subprocess.run([*elevated, "-n", "rm", "-f", "--", str(previous)], check=False)
+    return dict(wallpaper=str(target))
+
+
+def greeter_wallpaper_main():
+    parser = argparse.ArgumentParser(description="Shared login-screen wallpaper")
+    parser.add_argument("action", choices=("status", "apply"))
+    parser.add_argument("path", nargs="?")
+    parser.add_argument("--wait", action="store_true")
+    args = parser.parse_args()
+    try:
+        if args.action == "apply" and not args.path:
+            raise ValueError("Choose a login-screen wallpaper")
+        result = greeter_wallpaper_status(expected=args.path or "") if args.action == "status" else set_greeter_wallpaper(args.path)
+        print(json.dumps(result))
+        return 0
+    except (OSError, ValueError, configparser.Error, subprocess.SubprocessError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    finally:
+        if args.wait and sys.stdin.isatty():
+            try:
+                input("\nPress Enter to close…")
+            except (EOFError, KeyboardInterrupt):
+                pass
 
 
 
@@ -392,7 +553,7 @@ def wallpaper_preview(path):
                    "-threads", "1", "-filter_threads", "1", "-protocol_whitelist", "file,pipe",
                    "-i", str(path), "-map", "0:v:0", "-frames:v", "1", "-an",
                    "-vf", "scale=720:720:force_original_aspect_ratio=decrease", str(temporary)]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+        result = FILES["run"](command, capture_output=True, text=True, timeout=15)
         if result.returncode or temporary.stat().st_size == 0:
             raise ValueError("Could not read the video's first frame")
         temporary.replace(target)
@@ -419,7 +580,7 @@ def wallpaper_main():
     try:
         if args.action == "colors":
             path = wallpaper_file(args.path)
-            result = subprocess.run(["setpriv", "--pdeathsig", "TERM", "ffmpeg", "-nostdin", "-v", "error", "-threads", "1", "-filter_threads", "1",
+            result = FILES["run"](["setpriv", "--pdeathsig", "TERM", "ffmpeg", "-nostdin", "-v", "error", "-threads", "1", "-filter_threads", "1",
                                      "-protocol_whitelist", "file,pipe", "-i", str(path), "-frames:v", "1", "-vf", "scale=24:24:flags=area", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"],
                                     capture_output=True, timeout=10)
             if result.returncode:
@@ -441,8 +602,8 @@ def wallpaper_main():
                 data = wallpaper_info(args.path) if args.path else None
             except (OSError, ValueError):
                 data = None
-            if data is None:
-                query = subprocess.run(["setpriv", "--pdeathsig", "TERM", "awww", "query"], capture_output=True, text=True, timeout=5)
+            if data is None and not args.path:
+                query = FILES["run"](["setpriv", "--pdeathsig", "TERM", "awww", "query"], capture_output=True, text=True, timeout=5)
                 for line in query.stdout.splitlines():
                     if "image: " not in line:
                         continue
@@ -459,7 +620,7 @@ def wallpaper_main():
                        "--transition-type", args.transition, "--transition-pos", "center",
                        "--transition-duration", "1.2", "--transition-fps", "120",
                        "--transition-bezier", "0.16,0.85,0.2,1.0"]
-            result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+            result = FILES["run"](command, capture_output=True, text=True, timeout=10)
             if result.returncode:
                 raise ValueError(result.stderr.strip() or "Could not change the wallpaper")
         print(json.dumps(data))

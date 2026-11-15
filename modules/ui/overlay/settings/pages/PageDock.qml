@@ -47,10 +47,13 @@ SettingsPage
         }
     }
 
-    SettingsGroup
+    SettingsDisclosure
     {
+        objectName: "dockPinnedApplications"
         title: Tr.tr("settings.dock.pinnedApplications")
-        subtitle: Tr.tr("settings.dock.pinnedHint")
+        description: Tr.tr("settings.dock.pinnedHint")
+        icon: Icon.pin
+        summary: String(Config.dockPinned.length)
 
         Repeater
         {

@@ -33,6 +33,8 @@ Common.InteractiveControl
         id: surface
         anchors.fill: parent
         radius: Config.animationsFluid && control.hovered ? 16 : 18
+        border.width: 1
+        border.color: control.checked ? "transparent" : Theme.colorHairline
         color: control.checked ? Theme.colorAccent : Qt.tint(Theme.frameColor, Theme.colorField)
         scale: area.pressed ? 0.96 : control.hovered && Config.animationsFluid ? 1.02 : 1
         Tint on color {}

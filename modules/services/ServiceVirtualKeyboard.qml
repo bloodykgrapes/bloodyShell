@@ -23,6 +23,11 @@ Singleton
     function show(screenName = "")
     {
         if (!Config.virtualKeyboardEnabled || ServiceScreenshot.active) return;
+        if (ServiceLock.locked)
+        {
+            ServiceLock.showPrompt();
+            if (!ServiceLock.promptVisible) return;
+        }
         output = screenName || ServiceCompositor.focusedOutput;
         layoutIndex = Math.max(0, Math.min(layouts.length - 1, ServiceCompositor.keyboardLayoutIndex));
         visible = true;

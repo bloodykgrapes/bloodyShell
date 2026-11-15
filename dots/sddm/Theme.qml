@@ -44,4 +44,9 @@ QtObject
     readonly property var easingAccelerate: [0.3, 0.0, 0.8, 0.15, 1.0, 1.0]
 
     function icon(name) { return Qt.resolvedUrl("icons/" + name + ".svg") }
+    function fileUrl(path)
+    {
+        const value = String(path || "");
+        return !value || value.startsWith("file:") ? value : "file://" + value.split("/").map(encodeURIComponent).join("/");
+    }
 }

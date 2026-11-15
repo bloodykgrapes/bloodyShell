@@ -44,7 +44,7 @@ PanelWindow
         topColor: Theme.colorAccent
         bottomColor: topColor
 
-        bars: 100
+        barWidth: 18
 
         minimumHeight: 0
     }

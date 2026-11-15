@@ -40,6 +40,23 @@ Singleton
     readonly property string tray: path + "tray.svg"
     readonly property string keyboard: path + "keyboard.svg"
 
+    readonly property string screenshot: path + "screenshot.svg"
+    readonly property string widgets:             path + "widgets.svg"
+    readonly property string recording:           path + "recording.svg"
+
+    readonly property string autostart:           path + "autostart.svg"
+    readonly property string defaultApplications: path + "default_applications.svg"
+    readonly property string audioEffects:        path + "audio_effects.svg"
+    readonly property string importFiles:         path + "import_files.svg"
+    readonly property string packages:            path + "packages.svg"
+    readonly property string setup:               path + "setup.svg"
+    readonly property string compositor:          path + "compositor.svg"
+    readonly property string terminal:            path + "terminal.svg"
+    readonly property string configuration:       path + "configuration.svg"
+    readonly property string loginScreen:         path + "login_screen.svg"
+    readonly property string mount:               path + "mount.svg"
+    readonly property string shortcuts:           path + "shortcuts.svg"
+
     readonly property string bluetoothON:        path + "bluetooth_enabled.svg"
     readonly property string bluetoothOFF:       path + "bluetooth_disabled.svg"
 

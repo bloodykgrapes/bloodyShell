@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls.Basic as Controls
-import QtQuick.Effects
 
 Item
 {
@@ -13,6 +12,7 @@ Item
     property var desktopModel: typeof sessionModel === "undefined" ? null : sessionModel
     readonly property bool preview: authenticator === null
     readonly property string stateDir: Theme.stateDir
+    readonly property real uiScale: Math.max(0.65, Math.min(1, width / 1280, height / 960))
     property bool keyboardVisible: false
     property var keyboardEngine: null
     readonly property var activeKeyboardEngine: keyboardEngine || nativeKeyboard.item
@@ -168,7 +168,7 @@ Item
                 anchors.centerIn: parent
                 width: 360
                 spacing: 30
-                scale: Math.max(0.1, Math.min(1, contentArea.width / width, contentArea.height / implicitHeight))
+                scale: Math.max(0.1, Math.min(root.uiScale, contentArea.width / (width + 48), contentArea.height / (implicitHeight + 64)))
 
                 Column
                 {
@@ -272,49 +272,11 @@ Item
 
                         Widgets.Shadow { target: avatar }
 
-                        Rectangle
+                        Widgets.Avatar
                         {
                             id: avatar
-                            layer.enabled: true
-                            layer.effect: MultiEffect
-                            {
-                                maskEnabled: true
-                                maskSource: Rectangle
-                                {
-                                    width: avatar.width; height: avatar.height; radius: avatar.radius
-                                    color: "white"; layer.enabled: true; visible: false
-                                }
-                            }
                             anchors.horizontalCenter: parent.horizontalCenter
-                            width: 88
-                            height: width
-                            radius: width / 2
-                            color: Theme.surface
-                            border.width: 1
-                            border.color: Theme.colorLine
-
-                            Image
-                            {
-                                anchors.centerIn: parent
-                                visible: face.status !== Image.Ready
-                                source: Theme.icon("user")
-                                width: Math.round(parent.width * 0.42)
-                                height: width
-                                sourceSize: Qt.size(width * 2, height * 2)
-                            }
-                            Image
-                            {
-                                id: face
-                                property int attempt: 0
-                                readonly property var candidates: root.avatarOf(root.user)
-                                anchors.fill: parent
-                                source: attempt < candidates.length ? "file://" + String(candidates[attempt]).replace(/^file:\/\//, "") : ""
-                                onCandidatesChanged: attempt = 0
-                                onStatusChanged: if (status === Image.Error) attempt++
-                                sourceSize: Qt.size(208, 208)
-                                fillMode: Image.PreserveAspectCrop
-                                asynchronous: true
-                            }
+                            sources: root.avatarOf(root.user)
                         }
 
                         Widgets.Button
@@ -451,6 +413,8 @@ Item
         {
             id: footer
             objectName: "greeterFooter"
+            scale: root.uiScale
+            transformOrigin: Item.BottomRight
             anchors { right: parent.right; bottom: parent.bottom; margins: 24; bottomMargin: 24 + (onScreenKeyboard.height + 20) * root.keyboardReveal }
             spacing: 8
             opacity: screen.introFoot * screen.shown

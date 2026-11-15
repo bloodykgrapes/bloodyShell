@@ -9,7 +9,7 @@ SettingsDisclosure
 {
     title: Tr.tr("settings.defaultApplications.title")
     description: Tr.tr("settings.defaultApplications.description")
-    icon: Icon.settingsApplications
+    icon: Icon.defaultApplications
 
     Repeater
     {

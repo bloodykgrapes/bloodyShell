@@ -267,6 +267,100 @@ ShellRoot {
         assert not re.search(r"SIDEBAR_NOTIFICATIONS_FAILED|TypeError|ReferenceError|Binding loop|Cannot assign|Unable to assign|is not a type|Failed to load configuration", output), output
 
 
+def activation_checks():
+    prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-notification-focus-") as temporary:
+        base = Path(temporary)
+        env = prepare(base)
+        env.update(HOME=str(base / "home"), XDG_STATE_HOME=str(base / "state"))
+        (base / "home").mkdir()
+        env.pop("WAYLAND_DISPLAY", None)
+        source = base / "modules/compositors/Niri.qml"
+        text = source.read_text().replace("    id: niri", "    id: niri\n    property var testActions: []", 1)
+        text = text.replace('Quickshell.execDetached(["niri", "msg", "action"].concat(args))',
+                            'testActions = testActions.concat([{args:args, sidebarActive:SidebarState.active}])')
+        source.write_text(text)
+        source = base / "modules/services/ServiceApplications.qml"
+        text = source.read_text().replace("readonly property var applications: DesktopEntries.applications.values || []", "property var applications: []")
+        text = text.replace("DesktopEntries.byId(appId) || DesktopEntries.heuristicLookup(appId)",
+                            "applications.find(entry => entry.id === appId || entry.startupClass === appId) || null")
+        source.write_text(text)
+        (base / "shell.qml").write_text('''import QtQuick
+import QtQuick.Window
+import QtTest
+import Quickshell
+import "modules/core"
+import "modules/services"
+import "modules/common"
+
+ShellRoot {
+    id: tests
+    property int invocations: 0
+    property int dismissals: 0
+    function check(ok,message) { if(!ok)throw new Error(message); }
+    function note(desktop, appName, action) {
+        return {id:1, desktopEntry:desktop, appName:appName, summary:"New message", body:"Open the application", appIcon:"", image:"", urgency:1, tracked:true,
+            actions:action?[{identifier:"default",text:"Open",invoke:()=>{check(!SidebarState.active,"Default action ran before sidebar closed");invocations++;}}]:[],
+            dismiss:()=>{dismissals++;}};
+    }
+    function activate(notification, keyboard) {
+        row.n=notification;
+        SidebarState.current="right";
+        if(keyboard) {row.forceActiveFocus();events.keyClick(Qt.Key_Return);}
+        else events.mouseClick(row,row.width/2,row.height/2,Qt.LeftButton,Qt.NoModifier,0);
+        check(!SidebarState.active,"Activation kept the sidebar open");
+    }
+    function expectWindow(id, message) {
+        const actions=ServiceCompositor.backend.testActions;
+        check(actions.length===1 && JSON.stringify(actions[0].args)===JSON.stringify(["focus-window","--id",String(id)]) && !actions[0].sidebarActive,message);
+        ServiceCompositor.backend.testActions=[];
+    }
+    Window {
+        id: window; visible:true; width:420; height:180
+        NotificationRow {id:row;anchors.centerIn:parent;width:380}
+        TestCase {id:events;name:"NotificationActivation";when:false;optional:true}
+    }
+    Timer {interval:250;running:true;onTriggered:{try {
+        const backend=ServiceCompositor.backend;
+        check(backend!==null,"Missing compositor adapter");
+        ServiceApplications.applications=[{id:"org.example.Chat",name:"Chat",startupClass:"Chat-client"}];
+        void ServiceWindowActions.lastFocused;
+        backend.windowsApply([
+            {id:11,app_id:"org.example.Chat",title:"First chat",workspace_id:1,is_focused:false},
+            {id:12,app_id:"org.example.Chat",title:"Recent chat",workspace_id:2,is_focused:true},
+            {id:13,app_id:"org.other.Chat",title:"Other app",workspace_id:3,is_focused:false},
+            {id:99,app_id:"org.example.Editor",title:"Editor",workspace_id:4,is_focused:false}]);
+        backend.windowFocus(13);backend.windowFocus(99);
+        activate(note("org.example.Chat.desktop","Chat",true),false);
+        expectWindow(12,"Pointer activation did not focus the recent exact application window");
+        check(invocations===1 && dismissals===0,"Default action changed its dismissal behavior");
+        activate(note("org.example.Chat.desktop","Chat",false),true);
+        expectWindow(12,"Keyboard activation without a default action did not focus the window");
+        check(invocations===1 && dismissals===1,"Action-less notification was not dismissed");
+        activate(note("Chat-client","",true),false);
+        expectWindow(12,"Startup class alias did not match the application");
+        activate(note("","Chat",true),false);
+        expectWindow(12,"Application name fallback did not match the application");
+        activate(note("org.example.Missing","Missing",true),false);
+        check(backend.testActions.length===0 && invocations===4,"Unmatched notification focused an unrelated window or lost its action");
+        activate(note("org.example.Missing","Missing",false),true);
+        check(backend.testActions.length===0 && dismissals===2,"Unmatched action-less notification was not dismissed safely");
+        backend.windowRemove(12);
+        activate(note("org.example.Chat.desktop","Chat",false),false);
+        expectWindow(11,"Closed recent window prevented focusing the remaining application window");
+        console.log("NOTIFICATION_ACTIVATION_PASSED pointer/keyboard, default actions, MRU, exact IDs, startup classes, names, closed windows and unmatched notifications");Qt.quit();
+    }catch(error){console.error("NOTIFICATION_ACTIVATION_FAILED",error);Qt.quit();}}}
+    Timer {interval:5000;running:true;onTriggered:{console.error("NOTIFICATION_ACTIVATION_FAILED timeout");Qt.quit();}}
+}
+''')
+        result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, text=True, capture_output=True, timeout=8)
+        output = result.stdout + result.stderr
+        print(output)
+        assert result.returncode == 0 and "NOTIFICATION_ACTIVATION_PASSED" in output, output
+        assert not re.search(r"NOTIFICATION_ACTIVATION_FAILED|TypeError|ReferenceError|Binding loop|Cannot assign|Unable to assign|is not a type|Failed to load configuration", output), output
+
+
 if __name__ == "__main__":
     checks()
     ui_checks()
+    activation_checks()

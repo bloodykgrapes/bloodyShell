@@ -12,6 +12,8 @@ Singleton
     id: serviceDependencies
 
     property var entries: []
+    readonly property var packages: entries.filter(entry => !entry.required)
+    readonly property var dependencies: entries.filter(entry => entry.required)
     property var terminal: []
     property string error: ""
     property string operation: ""
@@ -30,8 +32,15 @@ Singleton
     {
         if (busy) return;
         const entry = entries.find(item => item.tool === tool);
-        if (!entry || !entry.supported || (remove && (!entry.removable || !entry.installed))) return;
-        pending = { tool: tool, remove: remove };
+        if (!entry || !entry.supported || (remove && (entry.required || !entry.removable || !entry.installed))) return;
+        pending = { tool: tool, name: entry.packages.length ? entry.packages.join(", ") : tool, remove: remove };
+    }
+
+    function description(entry)
+    {
+        const key = "settings.packages." + entry.tool;
+        const text = Tr.tr(key);
+        return text === key ? entry.feature || "" : text;
     }
 
     function apply()

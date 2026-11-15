@@ -18,6 +18,8 @@ with tempfile.TemporaryDirectory(prefix="bloodyShell-sddm-install-") as temporar
     (share / "old").write_text("previous theme")
     config.write_text("[Theme]\nCurrent=previous\n")
     source = (ROOT / "setup").read_text()
+    library = (ROOT / "scripts/lib/system.sh").read_text().split("# Shared system helpers\n", 1)[1].rsplit('\nif [[ "${BASH_SOURCE[0]}" == "$0" ]]', 1)[0]
+    source = source.replace('source "$PACKAGE/scripts/lib/system.sh"', library)
     source = source[:source.rfind('\nmain "$@"')]
     lines = source.splitlines()
     overrides = {"PACKAGE": ROOT, "SDDM_THEME": share, "GREETER_STATE": state, "SDDM_CONF": config, "SDDM_SYSTEM_CONF": system_config}
@@ -40,6 +42,9 @@ systemctl()
 ask() { [[ "${TEST_DECLINE:-}" != 1 ]]; }
 sudo()
 {
+    if [[ "${TEST_INTERRUPT_SDDM:-}" == 1 && "$1" == cp && "$*" == *"/theme/."* ]]; then
+        kill -TERM "$BASHPID"
+    fi
     case "$1" in
         -v) return 0 ;;
         chown) return 0 ;;
@@ -109,4 +114,12 @@ apply_greeter
     original = config.read_bytes()
     assert run(TEST_INVALID_NIRI="1").returncode != 0 and config.read_bytes() == original
     assert not any(word in log.read_text() for word in (" start ", " stop ", " restart ", "--now"))
+    before_backups = set(base.glob("*.bak-*"))
+    assert run(BLOODYSHELL_SETUP_BATCH="1", BLOODYSHELL_SETUP_BACKUP="false").returncode == 0
+    assert set(base.glob("*.bak-*")) == before_backups, "Skip kept new SDDM backups or deleted earlier backups"
+    (share / "personal-marker").write_text("keep after interrupted replacement")
+    original_config, original_system = config.read_bytes(), system_config.read_bytes()
+    assert run(TEST_INTERRUPT_SDDM="1").returncode != 0
+    assert (share / "personal-marker").read_text() == "keep after interrupted replacement"
+    assert config.read_bytes() == original_config and system_config.read_bytes() == original_system
     print("SDDM install, Wayland/niri configuration, theme permissions, backups, service choice, validation and rollback passed without system changes.")

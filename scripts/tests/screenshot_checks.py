@@ -62,8 +62,11 @@ def prepare(base):
     shutil.copy2(ROOT / 'version', base / 'version')
     for folder in ('bin', 'config/bloodyShell', 'runtime', 'cache', 'pictures'):
         (base / folder).mkdir(parents=True, mode=0o700)
+    (base / 'config/user-dirs.dirs').write_text('XDG_PICTURES_DIR="' + str(base / 'pictures') + '"\n')
     (base / 'fixture.png').write_bytes(png(800, 600))
-    (base / 'config/bloodyShell/settings.json').write_text(json.dumps(dict(helperSeen=True, themeAnimations=0, osdEnabled=False)))
+    (base / 'config/bloodyShell/settings.json').write_text(json.dumps(dict(
+        helperSeen=True, themeAnimations=0, osdTypeVolume=False, osdTypeBrightness=False,
+        osdTypeBattery=False, osdTypeLayout=False, osdTypeNetwork=False, osdTypeBluetooth=False)))
     fake = '''#!/usr/bin/env python3
 import os, shutil, sys, time
 from pathlib import Path
@@ -129,6 +132,16 @@ def checks():
             published = api['export'](shot['directory'], True, 0, 0, 800, 600)
             assert Path(published['path']).read_bytes() == (base / 'fixture.png').read_bytes()
             assert not any(call.args[0][0] == 'ffmpeg' for call in command.call_args_list), 'Full-screen export unnecessarily recoded the PNG'
+        with patch.dict(os.environ, env):
+            custom = base / 'custom screenshots with spaces'
+            published = api['export'](shot['directory'], True, 0, 0, 800, 600, str(custom))
+            assert Path(published['path']).parent == custom and Path(published['path']).read_bytes() == (base / 'fixture.png').read_bytes()
+            try:
+                api['publish'](shot['directory'], True, 'relative/path')
+            except ValueError:
+                pass
+            else:
+                raise AssertionError('Relative screenshot directory was accepted')
         subprocess.run(helper + ['cleanup', shot['directory']], env=env, check=True)
         assert not Path(shot['directory']).exists()
         denied = subprocess.run(helper + ['cleanup', str(base / 'pictures')], env=env, capture_output=True)
@@ -203,8 +216,8 @@ ShellRoot
                         tests.check(OverlayState.current === "settings" && overlay.testPage.item === tests.savedPage && !overlay.activeFor("settings"), "Settings was replaced instead of suspended");
                         tests.check(dialog.suspended && dialog.opacity === 0 && !dialog.modal && !dialog.enabled && !OverlayState.settingsPopup && tests.popupRejections === 0, "Popup remained above the screenshot or cancelled its pending confirmation: " + JSON.stringify([dialog.visible, dialog.suspended, dialog.opacity, dialog.modal, dialog.enabled, OverlayState.settingsPopup, tests.popupRejections]));
                         const modes = tests.find(tests.shot(), "screenshotModes"), destination = tests.find(tests.shot(), "screenshotDestination");
-                        modes.selected(Enums.ScreenshotScreen); destination.selected(true);
-                        tests.check(Config.screenshotMode === Enums.ScreenshotScreen && Config.screenshotSave === true && tests.shot().selectionItem.region.width === 800, "Screenshot selectors do not persist or update geometry");
+                        modes.selected(Enums.ScreenshotScreen); destination.selected("save");
+                        tests.check(Config.screenshotMode === Enums.ScreenshotScreen && Config.screenshotsAction === "save" && tests.shot().selectionItem.region.width === 800, "Screenshot selectors do not persist or update geometry");
                         modes.selected(Enums.ScreenshotArea);
                         const pointer = tests.find(tests.shot(), "screenshotPointer");
                         events.mousePress(pointer, 100, 120, Qt.LeftButton, Qt.NoModifier, 0);
@@ -232,7 +245,13 @@ ShellRoot
                         tests.shot().selectionItem.nudge(-1000, -1000, false);
                         tests.check(tests.shot().selectionItem.region.x === 0 && tests.shot().selectionItem.region.y === 0, "Keyboard move escaped screen bounds");
                         tests.shot().selectionItem.nudge(120, 130, false);
-                        tests.shot().submit(); break;
+                        Config.set("screenshotsPath", Quickshell.env("TEST_SCREENSHOT_BASE") + "/custom screenshots with spaces");
+                        Config.set("screenshotsInstantly", true);
+                        events.mousePress(pointer, 180, 180, Qt.LeftButton, Qt.NoModifier, 0);
+                        tests.check(ServiceScreenshot.phase === "ready", "Capture ran before releasing the selection");
+                        events.mouseRelease(pointer, 180, 180, Qt.LeftButton, Qt.NoModifier, 0);
+                        tests.check(ServiceScreenshot.phase === "publishing", "Selected area was not captured instantly");
+                        Config.set("screenshotsInstantly", false); break;
                     case 3:
                         if (waitFor(ServiceScreenshot.phase === "idle")) return;
                         tests.restored(); tests.check(tests.paths.length === 1, "Area export failed");
@@ -240,12 +259,12 @@ ShellRoot
                         overlay.takeScreenshot(Enums.ScreenshotScreen); break;
                     case 4:
                         if (waitFor(ServiceScreenshot.phase === "ready" && tests.shot() && tests.shot().ready)) return;
-                        tests.find(tests.shot(), "screenshotDestination").selected(false);
+                        tests.find(tests.shot(), "screenshotDestination").selected("copy");
                         tests.shot().submit(); break;
                     case 5:
                         if (waitFor(ServiceScreenshot.phase === "ready" && ServiceScreenshot.error !== "")) return;
                         tests.check(ServiceScreenshot.active, "Copy failure closed the screenshot");
-                        tests.find(tests.shot(), "screenshotDestination").selected(true);
+                        tests.find(tests.shot(), "screenshotDestination").selected("save");
                         tests.shot().submit(); break;
                     case 6:
                         if (waitFor(ServiceScreenshot.phase === "idle")) return;
@@ -253,15 +272,24 @@ ShellRoot
                         overlay.takeScreenshot(Enums.ScreenshotScreen); break;
                     case 7:
                         if (waitFor(ServiceScreenshot.phase === "ready" && tests.shot() && tests.shot().ready)) return;
-                        tests.find(tests.shot(), "screenshotDestination").selected(false);
-                        tests.shot().submit(); break;
+                        tests.find(tests.shot(), "screenshotDestination").selected("copy");
+                        Config.set("screenshotsInstantly", true);
+                        tests.check(ServiceScreenshot.phase === "ready", "Instant capture skipped the selector");
+                        const screenPointer = tests.find(tests.shot(), "screenshotPointer");
+                        events.mouseClick(screenPointer, 400, 300, Qt.LeftButton, Qt.NoModifier, 0);
+                        tests.check(ServiceScreenshot.phase === "publishing", "Finishing the selection did not capture instantly");
+                        Config.set("screenshotsInstantly", false); break;
                     case 8:
                         if (waitFor(ServiceScreenshot.phase === "idle")) return;
                         tests.restored(); tests.check(tests.completions === 3, "Copy completion was not reported");
                         overlay.takeScreenshot(); ServiceScreenshot.cancel(); break;
                     case 9:
                         if (waitFor(ServiceScreenshot.phase === "idle")) return;
-                        tests.restored(); Config.set("screenshotMode", 1); overlay.takeScreenshot(); break;
+                        tests.restored();
+                        Config.set("screenshotMode", 1);
+                        tests.check(Config.screenshotMode === Enums.ScreenshotScreen, "Invalid mode overwrote the saved selection");
+                        Config.screenshotMode = 1;
+                        overlay.takeScreenshot(); break;
                     case 10:
                         if (waitFor(ServiceScreenshot.phase === "ready" && tests.shot() && tests.shot().ready)) return;
                         const choices = tests.find(tests.shot(), "screenshotModes");
@@ -347,6 +375,7 @@ ShellRoot
         assert result.returncode == 0 and 'SCREENSHOTS_PASSED' in output, output
         assert not re.search(r'SCREENSHOTS_FAILED|ReferenceError|TypeError|Binding loop|Unable to assign|Cannot assign', output), output
         paths = json.loads(re.search(r'SCREENSHOT_PATHS (\[.*\])', output).group(1))
+        assert all(Path(path).parent == base / 'custom screenshots with spaces' for path in paths), 'Configured screenshot folder was ignored'
         width, height, pixel = pixels(Path(paths[0]))
         assert (width, height) == (220, 140), (width, height)
         assert pixel(0, 0) == (220, 20, 40) and pixel(width - 1, height - 1) == (220, 20, 40), 'Area pixels were rescaled or include overlay controls'
@@ -357,7 +386,7 @@ ShellRoot
         assert int((base / 'captures').read_text()) == 9, 'Selection or export recaptured the desktop'
         assert not list((base / 'runtime').glob('bloodyShell/captures/capture-*')), 'Screenshot sessions leaked'
         settings = json.loads((base / 'config/bloodyShell/settings.json').read_text())
-        assert isinstance(settings['screenshotMode'], int) and isinstance(settings['screenshotSave'], bool)
+        assert isinstance(settings['screenshotMode'], int) and settings['screenshotsAction'] in ('copy', 'save')
     print('Frozen capture, scale-correct crops, clipboard/save retry, mode selection, preserved pages, cancellation and cleanup passed.')
 
 

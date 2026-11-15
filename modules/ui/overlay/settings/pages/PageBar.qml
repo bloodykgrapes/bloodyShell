@@ -48,10 +48,32 @@ SettingsPage
         }
     }
 
-    SettingsGroup
+    SettingsDisclosure
     {
+        objectName: "barWidgets"
         title: Tr.tr("settings.bar.widgets")
+        icon: Icon.widgets
 
+        SettingsRow
+        {
+            label: Tr.tr("common.windowTitle")
+            SettingsChoices
+            {
+                objectName: "barWindowTitle"
+                options: [
+                    { label: Tr.tr("settings.bar.title"), value: 0 },
+                    { label: Tr.tr("settings.bar.appName"), value: 1 },
+                    { label: Tr.tr("settings.bar.appId"), value: 2 }
+                ]
+                current: Config.barWidgetWindowMode
+                onSelected: value => Config.set("barWidgetWindowMode", value)
+            }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("common.keyboardLayout")
+            Toggle { objectName: "barKeyboardLayout"; checked: Config.barWidgetKeyboardLayout; onToggled: value => Config.set("barWidgetKeyboardLayout", value) }
+        }
         SettingsRow
         {
             label: Tr.tr("settings.bar.volumePercentage")
@@ -62,14 +84,40 @@ SettingsPage
             label: Tr.tr("settings.bar.batteryPercentage")
             Toggle { checked: Config.barWidgetBatteryValue; onToggled: value => Config.set("barWidgetBatteryValue", value) }
         }
-        SettingsRow
+    }
+
+    SettingsDisclosure
+    {
+        objectName: "barDynamicIsland"
+        title: Tr.tr("shell.dynamicIsland")
+        icon: Icon.settingsOSD
+
+        Repeater
         {
-            label: Tr.tr("common.windowTitle")
-            SettingsChoices
+            model: [
+                {label: "common.volume", key: "osdTypeVolume"},
+                {label: "settings.island.brightness", key: "osdTypeBrightness"},
+                {label: "common.battery", key: "osdTypeBattery"},
+                {label: "settings.island.keyboard", key: "osdTypeLayout"},
+                {label: "settings.island.media", key: "islandMedia"},
+                {label: "common.network", key: "osdTypeNetwork"},
+                {label: "common.bluetooth", key: "osdTypeBluetooth"},
+                {label: "settings.island.recording", key: "islandRecordingIndicator"}
+            ]
+
+            SettingsRow
             {
-                options: [{ label: Tr.tr("settings.bar.title"), value: false }, { label: Tr.tr("settings.bar.appId"), value: true }]
-                current: Config.barWidgetWindowAppID
-                onSelected: value => Config.set("barWidgetWindowAppID", value)
+                id: eventRow
+                required property var modelData
+                label: Tr.tr(modelData.label)
+                enabled: Config.islandEnabled
+
+                Toggle
+                {
+                    objectName: "island-" + eventRow.modelData.key
+                    checked: Config[eventRow.modelData.key]
+                    onToggled: value => Config.set(eventRow.modelData.key, value)
+                }
             }
         }
     }

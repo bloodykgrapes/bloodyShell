@@ -301,6 +301,7 @@ def main():
         assert "REGRESSIONS_PASSED" in result.stdout, "Regression run did not finish"
         assert not re.search(r"REGRESSION_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign", result.stdout), "QML runtime error"
         run_user_editor(base / "user-editor")
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/user_picture_checks.py")], check=True)
         run_storage(base / "storage")
         run_media(base / "media")
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/runtime_checks.py")], check=True)
@@ -309,8 +310,8 @@ def main():
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/installer_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/uninstall_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/command_checks.py")], check=True)
-        subprocess.run([sys.executable, str(ROOT / "scripts/tests/program_choices_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/dependency_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/setup_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/easyeffects_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/update_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/updates_checks.py")], check=True)
@@ -319,6 +320,7 @@ def main():
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/network_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/notifications_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/screenshot_checks.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/tests/components_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/battery_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/autostart_checks.py")], check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/tests/helper_checks.py")], check=True)

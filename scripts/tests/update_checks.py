@@ -54,18 +54,20 @@ time.sleep(0.02)
 sys.stdout.write(control.get("raw", json.dumps(control.get("releases", []))) + "\\n" + str(control.get("http", 200)))
 ''')
         (base / "bin/curl").chmod(0o700)
-        (install / "setup").write_text('''#!/usr/bin/env python3
+        (install / "scripts").mkdir()
+        (install / "scripts/bloodyShell").write_text('''#!/usr/bin/env python3
 import json, os, sys, time
 from pathlib import Path
 base = Path(os.environ["TEST_UPDATE_DIR"])
 with (base / "attempts.jsonl").open("a") as log:
-    log.write(json.dumps(dict(args=sys.argv[1:], status=os.environ["BLOODYSHELL_STATUS"])) + "\\n")
+    assert sys.argv[1:3]==['internal','update']
+    log.write(json.dumps(dict(args=sys.argv[2:], status=os.environ["BLOODYSHELL_STATUS"])) + "\\n")
 status = Path(os.environ["BLOODYSHELL_STATUS"])
 status.write_text("step 1/3 Fixture installation\\n")
 time.sleep(0.3)
 status.write_text("failed fixture failure\\n")
 ''')
-        (install / "setup").chmod(0o700)
+        (install / "scripts/bloodyShell").chmod(0o700)
         (base / "shell.qml").write_text('''import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -105,6 +107,7 @@ ShellRoot
                 if (tests.stage === 0 && ServiceUpdate.versionReady && Date.now() - tests.since > 150)
                 {
                     tests.check(tests.checks() === 0 && count === 0, "Disabled checks started an automatic update");
+                    tests.check(ServiceUpdate.currentRelease.version === "1.0.0" && !ServiceUpdate.currentNotes, "Unfetched current version displayed invented release notes");
                     Config.updateAuto = false; Config.updateCheck = 1; tests.next();
                 }
                 else if (tests.stage === 1 && ServiceUpdate.checked && !ServiceUpdate.busy)
@@ -208,5 +211,120 @@ ShellRoot
     print("Automatic update checks passed with fake release responses and an isolated installer; no shell files were replaced.")
 
 
+def current_release_checks():
+    helpers = runpy.run_path(str(ROOT / "scripts/tests/run.py"))
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-current-release-") as temporary:
+        base = Path(temporary)
+        for name in ("core", "services", "runtime", "cache", "bin", "checkout"):
+            (base / name).mkdir(mode=0o700)
+        state = base / "new-state"
+        version = base / "checkout/version"
+        version.write_text("1.0.0")
+        (base / "control.json").write_text("{}")
+        (base / "requests.jsonl").write_text("")
+        shutil.copy2(ROOT / "modules/services/ServiceUpdate.qml", base / "services/ServiceUpdate.qml")
+        helpers["stub"](base, "core", "Config", 'property bool initialized:true; property bool updateAuto:true; property bool updateBeta:false; property int updateCheck:0')
+        helpers["stub"](base, "core", "Paths", "\n".join(f"property string {key}: {json.dumps(str(value))}" for key, value in dict(
+            shellDir=base / "checkout", installDir=base / "installed", stateDir=state, fixtureDir=base).items()))
+        helpers["stub"](base, "core", "Tr", 'function tr(key) { return key + " %1"; }')
+        helpers["stub"](base, "core", "Registry", 'property var settings: []')
+        helpers["stub"](base, "core", "OverlayState", 'property int settingsPage:0; function show(name) {}')
+        helpers["module"](base, "core")
+        helpers["module"](base, "services")
+        curl = base / "bin/curl"
+        curl.write_text('''#!/usr/bin/env python3
+import json, os, sys, time
+from pathlib import Path
+base=Path(os.environ['TEST_CURRENT_DIR'])
+data=json.loads((base/'control.json').read_text())
+with (base/'requests.jsonl').open('a') as output: output.write(json.dumps(sys.argv[-1])+'\\n')
+time.sleep(data.get('delay',0.02))
+if data.get('fail'): sys.exit(7)
+sys.stdout.write(data.get('raw',json.dumps(data.get('release',{})))+'\\n'+str(data.get('http',200)))
+''')
+        curl.chmod(0o700)
+        (base / "shell.qml").write_text(r'''import QtQuick
+import QtTest
+import Quickshell
+import Quickshell.Io
+import "core"
+import "services"
+ShellRoot {
+    id: tests
+    property int stage:parseInt(Quickshell.env("TEST_CURRENT_STAGE"),10)
+    function check(ok,message) {if(!ok)throw new Error(message);}
+    function until(test,message) {for(let i=0;i<200&&!test();i++)events.wait(10);check(test(),message);}
+    function response(data) {control.setText(JSON.stringify(data));control.waitForJob();}
+    function entry(version,body) {return {tag_name:"v"+version,name:version,body:body,draft:false,prerelease:version.includes("-"),html_url:"https://github.com/fixture/releases/tag/v"+version,published_at:"2026-11-15T00:00:00Z"};}
+    function requests() {log.reload();log.waitForJob();return log.text().trim().split("\n").filter(Boolean).map(line=>JSON.parse(line));}
+    function fetch(data) {response(data);ServiceUpdate.loadCurrentRelease(true);until(()=>!ServiceUpdate.currentNotesLoading,"Request did not finish");}
+    FileView {id:control;path:Paths.fixtureDir+"/control.json";blockLoading:true;blockWrites:true}
+    FileView {id:log;path:Paths.fixtureDir+"/requests.jsonl";blockLoading:true}
+    FileView {id:saved;path:Paths.stateDir+"/current-release.json";printErrors:false;blockLoading:true}
+    TestCase {id:events;when:false;optional:true}
+    Timer {interval:100;running:true;repeat:true;onTriggered:{
+        if(!ServiceUpdate.versionReady||!ServiceUpdate.currentCacheReady)return;
+        stop();
+        try {
+            if(tests.stage===0) {
+                check(!ServiceUpdate.currentNotes && tests.requests().length===0,"Closed changelog fetched notes or displayed unverified content");
+                tests.fetch({release:tests.entry("1.0.0","Published current notes.")});
+                check(ServiceUpdate.currentNotes.notes==="Published current notes." && !ServiceUpdate.checked && !ServiceUpdate.installing,"Fetching changelog checked for updates or installed one");
+                check(tests.requests()[0]==="https://api.github.com/repos/bloodykgrapes/bloodyShell/releases/tags/v1.0.0","Changelog did not request the exact version tag");
+                saved.reload();saved.waitForJob();
+                check(JSON.parse(saved.text()).release.notes==="Published current notes.","Successful notes were not cached");
+                const before=tests.requests().length;
+                ServiceUpdate.loadCurrentRelease();events.wait(50);
+                check(tests.requests().length===before,"Reopening a fetched changelog made a duplicate request");
+                tests.response({http:404});ServiceUpdate.version="1.1.0";
+                tests.until(()=>ServiceUpdate.currentNotesMissing&&!ServiceUpdate.currentNotesLoading,"Unpublished tag did not report missing notes");
+                check(!ServiceUpdate.currentNotes,"Unpublished version displayed another version's cached notes");
+                tests.fetch({http:200,raw:"invalid JSON"});
+                check(ServiceUpdate.currentNotesError.includes("invalidResponse")&&!ServiceUpdate.currentNotes,"Malformed notes were accepted");
+                tests.fetch({http:429});check(ServiceUpdate.currentNotesError.includes("rateLimited"),"Rate limit was not reported");
+                tests.fetch({release:tests.entry("9.9.9","Wrong version")});
+                check(!ServiceUpdate.currentNotes && ServiceUpdate.currentNotesError.includes("invalidResponse"),"A mismatched tag was accepted");
+                tests.fetch({release:Object.assign(tests.entry("1.1.0","Private draft"),{draft:true})});
+                check(!ServiceUpdate.currentNotes,"Draft release notes became visible");
+                tests.fetch({release:tests.entry("1.1.0","")});
+                check(ServiceUpdate.currentNotes && ServiceUpdate.currentNotes.notes==="","Empty published notes were treated as an unpublished release");
+                const count=tests.requests().length;
+                tests.response({release:tests.entry("1.2.0","Stale response"),delay:0.2});ServiceUpdate.version="1.2.0";
+                tests.until(()=>tests.requests().length>count,"Delayed request did not start");
+                tests.response({release:tests.entry("1.3.0","Latest current notes.")});ServiceUpdate.version="1.3.0";
+                tests.until(()=>ServiceUpdate.currentNotes&&ServiceUpdate.currentNotes.version==="1.3.0"&&!ServiceUpdate.currentNotesLoading,"Changing version kept a stale response or lost the new request");
+                check(ServiceUpdate.currentNotes.notes==="Latest current notes.","A stale response replaced current notes");
+                saved.reload();saved.waitForJob();check(JSON.parse(saved.text()).release.version==="1.3.0","Wrong version persisted in cache");
+            } else if(tests.stage===1) {
+                check(ServiceUpdate.currentNotes && ServiceUpdate.currentNotes.notes==="Latest current notes.","Cached notes did not survive shell restart");
+                tests.fetch({fail:true});
+                check(ServiceUpdate.currentNotes.notes==="Latest current notes." && ServiceUpdate.currentNotesError.includes("connectionFailed"),"Offline refresh discarded the cached changelog");
+            } else check(!ServiceUpdate.currentNotes,"Corrupt or foreign-repository cache became visible");
+            console.log("CURRENT_RELEASE_PASSED",tests.stage);Qt.quit();
+        }catch(error){console.error("CURRENT_RELEASE_FAILED",error);Qt.quit();}
+    }}
+}
+''')
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", XDG_RUNTIME_DIR=str(base / "runtime"),
+                   XDG_CACHE_HOME=str(base / "cache"), TEST_CURRENT_DIR=str(base), PATH=str(base / "bin") + os.pathsep + os.environ["PATH"])
+        env.pop("WAYLAND_DISPLAY", None)
+        for stage in (0, 1, 2, 2):
+            if stage == 1:
+                version.write_text("1.3.0")
+            elif stage == 2:
+                cache = state / "current-release.json"
+                if cache.exists() and cache.read_text() == "invalid JSON":
+                    cache.write_text(json.dumps(dict(repo="another/repo", release=dict(tag="v1.3.0", version="1.3.0", name="1.3.0", notes="Foreign notes", url="", date="", prerelease=False))))
+                else:
+                    cache.write_text("invalid JSON")
+            result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=dict(env, TEST_CURRENT_STAGE=str(stage)), capture_output=True, text=True, timeout=12)
+            output = result.stdout + result.stderr
+            print(output)
+            assert result.returncode == 0 and "CURRENT_RELEASE_PASSED" in output, output
+            assert not re.search(r"CURRENT_RELEASE_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign", output), output
+    print("Current release fetch, exact tags, request deduplication, unavailable/draft/malformed responses, version races, persistent cache, offline restart and invalid-cache recovery passed without checking for updates.")
+
+
 if __name__ == "__main__":
     checks()
+    current_release_checks()

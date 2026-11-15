@@ -147,7 +147,6 @@ SettingsPage
     {
         visible: ServiceNetwork.hasWiFi && ServiceNetwork.enabledWiFi && ServiceNetwork.enabledWiFiHardware
         title: Tr.tr("settings.networks.available")
-        subtitle: Tr.tr("settings.networks.scanHint")
 
         SettingsRow
         {

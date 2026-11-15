@@ -67,7 +67,7 @@ OverlayView
             onClicked: desktopMenu.hide()
         }
 
-        Rectangle
+        MenuReveal
         {
             id: card
             objectName: "desktopMenuCard"
@@ -78,17 +78,8 @@ OverlayView
             height: entries.implicitHeight + 16
             radius: Theme.radiusLarge
             color: Theme.colorSolid
-
-            readonly property real zoom: 1 - (Config.animationsFluid ? 0.06 : 0.02) * (1 - desktopMenu.shown)
-            opacity: desktopMenu.shown
-            transform: Scale
-            {
-                objectName: "desktopMenuScale"
-                origin.x: Math.max(0, Math.min(card.width, desktopMenu.originX - card.x))
-                origin.y: Math.max(0, Math.min(card.height, desktopMenu.originY - card.y))
-                xScale: card.zoom
-                yScale: card.zoom
-            }
+            progress: desktopMenu.shown
+            origin: Qt.point((desktopMenu.originX - x) / Math.max(1, width), (desktopMenu.originY - y) / Math.max(1, height))
 
             MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }
 

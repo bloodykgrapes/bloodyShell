@@ -23,7 +23,7 @@ Common.InteractiveControl
     signal toggled(bool expanded)
 
     implicitWidth: 400
-    implicitHeight: Math.max(Theme.settingsRowHeight, labels.implicitHeight + 32)
+    implicitHeight: Math.max(Theme.settingsRowHeight, labels.implicitHeight + 28)
     radius: Theme.radiusLarge + 2
     color: area.pressed ? Theme.settingsColorPressed
         : header.hovered || visualFocus ? Theme.settingsColorHover : Theme.settingsColorCard
@@ -33,18 +33,14 @@ Common.InteractiveControl
     Spring on scale {}
     Tint on color {}
 
-    Rectangle
+    ShellIcon
     {
         id: symbol
         x: Theme.settingsRowInset
         anchors.verticalCenter: parent.verticalCenter
-        width: 34
-        height: 34
-        radius: 10
+        size: 22
+        icon: header.icon
         visible: header.icon !== ""
-        color: Theme.colorField
-
-        ShellIcon { anchors.centerIn: parent; icon: header.icon; size: 17 }
     }
 
     Column
@@ -61,14 +57,14 @@ Common.InteractiveControl
             label: header.title
             wrapMode: Text.Wrap
             size: 13
-            font.weight: Font.DemiBold
+            font.weight: Font.Medium
             color: Theme.text1
         }
         ShellText
         {
             width: parent.width
             label: header.description
-            size: 11
+            size: 12
             wrapMode: Text.Wrap
             color: Theme.text3
         }
@@ -77,7 +73,7 @@ Common.InteractiveControl
     Row
     {
         id: trailing
-        anchors { right: parent.right; rightMargin: 14; verticalCenter: parent.verticalCenter }
+        anchors { right: parent.right; rightMargin: Theme.settingsRowInset; verticalCenter: parent.verticalCenter }
         spacing: 10
 
         ShellText
@@ -93,7 +89,8 @@ Common.InteractiveControl
             width: 28
             height: 28
             radius: 9
-            color: Theme.colorField
+            color: header.expanded ? Theme.colorField : "transparent"
+            Tint on color {}
 
             ShellIcon
             {

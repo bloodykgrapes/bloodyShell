@@ -19,15 +19,15 @@ Rectangle
         { action: "reboot",   title: Tr.tr("power.restart"),   icon: Icon.computerReboot,   hold: true },
         { action: "poweroff", title: Tr.tr("power.shutDown"), icon: Icon.computerPowerOff, hold: true, danger: true },
     ]
-    readonly property int groupEnd: 2
-
     anchors.centerIn: parent
     width: row.width + padding * 2
     height: row.height + padding * 2
-    readonly property int padding: 10
-    readonly property int tileWidth: 104
+    readonly property int padding: 12
+    readonly property int tileWidth: 112
     radius: 30
     color: Theme.colorSolid
+    border.width: 1
+    border.color: Theme.colorPanelEdge
 
     property int index: 0
     property bool active: true
@@ -82,25 +82,26 @@ Rectangle
         id: highlight
 
         readonly property var target: tiles.count > powerContent.index ? tiles.itemAt(powerContent.index) : null
-        readonly property var danger: powerContent.items[powerContent.index].danger === true
+        readonly property bool danger: powerContent.items[powerContent.index].danger === true
 
         x: row.x + powerContent.index * (powerContent.tileWidth + row.spacing)
         y: row.y
         width: powerContent.tileWidth
         height: row.height
         radius: 22
-        color: Theme.colorSelection
+        color: danger ? Qt.rgba(Theme.colorCritical.r, Theme.colorCritical.g, Theme.colorCritical.b, 0.14) : Theme.colorSelection
         opacity: powerContent.lit ? 1 : 0
 
         Glide on x {}
         Smooth on opacity { duration: 180 }
+        Tint on color {}
 
         Rectangle
         {
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
             height: highlight.height * (highlight.target ? highlight.target.progress : 0)
             readonly property color tone: highlight.danger ? Theme.colorCritical : Theme.colorAccent
-            color: Qt.rgba(tone.r, tone.g, tone.b, 0.4)
+            color: Qt.rgba(tone.r, tone.g, tone.b, 0.28)
         }
     }
 
@@ -109,7 +110,7 @@ Rectangle
         id: row
         x: powerContent.padding
         y: powerContent.padding
-        spacing: 4
+        spacing: 8
 
         Repeater
         {
@@ -123,6 +124,8 @@ Rectangle
 
                 icon: modelData.icon
                 title: modelData.title
+                width: powerContent.tileWidth
+                danger: modelData.danger === true
                 hold: modelData.hold === true
                 order: index
                 current: powerContent.lit && powerContent.index === index
@@ -138,14 +141,4 @@ Rectangle
         }
     }
 
-    Rectangle
-    {
-        x: row.x + powerContent.groupEnd * (powerContent.tileWidth + row.spacing) - row.spacing / 2 - width / 2
-        anchors.verticalCenter: parent.verticalCenter
-        width: 1
-        height: row.height * 0.45
-        color: Theme.colorLine
-        opacity: powerContent.lit && (powerContent.index === powerContent.groupEnd || powerContent.index === powerContent.groupEnd - 1) ? 0 : 1
-        Smooth on opacity {}
-    }
 }

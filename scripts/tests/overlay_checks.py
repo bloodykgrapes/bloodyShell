@@ -179,19 +179,21 @@ ShellRoot {
                         const menu = openAt(point), card = findChild(menu,"desktopMenuCard");
                         wait(25);
                         check(card && menu.selected === -1, "Opening retained the previous selection");
-                        if (mode === 0) check(card.opacity === 1 && card.zoom === 1, "Disabled animations still animate");
-                        else check(card.opacity > 0 && card.opacity < 1 && card.zoom < 1, "Context menu has no entrance fade or zoom");
+                        if (mode === 0) check(card.opacity === 1 && card.revealWidth === card.width && card.revealHeight === card.height, "Disabled animations still animate");
+                        else check(card.opacity > 0 && card.opacity < 1 && card.revealWidth < card.width && card.revealHeight < card.height, "Context menu does not expand in both dimensions");
                         const left = card.mapToItem(window.contentItem,0,0), right = card.mapToItem(window.contentItem,card.width,card.height);
                         check(left.x >= 8 && left.y >= 8 && right.x <= window.width-8 && right.y <= window.height-8, "Animation moves the menu beyond a screen edge");
-                        const scale = findChild(card,"desktopMenuScale");
-                        check(scale.origin.x === Math.max(0,Math.min(card.width,point.x-card.x)) && scale.origin.y === Math.max(0,Math.min(card.height,point.y-card.y)), "Menu expands from the wrong origin");
+                        check(card.anchorX === Math.max(0,Math.min(1,(point.x-card.x)/card.width)) && card.anchorY === Math.max(0,Math.min(1,(point.y-card.y)/card.height)), "Menu expands from the wrong origin");
+                        const anchor = card.mapToItem(window.contentItem, card.width*card.anchorX, card.height*card.anchorY);
+                        const shownAnchor = card.surface.mapToItem(window.contentItem, card.revealWidth*card.anchorX, card.revealHeight*card.anchorY);
+                        check(Math.abs(anchor.x-shownAnchor.x)<0.01 && Math.abs(anchor.y-shownAnchor.y)<0.01,"Expansion moves its pointer anchor");
                         wait(Theme.animationDurationControl+40);
-                        check(card.opacity === 1 && card.zoom === 1, "Entrance did not settle");
+                        check(card.opacity === 1 && card.revealWidth === card.width && card.revealHeight === card.height, "Entrance did not settle");
                         keyClick(Qt.Key_Down); check(menu.selected === 0, "Menu did not receive keyboard focus");
                         keyClick(Qt.Key_Escape);
                         if (mode !== 0) {
                             wait(25);
-                            check(card.opacity > 0 && card.opacity < 1, "Context menu has no exit fade");
+                            check(card.opacity > 0 && card.opacity < 1 && card.revealWidth < card.width && card.revealHeight < card.height, "Context menu does not shrink on close");
                         }
                         closed();
                     }
@@ -306,6 +308,165 @@ ShellRoot {
         assert not re.search(r"WALLPAPER_DISMISS_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|Failed to load configuration", output), output
 
 
+def wallpaper_stack_checks():
+    import json
+    import shutil
+
+    prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-wallpaper-stack-") as temporary:
+        base = Path(temporary)
+        env = prepare(base)
+        env.pop("WAYLAND_DISPLAY", None)
+        (base / "home").mkdir()
+        env["HOME"] = str(base / "home")
+        (base / "wallpapers").mkdir()
+        for index in range(6):
+            shutil.copyfile(base / "fixture.png", base / "wallpapers" / f"{index}.png")
+        (base / "wallpaper-deny").write_text("no")
+        (base / "bin/awww").write_text('''#!/usr/bin/env python3
+import os, sys
+from pathlib import Path
+if (Path(os.environ["TEST_SCREENSHOT_BASE"]) / "wallpaper-deny").read_text() == "yes":
+    print("Fixture wallpaper failure", file=sys.stderr)
+    sys.exit(1)
+''')
+        (base / "modules/services/ServiceGreeter.qml").write_text('pragma Singleton\nimport Quickshell\nSingleton { signal wallpaperApplied() }\n')
+        (base / "config/bloodyShell/settings.json").write_text(json.dumps(dict(helperSeen=True,
+            themeAnimations=0, wallpaperDirectory=str(base / "wallpapers"), wallpaperCurrent=str(base / "wallpapers/0.png"))))
+        (base / "shell.qml").write_text('''import QtQuick
+import QtQuick.Window
+import QtTest
+import Quickshell
+import Quickshell.Io
+import "modules/core"
+import "modules/services"
+import "modules/ui/overlay"
+import "modules/ui/overlay/settings/components"
+
+ShellRoot {
+    FileView { id: deny; path: Quickshell.env("TEST_SCREENSHOT_BASE") + "/wallpaper-deny"; blockWrites: true }
+    Window {
+        id: window; width:1024; height:768; visible:true
+        OverlayFixture { id: overlay; anchors.fill:parent }
+        SettingsPopup { id: dialog; host:window.contentItem; width:240; height:120; contentItem:TextInput { text:"Retained popup" } }
+        TestCase {
+            id: events; when:false; optional:true
+            function check(ok,message) { if(!ok) throw new Error(message); }
+            function until(predicate,message) { for(let i=0;i<300 && !predicate();i++) wait(10); check(predicate(),message); }
+            function stacked() { return findChild(overlay,"stackedOverlayPage"); }
+            function picker() { return stacked().item ? findChild(stacked().item,"wallpapersContent") : null; }
+            function openPicker() {
+                OverlayState.show("wallpapers");
+                until(()=>picker() && !picker().loading && picker().images.length===6 && overlay.stackedReveal===1,"Stacked picker did not open");
+                check(OverlayState.current==="wallpapers" && overlay.currentView===stacked().item && !overlay.testPage.enabled && stacked().enabled,"Picker did not own input");
+                return picker();
+            }
+            function returned(original,page,scroll) {
+                until(()=>OverlayState.stacked==="" && !stacked().item && overlay.testPage.enabled,"Picker did not finish returning to settings");
+                check(OverlayState.current==="settings" && overlay.testPage.item===original && overlay.currentView===original,"Settings was recreated or closed");
+                check(Math.abs(page.contentY-scroll)<0.01 && Registry.settings[OverlayState.settingsPage].id==="appearance","Settings lost its page or scroll position");
+                wait(20);
+            }
+            function closed() { until(()=>!OverlayState.active && !overlay.testPage.item && !stacked().item,"Closing retained an overlay layer"); }
+            function exercise() {
+                OverlayState.settingsPage=Registry.settings.findIndex(page=>page.id==="appearance");
+                for(const mode of [0,1,2]) {
+                    Config.set("themeAnimations",mode);
+                    OverlayState.show("settings");
+                    until(()=>overlay.testPage.item && findChild(overlay.testPage.item,"currentWallpaperPreview"),"Appearance did not load");
+                    const original=overlay.testPage.item;
+                    const preview=findChild(original,"currentWallpaperPreview");
+                    const selector=findChild(original,"wallpaperTransitionSelector");
+                    let page=selector.parent;
+                    while(page && typeof page.resetScroll!=="function") page=page.parent;
+                    check(page && page.contentHeight>page.height,"Appearance cannot exercise scroll preservation");
+                    page.contentY=Math.min(180,page.contentHeight-page.height);
+                    const scroll=page.contentY;
+                    selector.forceActiveFocus();
+                    const focus=window.activeFocusItem;
+                    overlay.output="held-output";
+                    ServiceCompositor.backend.focusedOutput="other-output";
+                    preview.clicked();
+                    until(()=>picker() && !picker().loading && overlay.stackedReveal===1,"Preview did not open wallpapers above settings");
+                    check(overlay.testPage.item===original && overlay.output==="held-output" && !overlay.testPage.enabled,"Opening the picker replaced settings, moved outputs or retained input");
+                    if(mode!==0) {
+                        const reopening=stacked().item;
+                        OverlayState.hide("wallpapers"); wait(20);
+                        OverlayState.show("wallpapers");
+                        until(()=>overlay.stackedReveal===1,"Interrupted close did not reopen the picker");
+                        check(stacked().item===reopening && overlay.testPage.item===original,"Reopening recreated an overlay layer");
+                    }
+                    keyClick(Qt.Key_Escape);
+                    OverlayState.show("settings");
+                    returned(original,page,scroll);
+                    check(overlay.output==="held-output" && window.activeFocusItem===focus,"Returning moved outputs or lost keyboard focus");
+
+                    const content=openPicker();
+                    content.select((content.index+1)%content.images.length);
+                    const selected=content.selectedPath;
+                    deny.setText("yes"); deny.waitForJob();
+                    content.apply(content.index);
+                    until(()=>!ServiceAppearance.wallpaperBusy && ServiceAppearance.wallpaperError!=="","Failed wallpaper did not report its error");
+                    check(OverlayState.current==="wallpapers" && overlay.testPage.item===original,"Failed apply dismissed the picker or settings");
+                    deny.setText("no"); deny.waitForJob();
+                    content.apply(content.index);
+                    until(()=>OverlayState.current==="settings","Applying did not return to settings");
+                    returned(original,page,scroll);
+                    check(Config.wallpaperCurrent===selected,"Applying did not save the wallpaper");
+
+                    dialog.open(); until(()=>dialog.opened,"Popup did not open");
+                    openPicker();
+                    check(dialog.presenting && dialog.suspended && dialog.opacity===0 && !dialog.modal,"A background popup covers the picker");
+                    if(mode===1) {
+                        overlay.takeScreenshot();
+                        until(()=>ServiceScreenshot.phase==="ready","Screenshot did not open over both layers");
+                        check(OverlayState.current==="wallpapers" && overlay.testPage.item===original && !stacked().enabled,"Screenshot replaced layers or retained picker input");
+                        keyClick(Qt.Key_Escape);
+                        until(()=>ServiceScreenshot.phase==="idle","Screenshot did not close");
+                        check(OverlayState.current==="wallpapers" && dialog.suspended,"Closing screenshot dismissed the picker or restored its background popup");
+                    }
+                    mouseClick(window.contentItem,4,4,Qt.LeftButton,Qt.NoModifier,0);
+                    returned(original,page,scroll);
+                    check(dialog.visible && dialog.modal && !dialog.suspended,"Returning did not restore the existing popup");
+                    dialog.close(); until(()=>!OverlayState.settingsPopup,"Popup did not close");
+                    openPicker();
+                    ServiceCompositor.backend.focusedWorkspaceId=mode+100;
+                    closed();
+                }
+                Config.set("themeAnimations",0);
+                for(const name of ["launcher","helper","power","desktopMenu"]) {
+                    OverlayState.show(name);
+                    until(()=>overlay.testPage.item && overlay.testPage.item.name===name,"Parent overlay did not load");
+                    const original=overlay.testPage.item;
+                    openPicker();
+                    OverlayState.hide("wallpapers");
+                    until(()=>!stacked().item,"Picker did not close above another overlay");
+                    check(OverlayState.current===name && overlay.testPage.item===original,"Picker did not restore its parent overlay");
+                    OverlayState.close(); closed();
+                }
+                OverlayState.show("settings"); openPicker();
+                OverlayState.show("launcher");
+                check(OverlayState.current==="launcher" && OverlayState.stacked==="" && overlay.testPage.item.name==="launcher","Switching overlays retained a stale layer");
+                OverlayState.close(); closed();
+                OverlayState.show("settings"); openPicker();
+                ServiceLock.locked=true; closed();
+                ServiceLock.locked=false;
+                check(!OverlayState.active,"Unlocking resurrected covered settings");
+                console.log("WALLPAPER_STACK_PASSED preserved views/pages/scroll/focus/output, apply/retry, popup and screenshot order, workspace/lock cleanup, replacements and every animation mode");
+                Qt.quit();
+            }
+        }
+        Timer { interval:120; running:Config.initialized; onTriggered:{ try { events.exercise(); } catch(error) { console.error("WALLPAPER_STACK_FAILED",error); Qt.quit(); } } }
+    }
+}
+''')
+        result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=35)
+        output = result.stdout + result.stderr
+        print(output)
+        assert result.returncode == 0 and "WALLPAPER_STACK_PASSED" in output, output
+        assert not re.search(r"WALLPAPER_STACK_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|Failed to load configuration", output), output
+
+
 def wayland_checks():
     display = os.environ.get("WAYLAND_DISPLAY")
     if not display:
@@ -396,3 +557,4 @@ if __name__ == "__main__":
         checks()
         desktop_menu_checks()
         wallpaper_dismiss_checks()
+        wallpaper_stack_checks()

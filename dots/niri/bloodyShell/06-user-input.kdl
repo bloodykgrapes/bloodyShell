@@ -1,8 +1,12 @@
-// Personal input settings. Dots import preserves this file.
+// ------------------------------------------------------------
+// Input settings
+// Keyboard, mouse and touchpad settings. Preserved by dots import.
+// ------------------------------------------------------------
+
 input {
     keyboard {
         xkb {
-            layout "us,ru"
+            layout "us"
             options "grp:alt_shift_toggle"
         }
 
@@ -18,6 +22,7 @@ input {
         accel-profile "flat"
 
         scroll-factor 1.0
+        scroll-method "on-button-down"
     }
 
     touchpad {
@@ -35,7 +40,21 @@ input {
         tap-button-map "left-right-middle"
         click-method "button-areas"
 
-        disabled-on-external-mouse
+        // disabled-on-external-mouse
+    }
+
+    trackball {
+
+    }
+
+    tablet {
+        // map-to-output "eDP-1"
+        // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
+    }
+
+    touch {
+        // map-to-output "eDP-1"
+        // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
     }
 
     // warp-mouse-to-focus

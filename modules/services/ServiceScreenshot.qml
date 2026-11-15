@@ -67,10 +67,10 @@ Singleton
         const region = pixels(rect, width, height);
         if (region.width < 1 || region.height < 1) return;
         error = "";
-        saving = Config.screenshotSave;
+        saving = Config.screenshotsAction === "save";
         phase = "publishing";
         publisher.run(helper.concat(["export", capture.directory, saving ? "save" : "copy",
-            String(region.x), String(region.y), String(region.width), String(region.height)]));
+            String(region.x), String(region.y), String(region.width), String(region.height), Config.screenshotsPath || Config.screenshotsDefault()]));
     }
 
     CommandProcess

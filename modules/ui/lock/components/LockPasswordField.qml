@@ -15,11 +15,15 @@ Item
     property bool busy: false
     property bool failed: false
     property bool closed: false
+    property bool inputActive: true
     signal submitted(string password)
     signal edited()
+    signal cancelled()
 
     function clear() { input.text = ""; reveal = false }
-    function focusInput() { input.forceActiveFocus() }
+    function focusInput() { if (inputActive) input.forceActiveFocus() }
+    function insertText(text) { if (inputActive) input.insert(input.cursorPosition, text) }
+    onInputActiveChanged: if (inputActive) focusInput(); else clear()
     onClosedChanged: if (closed) clear()
 
     Connections
@@ -93,7 +97,7 @@ Item
         rightPadding: buttons.width + 16
         verticalAlignment: TextInput.AlignVCenter
         clip: true
-        focus: true
+        focus: lockPasswordField.inputActive
         opacity: lockPasswordField.reveal ? 1 : 0
         echoMode: lockPasswordField.reveal ? TextInput.Normal : TextInput.Password
         font.family: Theme.fontText
@@ -101,9 +105,9 @@ Item
         color: Theme.lockText1
         selectionColor: Theme.lockSelection
         inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
-        readOnly: lockPasswordField.busy || lockPasswordField.closed
+        readOnly: lockPasswordField.busy || lockPasswordField.closed || !lockPasswordField.inputActive
 
-        Component.onCompleted: forceActiveFocus()
+        Component.onCompleted: lockPasswordField.focusInput()
         onAccepted: lockPasswordField.submitted(text)
         onTextEdited: lockPasswordField.edited()
 
@@ -112,6 +116,7 @@ Item
             if (event.key === Qt.Key_Escape || ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_Backspace))
             {
                 input.text = "";
+                if (event.key === Qt.Key_Escape) lockPasswordField.cancelled();
                 event.accepted = true;
             }
         }

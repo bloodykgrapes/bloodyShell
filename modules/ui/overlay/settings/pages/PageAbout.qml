@@ -50,87 +50,6 @@ SettingsPage
 
     SettingsGroup
     {
-        Item
-        {
-            id: hero
-            objectName: "aboutShellCard"
-            width: parent.width
-            height: identity.implicitHeight + 40
-
-            SettingsTile { row: hero }
-
-            Column
-            {
-                id: identity
-                x: 20; y: 20
-                width: parent.width - 40
-                spacing: 18
-
-                Row
-                {
-                    width: parent.width
-                    spacing: 18
-
-                    ClippingRectangle
-                    {
-                        width: 64; height: 64; radius: 17
-                        anchors.verticalCenter: parent.verticalCenter
-                        color: "transparent"
-                        Image
-                        {
-                            anchors.fill: parent
-                            source: Qt.resolvedUrl("../../../../../assets/icons/logo.png")
-                            sourceSize: Qt.size(128, 128)
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                        }
-                    }
-                    Column
-                    {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: Math.max(0, parent.width - 82)
-                        spacing: 5
-
-                        ShellText { width: parent.width; label: "bloodyShell"; size: 26; font.weight: Font.DemiBold; color: Theme.text1 }
-                        ShellText
-                        {
-                            width: parent.width
-                            label: ServiceUpdate.versionReady ? Tr.tr("settings.about.versionLabel").arg(ServiceUpdate.version) : Tr.tr("common.loading")
-                            size: 12
-                            color: Theme.text2
-                        }
-                        ShellText
-                        {
-                            width: parent.width
-                            label: Tr.tr(ServiceUpdate.installed ? "settings.about.installed" : "settings.updates.developmentCopy")
-                            size: 11
-                            color: Theme.text3
-                        }
-                    }
-                }
-
-                ShellText
-                {
-                    width: parent.width
-                    label: Tr.tr("settings.about.shellDescription")
-                    color: Theme.text2
-                    wrapMode: Text.Wrap
-                }
-
-                Flow
-                {
-                    width: parent.width
-                    spacing: 8
-                    SettingsButton { icon: Icon.update; text: Tr.tr("common.updates"); onClicked: ServiceUpdate.showPage() }
-                    SettingsButton { text: Tr.tr("settings.about.source"); onClicked: Qt.openUrlExternally(pageAbout.projectUrl) }
-                    SettingsButton { text: Tr.tr("settings.about.documentation"); onClicked: Qt.openUrlExternally(pageAbout.projectUrl + "/wiki") }
-                }
-            }
-        }
-    }
-
-    SettingsGroup
-    {
         title: Tr.tr("common.system")
 
         InfoRow { label: Tr.tr("settings.about.operatingSystem"); detail: ServiceSystem.release.PRETTY_NAME || ServiceSystem.release.NAME || "Linux" }
@@ -172,11 +91,111 @@ SettingsPage
     {
         title: Tr.tr("settings.about.project")
 
-        SettingsRow
+        Item
         {
-            label: Tr.tr("settings.about.license")
-            description: "GPL-3.0"
-            SettingsButton { text: Tr.tr("common.open"); onClicked: Qt.openUrlExternally(pageAbout.projectUrl + "/blob/main/LICENSE") }
+            id: hero
+            objectName: "aboutShellCard"
+            width: parent.width
+            height: identity.implicitHeight + 40
+
+            SettingsTile { row: hero }
+
+            Column
+            {
+                id: identity
+                x: 20; y: 20
+                width: parent.width - 40
+                spacing: 18
+
+                Row
+                {
+                    width: parent.width
+                    spacing: 18
+
+                    ClippingRectangle
+                    {
+                        width: 64; height: 64; radius: 17
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: "transparent"
+                        Image
+                        {
+                            anchors.fill: parent
+                            source: Qt.resolvedUrl("../../../../../assets/icons/logo.png")
+                            sourceSize: Qt.size(128, 128)
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                        }
+                    }
+                    Column
+                    {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: Math.max(0, parent.width - 82)
+                        spacing: 5
+
+                        ShellText { width: parent.width; label: "bloodyShell"; size: 26; font.family: Theme.fontBrand; font.weight: Font.DemiBold; color: Theme.text1 }
+                        ShellText
+                        {
+                            width: parent.width
+                            label: ServiceUpdate.versionReady ? Tr.tr("settings.about.versionLabel").arg(ServiceUpdate.version) : Tr.tr("common.loading")
+                            size: 12
+                            color: Theme.text2
+                        }
+                        ShellText
+                        {
+                            width: parent.width
+                            label: Tr.tr(ServiceUpdate.installed ? "settings.about.installed" : "settings.updates.developmentCopy")
+                            size: 11
+                            color: Theme.text3
+                        }
+                    }
+                }
+
+                ShellText
+                {
+                    width: parent.width
+                    label: Tr.tr("settings.about.shellDescription")
+                    color: Theme.text2
+                    wrapMode: Text.Wrap
+                }
+
+                Flow
+                {
+                    width: parent.width
+                    spacing: 8
+                    SettingsButton { icon: Icon.update; text: Tr.tr("common.updates"); onClicked: ServiceUpdate.showPage() }
+                    SettingsButton { text: Tr.tr("settings.about.source"); onClicked: Qt.openUrlExternally(pageAbout.projectUrl) }
+                    SettingsButton { text: Tr.tr("settings.about.documentation"); onClicked: Qt.openUrlExternally(pageAbout.projectUrl + "/wiki") }
+                }
+                Rectangle
+                {
+                    width: parent.width
+                    height: 1
+                    color: Theme.colorHairline
+                }
+
+                Item
+                {
+                    width: parent.width
+                    height: Math.max(licenseText.implicitHeight, licenseButton.height)
+
+                    ShellText
+                    {
+                        id: licenseText
+                        anchors { left: parent.left; right: licenseButton.left; rightMargin: 12; verticalCenter: parent.verticalCenter }
+                        label: Tr.tr("settings.about.license") + " · GPL-3.0"
+                        color: Theme.text2
+                        wrapMode: Text.Wrap
+                    }
+                    SettingsButton
+                    {
+                        id: licenseButton
+                        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                        text: Tr.tr("common.open")
+                        onClicked: Qt.openUrlExternally(pageAbout.projectUrl + "/blob/main/LICENSE")
+                    }
+                }
+            }
         }
     }
+
 }

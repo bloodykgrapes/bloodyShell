@@ -93,8 +93,8 @@ Singleton
         { id: "desktop",       group: 2, title: Tr.tr("common.desktop"),            icon: Icon.settingsDesktop,      page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageDesktop.qml") },
         { id: "bar",           group: 2, title: Tr.tr("common.bar"),                icon: Icon.settingsBar,          page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageBar.qml") },
         { id: "dock",          group: 2, title: Tr.tr("common.dock"),               icon: Icon.settingsDock,         page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageDock.qml") },
-        { id: "island",        group: 2, title: Tr.tr("shell.dynamicIsland"),                 icon: Icon.settingsOSD,          page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageIsland.qml") },
-        { id: "shortcuts",     group: 2, title: Tr.tr("settings.shortcuts.title"), icon: Icon.keyboard,             page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageShortcuts.qml") },
+        { id: "components",    group: 2, title: Tr.tr("settings.components.title"), icon: Icon.widgets,              page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageComponents.qml") },
+        { id: "shortcuts",     group: 2, title: Tr.tr("settings.shortcuts.title"), icon: Icon.shortcuts,            page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageShortcuts.qml") },
 
         { id: "updates",       group: 3, title: Tr.tr("common.updates"),            icon: Icon.settingsUpdates,      page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageUpdates.qml") },
         { id: "about",         group: 3, title: Tr.tr("common.about"),              icon: Icon.settingsAbout,        page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageAbout.qml") },

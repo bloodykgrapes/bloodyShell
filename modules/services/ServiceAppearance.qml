@@ -195,6 +195,27 @@ Singleton
     }
 
     property string wallpaperError: ""
+    property var wallpaperSnapshot: ({path: "", preview: ""})
+    property var pendingWallpaperSnapshot: null
+    readonly property string wallpaperImage: isVideo(Config.wallpaperCurrent)
+        ? (wallpaperSnapshot.path === Config.wallpaperCurrent ? wallpaperSnapshot.preview : "") : Config.wallpaperCurrent
+
+    function rememberWallpaper(path, preview)
+    {
+        wallpaperSnapshot = {path: path, preview: preview || ""};
+    }
+    function commitWallpaper(data)
+    {
+        rememberWallpaper(data.path, data.preview);
+        Config.set("wallpaperCurrent", data.path);
+    }
+
+    ScreenImageCache
+    {
+        id: wallpaperCaches
+        source: serviceAppearance.fileUrl(serviceAppearance.wallpaperImage)
+    }
+
     property string pendingWallpaper: ""
     property string videoPath: ""
     property string readyVideoPath: ""
@@ -225,21 +246,29 @@ Singleton
         previousWallpaper = Config.wallpaperCurrent;
         return wallpaperWriter.run(Paths.commandFor("wallpaper", ["apply", path, "--transition", Config.animationsEnabled ? Config.wallpaperTransition : "none"]));
     }
+    function clearPendingWallpaper()
+    {
+        pendingWallpaper = "";
+        pendingWallpaperSnapshot = null;
+        videoTimeout.stop();
+    }
+    function finishWallpaper(data)
+    {
+        commitWallpaper(data);
+        clearPendingWallpaper();
+        wallpaperApplied();
+    }
     function videoReady(path)
     {
         readyVideoPath = path;
         if (pendingWallpaper !== path) return;
-        Config.set("wallpaperCurrent", path);
-        pendingWallpaper = "";
-        videoTimeout.stop();
-        wallpaperApplied();
+        finishWallpaper(pendingWallpaperSnapshot);
     }
     function videoFailed(path, message)
     {
         wallpaperError = message || Tr.tr("wallpapers.videoFailed");
         if (pendingWallpaper !== path) return;
-        pendingWallpaper = "";
-        videoTimeout.stop();
+        clearPendingWallpaper();
         videoPath = isVideo(previousWallpaper) ? previousWallpaper : "";
         if (previousWallpaper)
         {
@@ -273,7 +302,12 @@ Singleton
                 serviceAppearance.restoringWallpaper = false;
                 if (code === 0)
                 {
-                    try { serviceAppearance.analyzeWallpaper(JSON.parse(wallpaperResult.text).preview); }
+                    try
+                    {
+                        const data = JSON.parse(wallpaperResult.text);
+                        serviceAppearance.commitWallpaper(data);
+                        serviceAppearance.analyzeWallpaper(data.preview);
+                    }
                     catch (error) { }
                 }
                 return;
@@ -287,10 +321,10 @@ Singleton
                 {
                     if (serviceAppearance.readyVideoPath === data.path)
                     {
-                        Config.set("wallpaperCurrent", data.path);
-                        serviceAppearance.wallpaperApplied();
+                        serviceAppearance.finishWallpaper(data);
                         return;
                     }
+                    serviceAppearance.pendingWallpaperSnapshot = data;
                     serviceAppearance.pendingWallpaper = data.path;
                     serviceAppearance.videoPath = data.path;
                     if (serviceAppearance.pendingWallpaper) videoTimeout.restart();
@@ -298,8 +332,7 @@ Singleton
                 else
                 {
                     serviceAppearance.videoPath = "";
-                    Config.set("wallpaperCurrent", data.path);
-                    serviceAppearance.wallpaperApplied();
+                    serviceAppearance.finishWallpaper(data);
                 }
             }
             catch (error) { serviceAppearance.wallpaperError = String(error); }
@@ -308,15 +341,21 @@ Singleton
     CommandProcess
     {
         id: wallpaperCheck
+        property string selection: ""
         stdout: StdioCollector { id: wallpaperCurrent }
         onCompleted: code =>
         {
-            if (code !== 0) return;
+            if (code !== 0 || Config.wallpaperCurrent !== selection) return;
             try
             {
                 const data = JSON.parse(wallpaperCurrent.text);
                 if (!data.path) return;
-                Config.set("wallpaperCurrent", data.path);
+                if (serviceAppearance.wallpaperBusy)
+                {
+                    serviceAppearance.rememberWallpaper(selection, data.preview);
+                    return;
+                }
+                serviceAppearance.commitWallpaper(data);
                 serviceAppearance.analyzeWallpaper(data.preview);
                 if (data.video && serviceAppearance.prepareVideo()) serviceAppearance.videoPath = data.path;
             }
@@ -327,15 +366,26 @@ Singleton
     property string wallpaperAccent: ""
     readonly property string accent: wallpaperAccent !== "" ? wallpaperAccent : "#8ecbff"
 
+    property bool wallpaperInitialized: false
+    function initializeWallpaper()
+    {
+        if (!Config.initialized || wallpaperInitialized) return;
+        wallpaperInitialized = true;
+        refresh(false);
+        if (!Config.wallpaperCurrent)
+        {
+            applyWallpaper(Paths.shellDir + "/assets/wallpapers/default.png");
+            return;
+        }
+        wallpaperCheck.selection = Config.wallpaperCurrent;
+        wallpaperCheck.run(Paths.commandFor("wallpaper", ["inspect", wallpaperCheck.selection]));
+    }
+    Component.onCompleted: initializeWallpaper()
+
     Connections
     {
         target: Config
-        function onInitializedChanged()
-        {
-            if (!Config.initialized) return;
-            serviceAppearance.refresh(false);
-            wallpaperCheck.run(Paths.commandFor("wallpaper", ["inspect", Config.wallpaperCurrent]));
-        }
+        function onInitializedChanged() { serviceAppearance.initializeWallpaper() }
     }
 
     function analyzeWallpaper(path)

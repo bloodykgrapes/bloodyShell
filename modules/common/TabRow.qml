@@ -46,7 +46,13 @@ Common.InteractiveControl
     Keys.onSpacePressed: event => { if (!event.isAutoRepeat) selectIndex(Math.max(0, selectedIndex), Qt.TabFocusReason); event.accepted = true }
     Keys.onReturnPressed: event => { if (!event.isAutoRepeat) selectIndex(Math.max(0, selectedIndex), Qt.TabFocusReason); event.accepted = true }
 
-    background: Rectangle { radius: Theme.radiusLarge; color: Theme.colorField }
+    background: Rectangle
+    {
+        radius: Theme.radiusLarge
+        color: Theme.colorField
+        border.width: 1
+        border.color: Theme.colorHairline
+    }
 
     Rectangle
     {

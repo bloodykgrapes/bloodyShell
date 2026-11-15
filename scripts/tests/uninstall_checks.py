@@ -24,7 +24,6 @@ def fixture(base):
     (target / "scripts").mkdir(parents=True)
     shutil.copytree(ROOT / "scripts/lib", target / "scripts/lib", ignore=shutil.ignore_patterns("__pycache__"))
     shutil.copy2(ROOT / "scripts/bloodyShell", target / "scripts/bloodyShell")
-    shutil.copy2(ROOT / "setup", target / "setup")
     (target / "shell.qml").write_text("//@ pragma ShellId bloodyShell\n// installed\n")
     (target / "version").write_text("1.0.0\n")
     env = dict(os.environ, HOME=str(base / "home"), XDG_CONFIG_HOME=str(base / "config"),
@@ -213,6 +212,7 @@ def optional_checks():
             def tools(args,**kwargs):
                 if args[0]!="sudo": return original_run(args,**kwargs)
                 privileged.append(args)
+                if answer=="cancel": raise KeyboardInterrupt
                 if answer=="sudo-failure": raise subprocess.CalledProcessError(1,args)
                 if args[1:]==["-v"]: return subprocess.CompletedProcess(args,0)
                 assert args[1:4]==["rm","-rf","--"] and set(args[4:])=={str(theme),str(dropin),str(shared)},args
@@ -223,14 +223,13 @@ def optional_checks():
                 return subprocess.CompletedProcess(args,0)
             replies="n\n\n" if answer=="keep" else "yes\ny\n"
             output=io.StringIO()
-            args=["uninstall","--apply"] + (["--delete-sddm","--delete-settings"] if answer=="flags" else [])
+            args=["uninstall","--apply"] + (["--delete-sddm","--delete-settings"] if answer!="keep" else [])
             stdin=io.StringIO("") if answer=="flags" else TerminalInput(replies)
             with patch.dict(os.environ,env,clear=True), patch.dict(scope,SDDM_THEME=theme,SDDM_CONFIG=dropin,SDDM_STATE=shared), patch.object(sys,"argv",args), patch.object(sys,"stdin",stdin), patch("subprocess.run",side_effect=tools), redirect_stdout(output):
                 if answer=="cancel":
-                    with patch("builtins.input",side_effect=KeyboardInterrupt):
-                        try: api["uninstall_main"]()
-                        except KeyboardInterrupt: pass
-                        else: raise AssertionError("Cancellation was ignored")
+                    try: api["uninstall_main"]()
+                    except KeyboardInterrupt: pass
+                    else: raise AssertionError("Cancellation was ignored")
                 elif answer=="sudo-failure":
                     try: api["uninstall_main"]()
                     except subprocess.CalledProcessError: pass
@@ -239,16 +238,13 @@ def optional_checks():
             if answer in ("cancel","sudo-failure"):
                 assert target.exists() and command.exists() and settings.exists() and theme.exists()
             else:
-                if answer=="flags":
-                    assert "[y/N]" not in output.getvalue(), "Non-interactive flags prompted for input"
-                else:
-                    assert "Delete SDDM theme? [y/N]" in output.getvalue() and "Delete shell settings? [y/N]" in output.getvalue()
+                assert "[y/N]" not in output.getvalue(), "Explicit apply must not open old text questions"
                 assert not target.exists() and not command.exists()
                 assert settings.exists()==(answer=="keep") and theme.exists()==(answer=="keep")
                 assert shared.exists()==(answer=="keep") and dropin.exists()==(answer=="keep")
                 if answer=="keep": assert not privileged
             assert other.read_text()=="personal login-manager config"
-    print("Uninstall questions passed: both default to No, explicit deletion removes only shell settings/SDDM files, sudo is conditional, and cancellation/authentication failure preserves the installation.")
+    print("Uninstall options passed: settings/SDDM kept by default, explicit deletion, conditional sudo, and preserved installation on cancellation/authentication failure.")
 
 
 if __name__ == "__main__":

@@ -1,3 +1,8 @@
+// ------------------------------------------------------------
+// Keybindings
+// Keyboard shortcuts for applications, windows, workspaces and hardware.
+// ------------------------------------------------------------
+
 hotkey-overlay { skip-at-startup; }
 recent-windows { off; }
 

@@ -1,11 +1,9 @@
+// ------------------------------------------------------------
+// Layer rules
+// Places the wallpaper layer behind windows.
+// ------------------------------------------------------------
+
 layer-rule {
     match namespace="^awww$"
     place-within-backdrop true
-}
-
-layer-rule {
-    match namespace="^quickshell$"
-    background-effect {
-        xray false
-    }
 }

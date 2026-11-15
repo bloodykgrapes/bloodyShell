@@ -26,11 +26,10 @@ def run_fixture(base, scenario=None):
 time.sleep(0.08)
 if sys.argv[1:] == ["status"]:
     print(json.dumps(dict(source="repository",terminal=[],entries=[
-        dict(id="compositor",kind="compositor",name="niri",destination="/tmp/fixture-niri"),
-        dict(id="dots",kind="dots",name="dots",programs=["fixture"],destination="/tmp/fixture-config"),
-        dict(id="greeter",kind="greeter",name="greeter",destination="/tmp/fixture-greeter"),
-        dict(id="wallpapers",kind="wallpapers",name="wallpapers",destination="/tmp/fixture-wallpapers"),
-        dict(id="cli",kind="cli",name="cli",destination="/tmp/fixture-bin/bloodyShell")
+        dict(id="compositor",available=True,kind="compositor",name="niri",destination="/tmp/fixture-niri"),
+        dict(id="dots",available=True,kind="dots",name="dots",programs=["fixture"],destination="/tmp/fixture-config"),
+        dict(id="greeter",available=True,kind="greeter",name="greeter",destination="/tmp/fixture-greeter"),
+        dict(id="wallpapers",available=True,kind="wallpapers",name="wallpapers",destination="/tmp/fixture-wallpapers"),
     ])))
 elif sys.argv[1:] == ["import", "wallpapers"]:
     print(json.dumps(dict(destination="/tmp/fixture-wallpapers",settings={})))
@@ -39,7 +38,6 @@ else:
 ''')
     fixture_module = base / "scripts/lib/resources.py"
     fixture_module.write_text("def resources_main():\n" + "".join("    " + line for line in fixture_module.read_text().splitlines(keepends=True)))
-    shutil.copy2(ROOT / "setup", base / "setup")
     shutil.copy2(ROOT / "version", base / "version")
     for name in ("config", "cache", "runtime", "bin"):
         (base / name).mkdir(mode=0o700)
@@ -56,7 +54,7 @@ else:
     (base / "modules/ui/overlay/altTab/AltTabKeyboard.qml").write_text("import QtQuick\nItem { property var targetWindow }")
     media = base / "modules/services/ServiceMedia.qml"
     media.write_text(media.read_text().replace("readonly property var players: Mpris.players.values", "property var players: []"))
-    source = (base / "modules/ui/overlay/Overlay.qml").read_text().replace("PanelWindow\n{", "Item\n{", 1)
+    source = (base / "modules/ui/overlay/Overlay.qml").read_text().replace("PanelWindow\n{", "Item\n{\n    property Item contentItem: parent", 1)
     source = source.replace("    screen: Quickshell", "    property var screen: Quickshell")
     source = source.replace("    mask: authenticating", "    property var mask: authenticating")
     source = re.sub(r"^    (?:WlrLayershell\.|BackgroundEffect\.|exclusionMode:|exclusiveZone:).*\n", "", source, flags=re.M)
@@ -126,7 +124,7 @@ ShellRoot
     }
     function ready(name)
     {
-        check(overlay.testPage.status === Loader.Ready && overlay.testPage.item.name === name, "Could not load " + name);
+        check(overlay.currentView !== null && overlay.currentView.name === name, "Could not load " + name);
     }
     function island(item)
     {
@@ -509,8 +507,11 @@ ShellRoot
                         tests.check(!overlay.modal && !ServiceAltTab.presented, "Quick Alt+Tab kept the overlay active");
                         OverlayState.show("helper");
                         break;
-                    case 12: tests.ready("helper"); OverlayState.show("wallpapers"); break;
-                    case 13: tests.ready("wallpapers"); OverlayState.show("power"); break;
+                    case 12: tests.ready("helper"); tests.savedPage = overlay.testPage.item; OverlayState.show("wallpapers"); break;
+                    case 13:
+                        tests.ready("wallpapers");
+                        tests.check(overlay.testPage.item === tests.savedPage, "Wallpaper picker replaced the helper");
+                        OverlayState.show("power"); break;
                     case 14:
                         tests.ready("power"); OverlayState.close();
                         ServiceOSD.preview();
@@ -935,7 +936,7 @@ ShellRoot
                                 if (importChecks === 1)
                                 {
                                     if ((ServiceResources.busy || ServiceResources.entries.length === 0) && importWait++ < 20) return;
-                                    tests.check(ServiceResources.entries.map(entry => entry.id).join(",") === "compositor,dots,greeter,wallpapers,cli", "Import catalog did not load");
+                                    tests.check(ServiceResources.entries.map(entry => entry.id).join(",") === "compositor,dots,greeter,wallpapers", "Import catalog did not load");
                                     tests.find(imports, "importResource-dots").clicked();
                                     tests.check(ServiceResources.pending && ServiceResources.pending.id === "dots", "Dots import did not request confirmation");
                                     const confirmation = tests.find(overlay.testPage.item, "resourceConfirmation");
@@ -1114,6 +1115,8 @@ ShellRoot
 
 
 def fullscreen_fixture(base):
+    island = base / "modules/services/ServiceIsland.qml"
+    island.write_text(island.read_text().replace("primaryOutputFor(Quickshell.screens, Config.barScreens)", 'primaryOutputFor([{name:"A"},{name:"B"}], Config.barScreens)'))
     compositor = base / "modules/compositors/Niri.qml"
     source = compositor.read_text().replace("id: niri", "id: niri\n    property var testOutputs: []", 1)
     source = source.replace("fullscreenScreens(Quickshell.screens)", "fullscreenScreens(testOutputs)")
@@ -1219,13 +1222,25 @@ ShellRoot {
                 send({CastStartedOrChanged:{cast:{stream_id:3,session_id:20,is_active:true,target:{Output:{name:"A"}}}}}); wait(40);
                 const mark=window.find(frame.island,"recordingMark"), island=window.find(frame.island,"dynamicIsland");
                 check(mark && mark.visible && island.active && island.shown.kind==="recording","Fullscreen or DND hid the recording indicator");
+                check(island.recording && island.implicitWidth===10 && island.implicitHeight===10,"Recording expands the island instead of showing only a dot");
+                check(frame.island.bodyRect.width===0 && frame.island.bodyRect.height===0,"Recording dot keeps the island background");
+                check(!window.find(island,"islandTitle").visible && !window.find(island,"islandBody").visible,"Recording dot keeps its title or details");
                 check(window.find(island,"islandCompactContent").acceptedButtons===Qt.NoButton,"Recording status opens an unrelated media menu");
+                for (const side of [Enums.EdgeTop,Enums.EdgeBottom,Enums.EdgeLeft,Enums.EdgeRight]) {
+                    Config.set("barSide",side); wait(30);
+                    check(mark.visible && mark.width===10 && mark.height===10,"Recording dot changes size with bar position");
+                    const point=mark.mapToItem(frame,mark.width/2,mark.height/2);
+                    check(side<2 ? Math.abs(point.x-frame.width/2)<0.5 : Math.abs(point.y-frame.height/2)<0.5,"Recording dot is not centered on its edge");
+                    check(frame.island.bodyRect.width===0 && frame.island.bodyRect.height===0,"Moving the bar restores a recording island background");
+                }
+                Config.set("barSide",Enums.EdgeTop); wait(30);
                 island.toggleMenu(); wait(60);
                 const mediaMark=window.find(frame.island,"mediaRecordingIndicator");
                 check(mediaMark && mediaMark.visible,"Expanded island media menu hid the recording indicator");
                 MenuState.close(); wait(40);
                 send({CastStopped:{stream_id:3}}); ServiceNotifications.setDnd(false); wait(30);
                 check(!ServiceRecording.active && !mark.visible,"Recording indicator stayed visible after capture stopped");
+                check(frame.island.bodyRect.width===0 && frame.island.bodyRect.height===0,"Stopping capture flashes an island background");
                 const fullscreenState=ServiceCompositor.fullscreenOutputs, fullscreenChanges=window.fullscreenChanges;
                 for(let i=0;i<40;i++) {
                     const record=ServiceCompositor.windowList.find(window=>window.id===1);
@@ -1282,6 +1297,12 @@ ShellRoot {
                         const dockItem=frame.dock.container.children.find(child=>child.itemAtIndex!==undefined).itemAtIndex(0).item;
                         frame.dock.menuOpen(dockItem); outside(); wait(40);
                         check(frame.dock.revealWanted,"Dock menu did not hold the normal dock open");
+                        const dockMenu=find(frame.dock,"dockPopupReveal");
+                        check(dockMenu && dockMenu.width>0 && dockMenu.height>0,"Dock context menu has no surface");
+                        if(mode===0) check(dockMenu.revealWidth===dockMenu.width && dockMenu.revealHeight===dockMenu.height,"Disabled dock menu animation retained a partial size");
+                        else check(dockMenu.amount>0 && dockMenu.amount<1 && dockMenu.revealWidth<dockMenu.width && dockMenu.revealHeight<dockMenu.height,"Dock context menu does not expand in both dimensions");
+                        const dockSide=Config.dockSide;
+                        check(dockMenu.anchorX===(dockSide===Enums.EdgeLeft?0:dockSide===Enums.EdgeRight?1:0.5) && dockMenu.anchorY===(dockSide===Enums.EdgeTop?0:dockSide===Enums.EdgeBottom?1:0.5),"Dock menu expands away from the wrong edge");
                         fullscreen(true); wait(40);
                         check(!frame.bar.revealWanted && !frame.dock.revealWanted && !frame.dock.keyboardWanted,"Entering fullscreen retained the dock menu");
                         Config.set("barHideAuto",false); Config.set("dockHideAuto",false);
@@ -1296,6 +1317,107 @@ ShellRoot {
             }
         }
         Timer { interval:100; running:true; onTriggered: { try { input.exercise(); } catch(error) { console.error("SURFACES_FAILED fullscreen",error); } Qt.quit(); } }
+    }
+}
+''')
+
+
+def island_transition_fixture(base):
+    service = base / "modules/services/ServiceIsland.qml"
+    service.write_text(service.read_text().replace("id: island", 'id: island\n    property var testScreens: [{name:"A"},{name:"B"}]', 1)
+                       .replace("primaryOutputFor(Quickshell.screens, Config.barScreens)", "primaryOutputFor(testScreens, Config.barScreens)"))
+    (base / "modules/services/ServiceRecording.qml").write_text('pragma Singleton\nimport QtQuick\nimport Quickshell\nSingleton { property bool active:false; property string detail:"Capture fixture"; }')
+    (base / "shell.qml").write_text(r'''import QtQuick
+import QtQuick.Window
+import QtTest
+import Quickshell
+import "modules/core"
+import "modules/services"
+import "modules/ui/frame"
+
+ShellRoot {
+    Window {
+        id: window; visible:true; width:1280; height:720
+        QtObject {id:outputA;property string name:"A"}
+        QtObject {id:outputB;property string name:"B"}
+        Frame {id:first;screen:outputA;width:640;height:720}
+        Frame {id:second;screen:outputB;x:640;width:640;height:720}
+        function check(ok,message) {if(!ok)throw new Error(message);}
+        function find(item,name) {
+            if(item.objectName===name)return item;
+            for(const child of item.children||[]){const result=find(child,name);if(result)return result;}
+            return null;
+        }
+        TestCase {
+            id:input;when:false;optional:true
+            function showValue() {ServiceOSD.show("volume",Icon.volume,"Volume 72%",0.72,false,true,"","",10000);}
+            function until(test,message,timeout=1800) {
+                let elapsed=0;
+                while(!test()&&elapsed<timeout){wait(20);elapsed+=20;}
+                window.check(test(),message);
+            }
+            function exercise() {
+                const check=window.check,find=window.find;
+                until(()=>Config.initialized&&ServiceCompositor.backend,"Configuration did not load");
+                Config.set("barEnabled",false);Config.set("dockEnabled",false);
+                Config.set("barScreens",["A"]);Config.set("islandEnabled",true);
+                ServiceCompositor.backend.focusedOutput="B";
+                until(()=>first.island!==null&&second.island===null,"Island is not restricted to primary");
+                for(const mode of [0,1,2])for(const side of [0,1,2,3]) {
+                    Config.set("themeAnimations",mode);Config.set("barSide",side);
+                    ServiceRecording.active=true;
+                    const island=first.island,widget=find(island,"dynamicIsland"),dot=find(island,"recordingMark");
+                    until(()=>dot.opacity>0.99&&island.expansionProgress===0,"Recording dot did not settle");
+                    check(island.bodyRect.width===0&&island.bodyRect.height===0,"Recording has an island background");
+                    check(island.inputRegion.regions[0].item===null,"Recording dot captures input");
+                    Config.set("islandRecordingIndicator",false);
+                    until(()=>!dot.visible&&!widget.active,"Disabling indication kept the recording dot visible");
+                    check(ServiceRecording.active&&island.bodyRect.width===0,"Indicator toggle changed recording or left an empty background");
+                    Config.set("islandRecordingIndicator",true);
+                    until(()=>dot.opacity>0.99,"Re-enabling indication did not restore the recording dot");
+                    showValue();wait(mode?120:10);
+                    check(widget.shown.kind==="osd"&&second.island===null,"Secondary-focus value event missed primary");
+                    if(mode) {
+                        check(island.expansionProgress>0&&island.expansionProgress<1,"Dot-to-island transition snaps");
+                        check(dot.opacity>0&&dot.opacity<1&&island.bodyRect.width>10,"Dot does not blend into the growing island");
+                        check(find(widget,"islandCompactContent").opacity<1,"Content appears before its surface expands");
+                    }
+                    until(()=>island.expansionProgress>0.999,"Expanded island did not settle");
+                    check(!dot.visible,"Expanded island duplicates the standalone capture dot");
+                    ServiceOSD.hide();wait(mode?120:10);
+                    check(widget.recording,"Recording did not return after OSD");
+                    if(mode)check(island.expansionProgress>0&&island.expansionProgress<1&&dot.opacity>0&&dot.opacity<1,"Island-to-dot transition snaps: mode "+mode+", edge "+side+", expansion "+island.expansionProgress+", dot "+dot.opacity);
+                    until(()=>island.expansionProgress===0,"Recording island did not finish collapsing");
+                    check(dot.visible&&island.bodyRect.width===0,"Collapsed capture is not a lone dot");
+                    if(mode===2&&side===0) {
+                        showValue();wait(120);ServiceOSD.hide();wait(35);showValue();
+                        until(()=>widget.shown.kind==="osd"&&island.expansionProgress>0.999,"Interrupted morph did not recover");
+                        ServiceOSD.hide();until(()=>island.expansionProgress===0,"Interrupted morph left a background");
+                        showValue();wait(120);Config.set("themeAnimations",0);wait(0);
+                        check(island.expansionProgress===1&&!dot.visible,"Disabling animations leaves a partial morph");
+                        ServiceOSD.hide();wait(0);
+                        check(island.expansionProgress===0,"Disabled animations leave a recording background");
+                    }
+                    ServiceRecording.active=false;
+                    until(()=>!dot.visible,"Stopped capture keeps its dot");
+                    check(island.bodyRect.width===0,"Stopped capture flashes a background");
+                }
+                Config.set("themeAnimations",0);ServiceRecording.active=true;wait(20);
+                const widget=find(first.island,"dynamicIsland");
+                widget.toggleMenu();wait(30);check(MenuState.menuActive,"Media menu fixture did not open");
+                Config.set("barScreens",["B"]);wait(30);
+                check(first.island===null&&second.island!==null&&!MenuState.menuActive,"Changing primary duplicates the island or leaves its menu");
+                check(find(second.island,"recordingMark").visible,"Changing primary loses the capture dot");
+                Config.set("barScreens",["A"]);ServiceIsland.testScreens=[{name:"B"}];wait(30);
+                check(first.island===null&&second.island!==null,"Disconnected primary has no live fallback");
+                ServiceIsland.testScreens=[{name:"A"},{name:"B"}];wait(30);
+                check(first.island!==null&&second.island===null,"Reconnecting primary does not restore the island");
+                ServiceLock.locked=true;wait(10);
+                check(!find(first.island,"recordingMark").visible,"Recording dot leaks through lock screen");
+                console.log("SURFACES_PASSED primary-only island, secondary-focus events, hotplug, menu cleanup, dot morphs on all edges and animation modes, interruption and locking");Qt.quit();
+            }
+        }
+        Timer {interval:180;running:Config.initialized;onTriggered:{try{input.exercise();}catch(error){console.error("SURFACES_FAILED",error);Qt.quit();}}}
     }
 }
 ''')
@@ -1411,6 +1533,8 @@ def main():
         run_fixture(Path(temporary))
     with tempfile.TemporaryDirectory(prefix="bloodyshell-fullscreen-") as temporary:
         run_fixture(Path(temporary), fullscreen_fixture)
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-island-transitions-") as temporary:
+        run_fixture(Path(temporary), island_transition_fixture)
     artwork_checks()
     print("Three surface hosts, frame styles, dock joins, sidebars, dynamic overlays, and island presentation passed.")
 

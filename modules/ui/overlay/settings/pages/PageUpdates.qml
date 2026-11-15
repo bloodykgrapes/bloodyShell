@@ -30,26 +30,28 @@ SettingsPage
         if (entry.kind === "compositor") return Tr.tr("settings.about.compositor");
         if (entry.kind === "dots") return Tr.tr("settings.imports.dots");
         if (entry.kind === "greeter") return Tr.tr("settings.imports.greeter");
-        if (entry.kind === "cli") return "CLI";
         return Tr.tr("common.wallpapers");
     }
 
     SettingsConfirmation
     {
         objectName: "resourceConfirmation"
+        readonly property var resource: ServiceResources.pending
+        readonly property bool clearing: resource !== null && resource.action === "clear"
+        readonly property bool direct: resource !== null && resource.kind === "wallpapers"
         host: pageUpdates
         visible: pageUpdates.active && ServiceResources.pending !== null
-        title: ServiceResources.pending && ServiceResources.pending.kind === "cli" ? Tr.tr("settings.imports.cliConfirmTitle")
+        title: clearing ? Tr.tr("settings.imports.clear") + " · " + pageUpdates.resourceTitle(resource)
             : Tr.tr("settings.imports.confirm") + " · " + pageUpdates.resourceTitle(ServiceResources.pending)
         description: !ServiceResources.pending ? ""
+            : clearing ? Tr.tr("settings.imports.confirmClearGreeter")
             : ServiceResources.pending.kind === "greeter" ? Tr.tr("settings.imports.confirmGreeter")
             : ServiceResources.pending.kind === "compositor" ? Tr.tr("settings.imports.confirmNiri").arg(ServiceUpdate.pretty(ServiceResources.pending.destination))
             : ServiceResources.pending.kind === "dots" ? Tr.tr("settings.imports.confirmDots").arg((ServiceResources.pending.programs || []).join(", "))
-            : ServiceResources.pending.kind === "cli" ? Tr.tr("settings.imports.confirmCli").arg(ServiceUpdate.pretty(ServiceResources.pending.destination))
             : Tr.tr("settings.imports.confirmWallpapers").arg(ServiceUpdate.pretty(ServiceResources.pending.destination))
         errorText: ServiceResources.error
-        acceptText: ServiceResources.pending && ServiceResources.pending.kind === "cli" ? Tr.tr("common.refresh")
-            : ServiceResources.pending && ServiceResources.pending.kind === "wallpapers" ? Tr.tr("settings.imports.import") : Tr.tr("settings.dependencies.continueInTerminal")
+        acceptText: direct ? Tr.tr(clearing ? "settings.imports.clear" : "settings.imports.import") : Tr.tr("settings.dependencies.continueInTerminal")
+        danger: clearing
         acceptEnabled: !ServiceResources.busy && !ServiceUpdate.busy
         onAccepted: ServiceResources.apply()
         onRejected: ServiceResources.pending = null
@@ -62,19 +64,13 @@ SettingsPage
         visible: pageUpdates.active && ServiceDependencies.pending !== null
         title: Tr.tr("settings.dependencies.confirm")
         description: ServiceDependencies.pending
-            ? (ServiceDependencies.pending.remove ? Tr.tr("settings.dependencies.confirmRemove") : Tr.tr("settings.dependencies.confirmInstall")).arg(ServiceDependencies.pending.tool) : ""
+            ? (ServiceDependencies.pending.remove ? Tr.tr("settings.dependencies.confirmRemove") : Tr.tr("settings.dependencies.confirmInstall")).arg(ServiceDependencies.pending.name) : ""
         errorText: ServiceDependencies.error
         acceptText: Tr.tr("settings.dependencies.continueInTerminal")
         acceptEnabled: !ServiceDependencies.busy
         danger: ServiceDependencies.pending !== null && ServiceDependencies.pending.remove
         onAccepted: ServiceDependencies.apply()
         onRejected: ServiceDependencies.pending = null
-    }
-
-    function date(iso)
-    {
-        const d = new Date(iso);
-        return isNaN(d.getTime()) ? "" : d.toLocaleDateString(Tr.locale, "d MMM yyyy");
     }
 
     SettingsGroup
@@ -335,7 +331,7 @@ SettingsPage
         objectName: "resourceImports"
         title: Tr.tr("settings.imports.title")
         description: Tr.tr("settings.imports.description")
-        icon: Icon.add
+        icon: Icon.importFiles
         onExpandedChanged:
         {
             if (expanded) ServiceResources.refresh();
@@ -369,31 +365,63 @@ SettingsPage
                 required property var modelData
                 objectName: "importRow-" + modelData.id
                 label: pageUpdates.resourceTitle(modelData)
+                icon: modelData.kind === "greeter" ? Icon.loginScreen
+                    : modelData.kind === "compositor" ? Icon.compositor
+                    : modelData.kind === "dots" ? Icon.configuration : Icon.wallpapers
                 description: resourceRow.modelData.kind === "greeter" ? Tr.tr("settings.imports.greeterHint")
                     : resourceRow.modelData.kind === "compositor" ? Tr.tr("settings.imports.niriHint").arg(ServiceUpdate.pretty(resourceRow.modelData.destination))
                     : resourceRow.modelData.kind === "dots" ? Tr.tr("settings.imports.dotsHint")
-                    : resourceRow.modelData.kind === "cli" ? Tr.tr("settings.imports.cliHint")
                     : Tr.tr("settings.imports.wallpapersHint").arg(ServiceUpdate.pretty(resourceRow.modelData.destination))
-                SettingsButton
+                Row
                 {
-                    objectName: "importResource-" + resourceRow.modelData.id
-                    text: ServiceResources.operation === resourceRow.modelData.id ? Tr.tr("common.working")
-                        : resourceRow.modelData.kind === "cli" ? Tr.tr("common.refresh") : Tr.tr("settings.imports.import")
-                    enabled: !ServiceResources.busy && !ServiceUpdate.busy && ServiceResources.pending === null
-                        && (resourceRow.modelData.kind !== "dots" || resourceRow.modelData.programs.length > 0)
-                    onClicked: ServiceResources.request(resourceRow.modelData.id)
+                    spacing: 8
+                    SettingsButton
+                    {
+                        objectName: "clearResource-" + resourceRow.modelData.id
+                        visible: resourceRow.modelData.kind === "greeter"
+                        text: ServiceResources.operation === resourceRow.modelData.id && ServiceResources.operationAction === "clear" ? Tr.tr("common.working") : Tr.tr("settings.imports.clear")
+                        danger: true
+                        enabled: resourceRow.modelData.installed === true && !ServiceResources.busy && !ServiceUpdate.busy && ServiceResources.pending === null
+                        onClicked: ServiceResources.request(resourceRow.modelData.id, "clear")
+                    }
+                    SettingsButton
+                    {
+                        objectName: "importResource-" + resourceRow.modelData.id
+                        text: ServiceResources.operation === resourceRow.modelData.id && ServiceResources.operationAction === "import" ? Tr.tr("common.working") : Tr.tr("settings.imports.import")
+                        enabled: !ServiceResources.busy && !ServiceUpdate.busy && ServiceResources.pending === null
+                            && resourceRow.modelData.available === true
+                        onClicked: ServiceResources.request(resourceRow.modelData.id)
+                    }
                 }
             }
         }
     }
 
-    SettingsDisclosure
+    PackageList
     {
+        objectName: "optionalPackages"
+        title: Tr.tr("settings.packages.title")
+        description: Tr.tr("settings.packages.description")
+        requiredPackages: false
+    }
+
+    PackageList
+    {
+        objectName: "requiredDependencies"
         title: Tr.tr("settings.dependencies.title")
-        icon: Icon.settingsApplications
-        summary: ServiceDependencies.entries.length > 0
-            ? ServiceDependencies.entries.filter(entry => entry.installed).length + " / " + ServiceDependencies.entries.length : ""
         description: Tr.tr("settings.dependencies.description")
+        requiredPackages: true
+    }
+
+    component PackageList: SettingsDisclosure
+    {
+        id: packageList
+
+        required property bool requiredPackages
+        readonly property var entries: requiredPackages ? ServiceDependencies.dependencies : ServiceDependencies.packages
+
+        icon: Icon.packages
+        summary: entries.length > 0 ? entries.filter(entry => entry.installed).length + " / " + entries.length : ""
         onExpandedChanged:
         {
             if (expanded) ServiceDependencies.refresh();
@@ -414,18 +442,19 @@ SettingsPage
         }
         Repeater
         {
-            model: ServiceDependencies.entries
+            model: packageList.entries
             SettingsRow
             {
                 id: dependencyRow
                 required property var modelData
-                label: dependencyRow.modelData.tool
-                description: (dependencyRow.modelData.required ? Tr.tr("settings.dependencies.required") : Tr.tr("settings.dependencies.optional"))
-                    + (dependencyRow.modelData.packages.length ? " · " + dependencyRow.modelData.packages.join(", ") : "")
+                objectName: "packageRow-" + modelData.tool
+                label: modelData.packages.length ? modelData.packages.join(", ") : modelData.tool
+                description: packageList.requiredPackages ? "" : ServiceDependencies.description(modelData)
                 valueText: dependencyRow.modelData.installed ? Tr.tr("common.installed") : Tr.tr("common.notInstalled")
                 SettingsButton
                 {
-                    visible: !dependencyRow.modelData.installed || dependencyRow.modelData.removable
+                    objectName: "packageAction-" + dependencyRow.modelData.tool
+                    visible: !dependencyRow.modelData.installed || (!packageList.requiredPackages && dependencyRow.modelData.removable)
                     text: ServiceDependencies.operation === dependencyRow.modelData.tool ? Tr.tr("common.working")
                         : !dependencyRow.modelData.supported ? Tr.tr("settings.dependencies.manual")
                         : dependencyRow.modelData.installed ? Tr.tr("common.remove") : Tr.tr("common.install")
@@ -437,159 +466,62 @@ SettingsPage
         }
     }
 
-    readonly property var notes: ServiceUpdate.availableUpdate ? ServiceUpdate.pending
-        : ServiceUpdate.currentRelease ? [ServiceUpdate.currentRelease] : []
+    SettingsDisclosure
+    {
+        id: currentChangelog
+        objectName: "currentChangelog"
+        title: Tr.tr("settings.updates.changelog")
+        summary: ServiceUpdate.version
+        icon: Icon.update
+        onExpandedChanged: if (expanded) ServiceUpdate.loadCurrentRelease()
+
+        SettingsRow
+        {
+            objectName: "currentChangelogStatus"
+            visible: currentChangelog.expanded && !ServiceUpdate.currentNotes
+            label: ServiceUpdate.currentNotesLoading ? Tr.tr("common.loading")
+                : ServiceUpdate.currentNotesMissing ? Tr.tr("settings.updates.unpublished")
+                : ServiceUpdate.currentNotesError ? Tr.tr("common.error") : Tr.tr("settings.updates.noReleaseNotes")
+            description: ServiceUpdate.currentNotesError
+            SettingsButton
+            {
+                objectName: "retryCurrentChangelog"
+                text: Tr.tr("settings.updates.retry")
+                visible: !ServiceUpdate.currentNotesLoading
+                enabled: ServiceUpdate.versionReady
+                onClicked: ServiceUpdate.loadCurrentRelease(true)
+            }
+        }
+
+        Loader
+        {
+            width: parent.width
+            active: currentChangelog.expanded && ServiceUpdate.currentNotes !== null
+            sourceComponent: SettingsReleaseCard
+            {
+                width: parent ? parent.width : 400
+                release: ServiceUpdate.currentRelease
+                repo: ServiceUpdate.repo
+                collapsible: false
+            }
+        }
+    }
 
     SettingsGroup
     {
-        visible: pageUpdates.notes.length > 0
-        title: ServiceUpdate.availableUpdate ? Tr.tr("common.whatsNew") : Tr.tr("settings.updates.thisVersion")
+        objectName: "pendingChangelogs"
+        visible: ServiceUpdate.pending.length > 0
+        title: Tr.tr("common.whatsNew")
 
         Repeater
         {
-            model: pageUpdates.notes
+            model: ServiceUpdate.pending
 
-            ReleaseNotes
+            SettingsReleaseCard
             {
                 required property var modelData
-
                 release: modelData
-            }
-        }
-    }
-
-    component Chip: Rectangle
-    {
-        property string text: ""
-        property color  tint: "transparent"
-        readonly property bool tinted: tint.a > 0
-
-        width: chipText.implicitWidth + 14
-        height: chipText.implicitHeight + 6
-        radius: height / 2
-        color: tinted ? Qt.rgba(tint.r, tint.g, tint.b, 0.16) : Theme.colorField
-
-        ShellText
-        {
-            id: chipText
-            anchors.centerIn: parent
-            label: parent.text
-            size: 10
-            color: parent.tinted ? parent.tint : Theme.text2
-        }
-    }
-
-    component ReleaseNotes: Item
-    {
-        id: notesItem
-
-        property var  release
-        property bool expanded: false
-
-        readonly property real collapsedHeight: 180
-        readonly property bool tall: body.implicitHeight > collapsedHeight + 40
-
-        width: parent ? parent.width : 400
-        height: column.implicitHeight + 32
-
-        SettingsTile { row: notesItem }
-
-        Column
-        {
-            id: column
-
-            x: 18
-            y: 16
-            width: parent.width - 36
-            spacing: 10
-
-            Item
-            {
-                width: parent.width
-                height: Math.max(heading.implicitHeight, github.height)
-
-                Row
-                {
-                    id: heading
-
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 8
-
-                    ShellText
-                    {
-                        anchors.verticalCenter: parent.verticalCenter
-                        label: notesItem.release.name
-                        size: 14
-                        color: Theme.text1
-                        font.bold: true
-                    }
-                    Chip { anchors.verticalCenter: parent.verticalCenter; visible: notesItem.release.prerelease; text: Tr.tr("settings.updates.preRelease"); tint: Theme.colorWarning }
-                    ShellText
-                    {
-                        anchors.verticalCenter: parent.verticalCenter
-                        label: pageUpdates.date(notesItem.release.date)
-                        size: 11
-                        color: Theme.text3
-                    }
-                }
-
-                SettingsButton
-                {
-                    id: github
-
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: notesItem.release.url !== ""
-                    text: Tr.tr("settings.updates.viewOnGithub")
-                    onClicked: Qt.openUrlExternally(notesItem.release.url)
-                }
-            }
-
-            Item
-            {
-                width: parent.width
-                height: notesItem.tall && !notesItem.expanded ? notesItem.collapsedHeight : body.implicitHeight
-                clip: true
-                Glide on height {}
-
-                Text
-                {
-                    id: body
-
-                    width: parent.width
-                    text: notesItem.release.notes !== "" ? notesItem.release.notes : "_" + Tr.tr("settings.updates.noReleaseNotes") + "_"
-                    textFormat: Text.MarkdownText
-                    wrapMode: Text.Wrap
-                    color: Theme.text2
-                    linkColor: Theme.colorAttention
-                    font.pixelSize: 12
-                    font.family: Theme.fontText
-                    lineHeight: 1.15
-                    onLinkActivated: link => Qt.openUrlExternally(link)
-
-                    HoverHandler { cursorShape: body.hoveredLink !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor }
-                }
-
-                Rectangle
-                {
-                    visible: notesItem.tall && !notesItem.expanded
-                    anchors.bottom: parent.bottom
-                    width: parent.width
-                    height: 48
-                    gradient: Gradient
-                    {
-                        GradientStop { position: 0; color: Qt.rgba(Theme.settingsColorCard.r, Theme.settingsColorCard.g, Theme.settingsColorCard.b, 0) }
-                        GradientStop { position: 1; color: Theme.settingsColorCard }
-                    }
-                }
-            }
-
-            SettingsButton
-            {
-                visible: notesItem.tall
-                text: notesItem.expanded ? Tr.tr("settings.updates.showLess") : Tr.tr("settings.updates.showMore")
-                icon: notesItem.expanded ? Icon.chevronUp : Icon.chevronDown
-                onClicked: notesItem.expanded = !notesItem.expanded
+                repo: ServiceUpdate.repo
             }
         }
     }

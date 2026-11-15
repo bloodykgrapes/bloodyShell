@@ -24,7 +24,6 @@ SettingsPage
     SettingsGroup
     {
         title: Tr.tr("settings.timeLanguage.dateAndTime")
-        subtitle: Tr.tr("settings.timeLanguage.authorizationHint")
 
         SettingsRow
         {
@@ -109,7 +108,6 @@ SettingsPage
     {
         title: Tr.tr("settings.timeLanguage.keyboardLayouts")
         visible: ServiceCompositor.supports("keyboard")
-        subtitle: Tr.tr("settings.timeLanguage.layoutsHint")
 
         SettingsRow
         {

@@ -20,7 +20,7 @@ SettingsDisclosure
 
     title: "EasyEffects"
     description: Tr.tr("settings.easyEffects.description")
-    icon: Icon.settingsSound
+    icon: Icon.audioEffects
     summary: !scanned ? Tr.tr("common.checking") : !state.installed ? Tr.tr("common.notInstalled")
         : !state.running ? Tr.tr("settings.easyEffects.stopped") : Tr.tr("settings.easyEffects.running")
 

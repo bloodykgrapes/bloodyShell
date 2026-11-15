@@ -1,12 +1,15 @@
 """Private command registry. All UI and installer helpers enter here."""
 
-import os
 import runpy
 import signal
 import subprocess
 import sys
+from pathlib import Path
+
+FILES = runpy.run_path(str(Path(__file__).with_name("files.py")))
 
 MODULES = {
+    "setup": ("setup.py", "main"),
     "applications": ("desktop.py", "applications_main"),
     "autostart": ("desktop.py", "autostart_main"),
     "compositor": ("compositors/__init__.py", "main"),
@@ -17,11 +20,12 @@ MODULES = {
     "easyeffects": ("processes.py", "easyeffects_main"),
     "dependencies": ("management.py", "dependencies_main"),
     "doctor": ("management.py", "doctor_main"),
+    "update": ("management.py", "update_main"),
     "install-command": ("management.py", "install_main"),
-    "stage-runtime": ("management.py", "stage_main"),
-    "extract-release": ("management.py", "release_main"),
+    "install-runtime": ("management.py", "runtime_main"),
     "uninstall": ("management.py", "uninstall_main"),
     "greeter-settings": ("resources.py", "greeter_main"),
+    "greeter-wallpaper": ("resources.py", "greeter_wallpaper_main"),
     "resources": ("resources.py", "resources_main"),
     "wallpaper": ("resources.py", "wallpaper_main"),
     "network-auth": ("network.py", None),
@@ -41,13 +45,7 @@ def supervise(command, timeout=None):
         return child.wait(timeout=timeout)
     finally:
         try:
-            if child.poll() is None:
-                os.killpg(child.pid, signal.SIGTERM)
-                try:
-                    child.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    os.killpg(child.pid, signal.SIGKILL)
-                    child.wait()
+            FILES["stop_process"](child)
         finally:
             for sig, handler in previous.items():
                 signal.signal(sig, handler)
@@ -64,13 +62,14 @@ def dispatch(args, root):
     previous = sys.argv
     try:
         sys.argv = [str(module), *arguments]
-        if entrypoint:
-            api = runpy.run_path(str(module))
-            handler = api.get(entrypoint)
-            if handler is None:
-                raise RuntimeError("Incomplete backend module: " + filename)
-            return handler()
-        runpy.run_path(str(module), run_name="__main__")
+        with FILES["operation_signals"](signal.SIGTERM, signal.SIGHUP):
+            if entrypoint:
+                api = runpy.run_path(str(module))
+                handler = api.get(entrypoint)
+                if handler is None:
+                    raise RuntimeError("Incomplete backend module: " + filename)
+                return handler()
+            runpy.run_path(str(module), run_name="__main__")
     finally:
         sys.argv = previous
     return 0

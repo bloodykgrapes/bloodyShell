@@ -21,19 +21,22 @@ Rectangle
     readonly property int inset: 24
     readonly property var steps: [
         {label: Tr.tr("helper.start"), title: Tr.tr("helper.welcome"), hint: Tr.tr("helper.welcomeHint")},
+        {label: Tr.tr("common.timeLanguage"), title: Tr.tr("common.timeLanguage"), hint: Tr.tr("helper.timeLanguageHint")},
         {label: Tr.tr("common.display"), title: Tr.tr("common.display"), hint: Tr.tr("helper.displayHint")},
         {label: Tr.tr("common.appearance"), title: Tr.tr("common.appearance"), hint: Tr.tr("helper.appearanceHint")},
         {label: Tr.tr("helper.layout"), title: Tr.tr("helper.layout"), hint: Tr.tr("helper.layoutHint")},
-        {label: Tr.tr("helper.input"), title: Tr.tr("helper.input"), hint: Tr.tr("helper.inputHint")},
-        {label: Tr.tr("helper.ready"), title: Tr.tr("helper.ready"), hint: Tr.tr("helper.readyHint")}
+        {label: Tr.tr("helper.ready"), title: Tr.tr("helper.ready"), hint: saving ? Tr.tr("helper.saving") : saveError ? Tr.tr("common.actionFailed") : Tr.tr("helper.readyHint")}
     ]
     readonly property bool saving: pages.saving
     readonly property string saveError: pages.saveError
+    readonly property alias popupLayer: popupLayer
 
     implicitWidth: 800
     implicitHeight: 640
     radius: Theme.settingsRadius
     color: Theme.colorSolid
+    border.width: 1
+    border.color: Theme.colorPanelEdge
     focus: true
     Component.onCompleted: forceActiveFocus()
 
@@ -105,7 +108,7 @@ Rectangle
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
             ShellIcon { anchors.verticalCenter: parent.verticalCenter; icon: Icon.settingsGeneral; size: 20 }
-            ShellText { anchors.verticalCenter: parent.verticalCenter; label: "bloodyShell"; size: 14; font.weight: Font.DemiBold; color: Theme.text1 }
+            ShellText { anchors.verticalCenter: parent.verticalCenter; label: "bloodyShell"; size: 14; font.family: Theme.fontBrand; font.weight: Font.DemiBold; color: Theme.text1 }
             ShellText { anchors.verticalCenter: parent.verticalCenter; visible: helperContent.width > 500; label: Tr.tr("helper.setup"); size: 11; color: Theme.text3 }
         }
         SettingsIconButton
@@ -125,6 +128,8 @@ Rectangle
         y: brand.y + brand.height + 16
         width: parent.width - helperContent.inset * 2
         spacing: 6
+        readonly property real unit: (width - spacing * (helperContent.steps.length - 1))
+            / (helperContent.steps.length + (helperContent.width >= 560 ? 0.6 : 0))
         Repeater
         {
             model: helperContent.steps
@@ -134,7 +139,7 @@ Rectangle
                 required property int index
                 required property var modelData
                 readonly property bool current: index === helperContent.currentPage
-                width: (stepNavigation.width - stepNavigation.spacing * (helperContent.steps.length - 1)) / helperContent.steps.length
+                width: stepNavigation.unit * (helperContent.width >= 560 && index === 1 ? 1.6 : 1)
                 height: 36
                 radius: Theme.radiusMedium
                 color: current ? Theme.colorSelection : Theme.colorField
@@ -171,6 +176,8 @@ Rectangle
     Column
     {
         id: heading
+        visible: helperContent.currentPage !== 0 && helperContent.currentPage !== 5
+        height: visible ? implicitHeight : 0
         x: helperContent.inset
         y: stepNavigation.y + stepNavigation.height + 20
         width: parent.width - helperContent.inset * 2
@@ -204,6 +211,7 @@ Rectangle
             id: pages
             width: parent.width
             currentPage: helperContent.currentPage
+            availableHeight: content.height
             onNavigate: index => helperContent.go(index)
         }
     }
@@ -255,5 +263,12 @@ Rectangle
             enabled: helperContent.currentPage !== helperContent.steps.length - 1 || !helperContent.saving
             onClicked: helperContent.advance()
         }
+    }
+
+    Item
+    {
+        id: popupLayer
+        anchors.fill: parent
+        z: 1000
     }
 }

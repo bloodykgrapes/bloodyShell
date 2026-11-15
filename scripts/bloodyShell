@@ -17,7 +17,6 @@ ACTIONS = {
     "alt-tab": ("next", ("next", "previous")),
     "lock": ("", ())
 }
-MAINTENANCE = ("setup", "install", "update", "doctor", "configs", "sddm")
 LIFECYCLE = ("start", "run", "restart", "stop", "status")
 
 
@@ -244,7 +243,8 @@ def usage():
 
 Usage: bloodyShell [command] [options]
 
-  start                 Start in the background (default)
+  (no command)          Open the interactive menu
+  start                 Start in the background
   run [qs options]      Run in the foreground
   restart               Restart this shell
   stop                  Stop this shell
@@ -254,10 +254,8 @@ Usage: bloodyShell [command] [options]
 {actions}
 
   open <type>           Open the default browser, file-manager, or terminal
-  setup                 Open the setup menu
-  install               Install or repair using setup
-  uninstall [options]   Preview removal; --apply asks about SDDM and shell settings
-  update [options]      Update using setup
+  uninstall [options]   Confirm removal and choose what to delete
+  update [options]      Check for updates and install the latest release
   doctor [--json]       Check the installation
   configs [names]       Apply optional app configurations
   cli                   Refresh the CLI and PATH
@@ -303,10 +301,19 @@ def main():
     if source.parent != runtime_path() / "scripts":
         os.environ["BLOODYSHELL_COMMAND"] = str(source)
     args = sys.argv[1:]
-    action = args.pop(0) if args else "start"
+    action = args.pop(0) if args else "menu"
     aliases = {"--help": "help", "-h": "help", "--version": "version", "-V": "version"}
     action = aliases.get(action, action)
-    if action in ("help", "version", "path"):
+    if action == "menu":
+        if args:
+            raise RuntimeError("The menu does not take arguments")
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            usage()
+            return 0
+        import runpy
+        path = runtime_path()
+        return runpy.run_path(str(path / "scripts/lib/backend.py"))["dispatch"](["setup", "menu"], path)
+    elif action in ("help", "version", "path"):
         if args:
             raise RuntimeError(f"{action} does not take arguments")
         if action == "help":
@@ -324,13 +331,28 @@ def main():
         if "applications" not in api["MODULES"]:
             raise RuntimeError("This shell version does not support application shortcuts. Update the shell with ./setup install.")
         return api["dispatch"](["applications", "launch", args[0]], path)
-    elif action in ("cli", "uninstall"):
+    elif action in ("cli", "uninstall", "configs", "sddm", "doctor", "update"):
         if action == "cli" and args:
             raise RuntimeError("cli does not take arguments")
-        path = action_runtime() / "setup"
-        if not path.is_file():
-            raise RuntimeError("The setup script is missing from this shell. Run ./setup " + action + " from the source folder.")
-        execute(["bash", str(path), action, *args])
+        if action == "doctor" and args not in ([], ["--json"]):
+            raise RuntimeError("Usage: bloodyShell doctor [--json]")
+        import runpy
+        path = action_runtime() if action in ("cli", "uninstall") else runtime_path()
+        api = runpy.run_path(str(path / "scripts/lib/backend.py"))
+        if action == "cli":
+            request = ["resources", "import", "cli", "--human"]
+        elif action in ("configs", "sddm"):
+            if action == "sddm" and args:
+                raise RuntimeError("sddm does not take arguments")
+            resource = "greeter" if action == "sddm" else "dots"
+            request = ["resources", "import", resource, "--human"]
+            if args:
+                request += ["--only", *args]
+        elif action in ("update", "doctor") and sys.stdin.isatty() and sys.stdout.isatty() and "--json" not in args:
+            request = ["setup", action, *args]
+        else:
+            request = [action, *args]
+        return api["dispatch"](request, path)
     elif action == "internal":
         if not args:
             raise RuntimeError("Usage: bloodyShell internal DOMAIN [arguments]")
@@ -344,11 +366,6 @@ def main():
         command = quickshell()
         instance = active_instance(command)
         execute([command, "log", "--id", instance["id"], *(args or ["--tail", "200"])])
-    elif action in MAINTENANCE:
-        path = runtime() / "setup"
-        if not path.is_file():
-            raise RuntimeError("The setup script is missing from this installation.")
-        execute(["bash", str(path), *([] if action == "setup" else [action]), *args])
     elif action in LIFECYCLE:
         control(action, args)
     else:

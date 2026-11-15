@@ -56,18 +56,30 @@ SettingsPage
             label: Tr.tr("common.volume")
             enabled: ServiceAudio.hasSink
 
-            SettingsSlider
+            Row
             {
-                preferredWidth: 300
-                value: ServiceAudio.volume
-                onMoved: value => ServiceAudio.setVolume(value)
+                spacing: 10
+
+                SettingsSlider
+                {
+                    anchors.verticalCenter: parent.verticalCenter
+                    preferredWidth: 240
+                    opacity: ServiceAudio.muted ? 0.45 : 1
+                    value: ServiceAudio.volume
+                    onMoved: value => ServiceAudio.setVolume(value)
+                }
+                SettingsIconButton
+                {
+                    objectName: "outputMute"
+                    anchors.verticalCenter: parent.verticalCenter
+                    icon: pageSound.volumeIcon(ServiceAudio.volume, ServiceAudio.muted)
+                    iconSize: 14
+                    text: Tr.tr(ServiceAudio.muted ? "settings.sound.unmuteOutput" : "settings.sound.muteOutput")
+                    Accessible.checkable: true
+                    Accessible.checked: ServiceAudio.muted
+                    onClicked: ServiceAudio.toggleMute()
+                }
             }
-        }
-        SettingsRow
-        {
-            label: Tr.tr("settings.sound.muteOutput")
-            enabled: ServiceAudio.hasSink
-            Toggle { checked: ServiceAudio.muted; onToggled: ServiceAudio.toggleMute() }
         }
     }
 
@@ -94,18 +106,30 @@ SettingsPage
             label: Tr.tr("settings.sound.microphoneLevel")
             enabled: ServiceAudio.hasSource
 
-            SettingsSlider
+            Row
             {
-                preferredWidth: 300
-                value: ServiceAudio.micVolume
-                onMoved: value => ServiceAudio.setMicVolume(value)
+                spacing: 10
+
+                SettingsSlider
+                {
+                    anchors.verticalCenter: parent.verticalCenter
+                    preferredWidth: 240
+                    opacity: ServiceAudio.micMuted ? 0.45 : 1
+                    value: ServiceAudio.micVolume
+                    onMoved: value => ServiceAudio.setMicVolume(value)
+                }
+                SettingsIconButton
+                {
+                    objectName: "inputMute"
+                    anchors.verticalCenter: parent.verticalCenter
+                    icon: ServiceAudio.micMuted ? Icon.microphoneOff : Icon.microphone
+                    iconSize: 14
+                    text: Tr.tr(ServiceAudio.micMuted ? "settings.sound.unmuteMicrophone" : "settings.sound.muteMicrophone")
+                    Accessible.checkable: true
+                    Accessible.checked: ServiceAudio.micMuted
+                    onClicked: ServiceAudio.toggleMicMute()
+                }
             }
-        }
-        SettingsRow
-        {
-            label: Tr.tr("settings.sound.muteMicrophone")
-            enabled: ServiceAudio.hasSource
-            Toggle { checked: ServiceAudio.micMuted; onToggled: ServiceAudio.toggleMicMute() }
         }
     }
 

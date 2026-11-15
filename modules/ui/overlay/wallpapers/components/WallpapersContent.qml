@@ -18,7 +18,8 @@ Item
     property bool loading: true
     property string scanError: ""
     property int index: 0
-    property real pos: 0
+    property real targetPos: 0
+    property real pos: targetPos
     property bool dragging: false
     property bool instant: true
     property bool ready: false
@@ -27,7 +28,11 @@ Item
     readonly property real rise: Math.min(Config.animationsEnabled ? entrance : 1, reveal)
     readonly property string folder: String(Config.wallpaperDirectory || "").replace(/^~(?=\/|$)/, Quickshell.env("HOME"))
     readonly property string selectedPath: images[index] || ""
-    readonly property bool current: selectedPath !== "" && selectedPath === Config.wallpaperCurrent
+    readonly property bool loginWallpaper: OverlayState.wallpaperTarget === "login"
+    readonly property string currentWallpaper: loginWallpaper ? ServiceGreeter.selection : Config.wallpaperCurrent
+    readonly property bool applying: loginWallpaper ? ServiceGreeter.wallpaperBusy : ServiceAppearance.wallpaperBusy
+    readonly property string applyError: loginWallpaper ? ServiceGreeter.wallpaperError : ServiceAppearance.wallpaperError
+    readonly property bool current: selectedPath !== "" && selectedPath === currentWallpaper
     readonly property real aspect: width > 0 && height > 0 ? width / height : 16 / 9
     readonly property real cardW: Math.round(Math.min(width * 0.44, height * 0.58 * aspect))
     readonly property real cardH: Math.round(cardW / aspect)
@@ -38,6 +43,7 @@ Item
     {
         enabled: Config.animationsEnabled && !wallpapersContent.dragging && !wallpapersContent.instant
         duration: Theme.animationDurationMorph
+        curve: [0.28, 0.0, 0.3, 1.0, 1.0, 1.0]
     }
     NumberAnimation
     {
@@ -67,28 +73,36 @@ Item
     }
     function select(i)
     {
-        if (images.length === 0 || ServiceAppearance.wallpaperBusy) return;
+        if (images.length === 0 || wallpapersContent.applying) return;
         index = ((i % images.length) + images.length) % images.length;
-        pos += distanceOf(index);
+        targetPos = pos + distanceOf(index);
+    }
+    function advance(steps)
+    {
+        if (images.length === 0 || wallpapersContent.applying) return;
+        index = (((index + steps) % images.length) + images.length) % images.length;
+        targetPos += steps;
     }
     function apply(i)
     {
         const path = images[i];
-        if (!path || path === Config.wallpaperCurrent || ServiceAppearance.wallpaperBusy) return;
-        ServiceAppearance.applyWallpaper(path);
+        if (!path || path === currentWallpaper || wallpapersContent.applying) return;
+        if (loginWallpaper) ServiceGreeter.applyWallpaper(path);
+        else ServiceAppearance.applyWallpaper(path);
     }
     function nameOf(path) { return String(path).replace(/^.*\//, "").replace(/\.[^.]+$/, ""); }
     function scanFolder()
     {
         scanError = "";
         loading = folder !== "";
-        if (folder === "") { images = []; index = 0; pos = 0; return; }
+        if (folder === "") { images = []; index = 0; targetPos = 0; return; }
         if (scan.busy) return;
         scan.folder = folder;
-        scan.selection = selectedPath || Config.wallpaperCurrent;
+        scan.selection = selectedPath || currentWallpaper;
         scan.run(Paths.commandFor("wallpaper", ["list", folder]));
     }
     onFolderChanged: if (ready) scanFolder()
+    onLoginWallpaperChanged: if (ready) scanFolder()
 
     CommandProcess
     {
@@ -102,15 +116,15 @@ Item
             let paths = [];
             if (code === 0)
             {
-                try { paths = JSON.parse(catalog.text).paths.sort((a, b) => a.localeCompare(b, undefined, {numeric: true})); }
+                try { paths = JSON.parse(catalog.text).paths.filter(path => !wallpapersContent.loginWallpaper || !ServiceAppearance.isVideo(path)).sort((a, b) => a.localeCompare(b, undefined, {numeric: true})); }
                 catch (error) { wallpapersContent.scanError = Tr.tr("wallpapers.readFailed"); }
             }
             else wallpapersContent.scanError = scan.errorMessage(Tr.tr("wallpapers.readFailed"));
             wallpapersContent.instant = true;
             wallpapersContent.images = paths;
-            const selected = paths.indexOf(selection), current = paths.indexOf(Config.wallpaperCurrent);
+            const selected = paths.indexOf(selection), current = paths.indexOf(wallpapersContent.currentWallpaper);
             wallpapersContent.index = Math.max(0, selected >= 0 ? selected : current);
-            wallpapersContent.pos = wallpapersContent.index;
+            wallpapersContent.targetPos = wallpapersContent.index;
             wallpapersContent.wheelRest = 0;
             wallpapersContent.instant = false;
             wallpapersContent.loading = false;
@@ -119,15 +133,21 @@ Item
     Connections
     {
         target: ServiceAppearance
-        function onWallpaperApplied() { OverlayState.hide("wallpapers"); }
+        function onWallpaperApplied() { if (!wallpapersContent.loginWallpaper) OverlayState.hide("wallpapers"); }
+    }
+
+    Connections
+    {
+        target: ServiceGreeter
+        function onWallpaperApplied() { if (wallpapersContent.loginWallpaper) OverlayState.hide("wallpapers"); }
     }
 
     focus: true
     Component.onCompleted: { ready = true; forceActiveFocus(); begin(); scanFolder(); }
     Keys.onPressed: event =>
     {
-        if (event.key === Qt.Key_Left) select(index - 1);
-        else if (event.key === Qt.Key_Right) select(index + 1);
+        if (event.key === Qt.Key_Left) advance(-1);
+        else if (event.key === Qt.Key_Right) advance(1);
         else if (event.key === Qt.Key_Home) select(0);
         else if (event.key === Qt.Key_End) select(images.length - 1);
         else if (event.key === Qt.Key_F5) scanFolder();
@@ -145,7 +165,7 @@ Item
         wheelRest += delta;
         const steps = Math.trunc(wheelRest / 48);
         wheelRest -= steps * 48;
-        if (steps !== 0) select(index - steps);
+        if (steps !== 0) advance(-steps);
     }
     WheelHandler
     {
@@ -189,15 +209,15 @@ Item
             target: null
             xAxis.enabled: true
             yAxis.enabled: false
-            enabled: wallpapersContent.images.length > 1 && !ServiceAppearance.wallpaperBusy
+            enabled: wallpapersContent.images.length > 1 && !wallpapersContent.applying
             property real start: 0
             onActiveChanged:
             {
                 wallpapersContent.dragging = active;
-                if (active) start = wallpapersContent.pos;
+                if (active) { start = wallpapersContent.pos; wallpapersContent.targetPos = start; }
                 else wallpapersContent.select(Math.round(wallpapersContent.pos));
             }
-            onTranslationChanged: if (active) wallpapersContent.pos = start - translation.x / wallpapersContent.step
+            onTranslationChanged: if (active) wallpapersContent.targetPos = start - translation.x / wallpapersContent.step
         }
 
         Repeater
@@ -278,7 +298,7 @@ Item
                     {
                         anchors { right: parent.right; top: parent.top; margins: 12 }
                         width: 28; height: 28; radius: 9
-                        visible: card.modelData === Config.wallpaperCurrent
+                        visible: card.modelData === wallpapersContent.currentWallpaper
                         color: Qt.rgba(0, 0, 0, 0.5)
                         ShellIcon { anchors.centerIn: parent; icon: wallpapersContent.lightIcon(Icon.check); size: 14 }
                     }
@@ -298,7 +318,7 @@ Item
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    enabled: !ServiceAppearance.wallpaperBusy
+                    enabled: !wallpapersContent.applying
                     onClicked:
                     {
                         wallpapersContent.forceActiveFocus(Qt.MouseFocusReason);
@@ -319,7 +339,7 @@ Item
         border.width: 1
         border.color: Qt.rgba(1, 1, 1, 0.12)
         visible: wallpapersContent.images.length > 1
-        enabled: wallpapersContent.images.length > 1 && !ServiceAppearance.wallpaperBusy
+        enabled: wallpapersContent.images.length > 1 && !wallpapersContent.applying
         opacity: (enabled ? 1 : 0.3) * wallpapersContent.rise
         autoRepeat: true
     }
@@ -330,7 +350,7 @@ Item
         text: Tr.tr("wallpapers.previous")
         x: Math.round(wallpapersContent.width / 2 - wallpapersContent.cardW / 2 - width - 24)
         y: Math.round(wallpapersContent.cardY + (wallpapersContent.cardH - height) / 2)
-        onClicked: wallpapersContent.select(wallpapersContent.index - 1)
+        onClicked: wallpapersContent.advance(-1)
     }
     Arrow
     {
@@ -339,7 +359,7 @@ Item
         text: Tr.tr("wallpapers.next")
         x: Math.round(wallpapersContent.width / 2 + wallpapersContent.cardW / 2 + 24)
         y: Math.round(wallpapersContent.cardY + (wallpapersContent.cardH - height) / 2)
-        onClicked: wallpapersContent.select(wallpapersContent.index + 1)
+        onClicked: wallpapersContent.advance(1)
     }
 
     Rectangle
@@ -402,8 +422,8 @@ Item
         width: parent.width - 48
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
-        label: ServiceAppearance.wallpaperBusy ? Tr.tr("wallpapers.applying") : wallpapersContent.scanError || ServiceAppearance.wallpaperError
-        color: ServiceAppearance.wallpaperBusy ? Qt.rgba(1, 1, 1, 0.8) : "#ff8c8c"
+        label: wallpapersContent.applying ? Tr.tr("wallpapers.applying") : wallpapersContent.scanError || wallpapersContent.applyError
+        color: wallpapersContent.applying ? Qt.rgba(1, 1, 1, 0.8) : "#ff8c8c"
         size: 11
     }
     Column

@@ -14,7 +14,7 @@ Common.InteractiveControl
     property string trailing: ""
     property bool   danger: false
     property int iconSize: 16
-    property int textSize: 12
+    property int textSize: 13
     property real trailingInset: trailing !== "" ? trailingLabel.width + 10 : 0
     property bool actionPressed: false
     readonly property bool highlighted: enabled && (hovered || visualFocus)

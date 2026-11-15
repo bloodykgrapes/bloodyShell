@@ -31,7 +31,7 @@ SettingsPage
         {
             label: Tr.tr("helper.setup")
             description: Tr.tr("helper.openHint")
-            SettingsButton { text: Tr.tr("common.open"); icon: Icon.settingsGeneral; onClicked: OverlayState.show("helper") }
+            SettingsButton { text: Tr.tr("common.open"); icon: Icon.setup; onClicked: OverlayState.show("helper") }
         }
     }
 

@@ -21,18 +21,26 @@ PanelWindow
 
     property string output: ""
     property Item screenshotFocus: null
+    property Item stackedFocus: null
+    readonly property Item currentView: OverlayState.current === OverlayState.stacked ? stackedPage.item : page.item
     readonly property var preparationOrder: ["launcher", "settings", "power", "wallpapers", "helper", "desktopMenu"]
     property var preparedComponents: []
     readonly property bool authenticating: authAgent.isActive
     readonly property bool switching: ServiceAltTab.active
     readonly property bool modal: authenticating || ServiceScreenshot.active || switching || OverlayState.active
-    readonly property bool shown: !ServiceLock.locked && (modal || contentReveal > 0.001 || altTabReveal > 0.001 || polkitReveal > 0.001)
+    readonly property bool shown: !ServiceLock.locked && (modal || contentReveal > 0.001 || stackedReveal > 0.001 || altTabReveal > 0.001 || polkitReveal > 0.001)
 
     property real contentReveal: OverlayState.active ? 1 : 0
     Ease on contentReveal
     {
         duration: OverlayState.active ? Theme.animationDurationOpen : Theme.animationDurationClose
         curve: OverlayState.active ? Theme.easingEmphasized : Theme.easingAccelerate
+    }
+    property real stackedReveal: OverlayState.stacked !== "" && OverlayState.current === OverlayState.stacked ? 1 : 0
+    Ease on stackedReveal
+    {
+        duration: OverlayState.current === OverlayState.stacked ? Theme.animationDurationOpen : Theme.animationDurationClose
+        curve: OverlayState.current === OverlayState.stacked ? Theme.easingEmphasized : Theme.easingAccelerate
     }
     property real altTabReveal: ServiceAltTab.presented ? 1 : 0
     Ease on altTabReveal
@@ -50,7 +58,7 @@ PanelWindow
         if (name === "polkit") return authenticating;
         return OverlayState.current === name && !authenticating && !switching && !ServiceScreenshot.active;
     }
-    function revealFor(name) { return name === "polkit" ? polkitReveal : contentReveal }
+    function revealFor(name) { return name === "polkit" ? polkitReveal : name === OverlayState.stacked ? stackedReveal : contentReveal }
     function dismiss(name)
     {
         if (authenticating)
@@ -70,6 +78,35 @@ PanelWindow
         const source = Registry.overlaySources[OverlayState.mounted];
         if (source) page.setSource(source, { host: overlay });
         else page.source = "";
+    }
+    function loadStackedContent()
+    {
+        const source = Registry.overlaySources[OverlayState.stacked];
+        if (source)
+        {
+            const window = overlay.contentItem.Window.window;
+            stackedFocus = window ? window.activeFocusItem : null;
+            stackedPage.setSource(source, { host: overlay });
+        }
+        else
+        {
+            stackedPage.source = "";
+            Qt.callLater(restoreStackedFocus);
+        }
+    }
+    function focusContent()
+    {
+        if (!OverlayState.active || OverlayState.popupsSuspended || !currentView) return;
+        currentView.forceActiveFocus();
+    }
+    function restoreStackedFocus()
+    {
+        if (OverlayState.stacked !== "") return;
+        const target = stackedFocus;
+        stackedFocus = null;
+        if (!OverlayState.active || OverlayState.popupsSuspended) return;
+        if (target && target.visible && target.enabled) target.forceActiveFocus();
+        else focusContent();
     }
     function prepareNext()
     {
@@ -93,7 +130,7 @@ PanelWindow
         ServiceScreenshot.start(overlay.shown && overlay.screen ? overlay.screen.name : "", mode);
     }
 
-    screen: Quickshell.screens.find(s => s.name === (ServiceScreenshot.active ? ServiceScreenshot.output : modal || contentReveal > 0.001 || altTabReveal > 0.001 || polkitReveal > 0.001 ? output : ServiceCompositor.focusedOutput)) || Quickshell.screens[0] || null
+    screen: Quickshell.screens.find(s => s.name === (ServiceScreenshot.active ? ServiceScreenshot.output : modal || contentReveal > 0.001 || stackedReveal > 0.001 || altTabReveal > 0.001 || polkitReveal > 0.001 ? output : ServiceCompositor.focusedOutput)) || Quickshell.screens[0] || null
     visible: shown
     color: "transparent"
     anchors { top: true; bottom: true; left: true; right: true }
@@ -109,7 +146,7 @@ PanelWindow
 
     PolkitAgent { id: authAgent }
     Binding { target: OverlayState; property: "inhibited"; value: overlay.authenticating || ServiceLock.locked || ServiceScreenshot.active }
-    Binding { target: OverlayState; property: "popupsSuspended"; value: overlay.authenticating || ServiceLock.locked || ServiceScreenshot.active || overlay.switching }
+    Binding { target: OverlayState; property: "popupsSuspended"; value: overlay.authenticating || ServiceLock.locked || ServiceScreenshot.active || overlay.switching || OverlayState.stacked !== "" }
     Item
     {
         id: popupGuard
@@ -159,7 +196,7 @@ PanelWindow
             {
                 if (overlay.authenticating || ServiceLock.locked || ServiceScreenshot.busy) return;
                 if (overlay.screenshotFocus && overlay.screenshotFocus.visible) overlay.screenshotFocus.forceActiveFocus();
-                else if (page.item && OverlayState.active) (page.item as Item).forceActiveFocus();
+                else if (overlay.currentView && OverlayState.active) overlay.currentView.forceActiveFocus();
                 overlay.screenshotFocus = null;
             });
         }
@@ -169,11 +206,16 @@ PanelWindow
     {
         target: OverlayState
         function onMountedChanged() { overlay.loadContent() }
+        function onStackedChanged() { overlay.loadStackedContent() }
         function onCurrentChanged()
         {
             if (OverlayState.active && !overlay.authenticating && !overlay.switching)
             {
-                overlay.holdOutput();
+                if (OverlayState.stacked === "") overlay.holdOutput();
+                else if (OverlayState.current === OverlayState.stacked) Qt.callLater(() =>
+                {
+                    if (overlay.currentView && overlay.activeFor(OverlayState.current)) overlay.currentView.forceActiveFocus();
+                });
             }
         }
     }
@@ -196,7 +238,7 @@ PanelWindow
             }
             else Qt.callLater(() =>
             {
-                const view = page.item as Item;
+                const view = overlay.currentView;
                 if (view) view.forceActiveFocus();
             });
         }
@@ -206,7 +248,7 @@ PanelWindow
         target: ServiceCompositor
         function onFocusedWorkspaceIdChanged()
         {
-            if (OverlayState.active && !overlay.authenticating && !ServiceScreenshot.busy) OverlayState.hide(OverlayState.current);
+            if (OverlayState.active && !overlay.authenticating && !ServiceScreenshot.busy) OverlayState.close();
         }
     }
     Connections
@@ -216,7 +258,7 @@ PanelWindow
         {
             if (!ServiceLock.locked) return;
             overlay.dismiss();
-            if (OverlayState.active) OverlayState.hide(OverlayState.current);
+            OverlayState.close();
         }
     }
 
@@ -224,6 +266,7 @@ PanelWindow
     {
         holdOutput();
         loadContent();
+        loadStackedContent();
     }
 
     Rectangle
@@ -244,7 +287,23 @@ PanelWindow
     {
         id: page
         anchors.fill: parent
-        enabled: OverlayState.active && !overlay.authenticating && !overlay.switching && !ServiceScreenshot.active
+        enabled: OverlayState.active && OverlayState.current === OverlayState.mounted && OverlayState.stacked === "" && !overlay.authenticating && !overlay.switching && !ServiceScreenshot.active
+        visible: !overlay.switching
+    }
+    Rectangle
+    {
+        anchors.fill: parent
+        visible: stackedPage.item !== null && !overlay.switching
+        color: "#000000"
+        opacity: overlay.stackedReveal * 0.6
+        MouseArea { anchors.fill: parent }
+    }
+    Loader
+    {
+        id: stackedPage
+        objectName: "stackedOverlayPage"
+        anchors.fill: parent
+        enabled: OverlayState.stacked !== "" && overlay.activeFor(OverlayState.stacked)
         visible: !overlay.switching
     }
     Loader

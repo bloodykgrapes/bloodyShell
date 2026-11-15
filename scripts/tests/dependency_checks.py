@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 from pathlib import Path
 import runpy
 from unittest.mock import patch
@@ -13,6 +14,17 @@ def run_checks():
     assert len(entries) > 20 and len({entry["tool"] for entry in entries}) == len(entries)
     plan = api["plan"]
     assert next(entry for entry in entries if entry["tool"] == "easyeffects")["kind"] == "optional"
+    for language in ("en", "ru"):
+        strings = json.loads((ROOT / "translations" / (language + ".json")).read_text())["strings"]
+        for entry in entries:
+            if entry["kind"] == "optional":
+                assert strings["settings.packages." + entry["tool"]].strip(), "Optional package lacks a description"
+    with patch.dict(api["dependencies_status"].__globals__, family=lambda: "arch", available=lambda tool: False, terminal=lambda: []):
+        status = api["dependencies_status"]()["entries"]
+        assert all(entry["feature"] for entry in status), "Dependency metadata lost feature descriptions"
+        assert all(not entry["removable"] for entry in status if entry["required"]), "Required dependencies can be removed"
+    with patch("shutil.which", side_effect=lambda tool: "/usr/bin/quickshell" if tool == "quickshell" else None):
+        assert api["available"]("qs"), "Diagnostics rejected the supported quickshell executable name"
     for distro in ("arch", "fedora", "debian"):
         for entry in entries:
             if entry["kind"] == "required" or entry["tool"] == "python3":

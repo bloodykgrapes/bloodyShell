@@ -12,6 +12,8 @@ Singleton
     readonly property var windows: Registry.windows
     property string current: ""
     property string mounted: ""
+    property string stacked: ""
+    property string wallpaperTarget: "desktop"
     readonly property bool active: current !== ""
     property bool inhibited: false
 
@@ -27,13 +29,29 @@ Singleton
         popupClients = Clients.update(popupClients, client, active);
     }
 
-    function show(name)
+    function show(name, target = "desktop")
     {
         if (inhibited) return;
         if (!windows.includes(name) && name !== "desktopMenu") return;
+        if (name === "wallpapers") wallpaperTarget = target;
         if (name === "helper") Config.set("helperSeen", true);
         MenuState.close();
         unmountTimer.stop();
+        if (name === current) return;
+        stackedUnmountTimer.stop();
+        if (name === "wallpapers" && active)
+        {
+            stacked = name;
+            current = name;
+            return;
+        }
+        if (stacked !== "" && name === mounted && active)
+        {
+            current = name;
+            stackedUnmountTimer.restart();
+            return;
+        }
+        stacked = "";
         if (name !== "desktopMenu") screenName = "";
         mounted = name;
         current = name;
@@ -49,11 +67,21 @@ Singleton
     function hide(name)
     {
         if (name !== current) return;
-        current = "";
-        unmountTimer.restart();
+        if (name === stacked && mounted !== "")
+        {
+            current = mounted;
+            stackedUnmountTimer.restart();
+        }
+        else close();
     }
 
-    function close() { if (active) hide(current) }
+    function close()
+    {
+        if (!active) return;
+        current = "";
+        stackedUnmountTimer.stop();
+        unmountTimer.restart();
+    }
 
     function toggle(name) { current === name ? hide(name) : show(name) }
 
@@ -61,6 +89,12 @@ Singleton
     {
         id: unmountTimer
         interval: Config.animationsEnabled ? Theme.animationDurationClose + 50 : 0
-        onTriggered: if (!overlayState.active) overlayState.mounted = ""
+        onTriggered: if (!overlayState.active) { overlayState.stacked = ""; overlayState.mounted = ""; }
+    }
+    Timer
+    {
+        id: stackedUnmountTimer
+        interval: Config.animationsEnabled ? Theme.animationDurationClose + 50 : 0
+        onTriggered: if (overlayState.current !== overlayState.stacked) overlayState.stacked = ""
     }
 }

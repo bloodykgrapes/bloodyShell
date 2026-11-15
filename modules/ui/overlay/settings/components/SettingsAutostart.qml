@@ -13,7 +13,7 @@ SettingsDisclosure
 
     title: Tr.tr("settings.autostart.title")
     description: Tr.tr("settings.autostart.description")
-    icon: Icon.computerReboot
+    icon: Icon.autostart
     summary: String(ServiceApplications.autostartEntries.length)
 
     readonly property alias picker: appPicker

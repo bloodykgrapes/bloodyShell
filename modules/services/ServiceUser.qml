@@ -20,6 +20,7 @@ Singleton
     property var groups: []
     property string primaryGroup: ""
     property string avatar: ""
+    readonly property var avatarExtensions: ["png", "jpg", "jpeg", "jfif", "webp", "bmp", "gif"]
     property string gecosSuffix: ""
 
     property var accounts: []
@@ -151,6 +152,11 @@ Singleton
         return path.startsWith("/") && path !== "/" && !/[\x00-\x1f\x7f:]/.test(path) && !path.split("/").some(p => p === "." || p === "..");
     }
 
+    function validAvatarPath(path)
+    {
+        return validPath(path) && avatarExtensions.some(extension => path.toLowerCase().endsWith("." + extension));
+    }
+
     function validationError(values)
     {
         if (!loaded) return Tr.tr("service.user.loading");
@@ -171,7 +177,7 @@ Singleton
         if (values.loginShell !== baseline.loginShell && !shells.includes(values.loginShell)) return Tr.tr("service.user.invalidShell");
         if (values.groups !== baseline.groups && values.groups.split(",").filter(Boolean).some(name => !groupCatalog.some(g => g.name === name))) return Tr.tr("service.user.invalidGroups");
         if (!["keep", "replace", "reset"].includes(values.avatarAction)) return Tr.tr("service.user.localImageRequired");
-        if (values.avatarAction === "replace" && (!validPath(values.avatarPath) || !/\.(png|jpe?g|webp|bmp|gif)$/i.test(values.avatarPath))) return Tr.tr("service.user.invalidImageFormat");
+        if (values.avatarAction === "replace" && !validAvatarPath(values.avatarPath)) return Tr.tr("service.user.invalidImageFormat");
         if (accountArguments(values).length > 0 && (!usermodCommand || !pkexecCommand)) return Tr.tr("service.user.toolsMissing");
         return "";
     }
@@ -263,7 +269,7 @@ Singleton
             edit("avatarPath", "");
             return;
         }
-        if (!/\.(png|jpe?g|webp|bmp|gif)$/i.test(path)) { error = Tr.tr("service.user.invalidImageFormat"); return; }
+        if (!validAvatarPath(path)) { error = Tr.tr("service.user.invalidImageFormat"); return; }
         edit("avatarAction", "replace");
         edit("avatarPath", path);
     }

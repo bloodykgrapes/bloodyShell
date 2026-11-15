@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Controls.Basic as Controls
 
+import "../../../../common"
 import "../../../../core"
 
 Controls.Popup
@@ -54,24 +55,31 @@ Controls.Popup
         function onClosed()
         {
             popup.presenting = false;
-            Qt.callLater(() => {
-                if (!OverlayState.settingsPopup && !popup.suspended && popup.host.visible && popup.focusOrigin?.visible && popup.focusOrigin.enabled)
-                {
-                    const reason = popup.keyboardNavigation ? Qt.TabFocusReason : Qt.MouseFocusReason;
-                    if (typeof popup.focusOrigin.focusFor === "function") popup.focusOrigin.focusFor(reason);
-                    else popup.focusOrigin.forceActiveFocus(reason);
-                }
-            });
+            restoreFocus.restart();
+        }
+    }
+
+    Timer
+    {
+        id: restoreFocus
+        interval: 0
+        onTriggered:
+        {
+            const target = popup.focusOrigin;
+            if (OverlayState.settingsPopup || popup.suspended || !popup.host?.visible || !target?.visible || !target.enabled) return;
+            const reason = popup.keyboardNavigation ? Qt.TabFocusReason : Qt.MouseFocusReason;
+            if (typeof target.focusFor === "function") target.focusFor(reason);
+            else target.forceActiveFocus(reason);
         }
     }
 
     Controls.Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4 * popup.reveal) }
-    background: Rectangle
+    background: MenuReveal
     {
-        color: Theme.settingsColorCard
-        radius: Theme.radiusLarge
-        border.width: 1
-        border.color: Theme.colorLine
+        objectName: "settingsPopupSurface"
+        progress: 1
+        color: Theme.settingsColorBackground
+        borderWidth: 1
     }
     enter: Transition
     {

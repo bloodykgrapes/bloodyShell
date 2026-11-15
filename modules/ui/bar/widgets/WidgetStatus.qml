@@ -28,7 +28,7 @@ Widget
         {
             id: layout
 
-            visible: ServiceCompositor.keyboardLayout !== ""
+            visible: Config.barWidgetKeyboardLayout && ServiceCompositor.keyboardLayout !== ""
             menu: Qt.resolvedUrl("../menus/MenuLayout.qml")
             text: ServiceCompositor.keyboardLayout
 

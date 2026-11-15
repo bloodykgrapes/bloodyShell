@@ -442,6 +442,29 @@ ShellRoot
                     events.wait(30);
                     tests.check(menu.visible && menu.application.id === tests.appId && OverlayState.settingsPopup, "Right-click did not open the application menu");
                     tests.check(menu.x >= 8 && menu.y >= 8 && menu.x + menu.width <= window.width - 8 && menu.y + menu.height <= window.height - 8, "Application menu exceeds the window");
+                    menu.close();
+                    for (const mode of [1,2])
+                    {
+                        Config.set("themeAnimations",mode);
+                        menu.openFor(menu.application,window.contentItem,window.width-2,window.height-2);
+                        events.wait(30);
+                        const reveal = tests.find(menu.contentItem,"applicationMenuReveal");
+                        tests.check(reveal.progress>0 && reveal.progress<1 && reveal.revealWidth<reveal.width && reveal.revealHeight<reveal.height,
+                            "Application context menu does not expand in both dimensions");
+                        const rowWidth = tests.find(menu.contentItem,"applicationPin").width;
+                        events.wait(Theme.animationDurationControl+40);
+                        tests.check(reveal.revealWidth===reveal.width && reveal.revealHeight===reveal.height && tests.find(menu.contentItem,"applicationPin").width===rowWidth,
+                            "Application context menu resizes its content during expansion");
+                        menu.close();events.wait(30);
+                        tests.check(reveal.progress>0 && reveal.progress<1 && reveal.revealHeight<reveal.height,"Application context menu does not shrink on close");
+                        const interrupted = reveal.progress;
+                        menu.openFor(menu.application,window.contentItem,window.width-2,window.height-2);
+                        tests.check(reveal.progress>=interrupted-0.02,"Reopening resets the application menu expansion");
+                        events.wait(Theme.animationDurationControl+40);
+                        menu.close();events.wait(Theme.animationDurationClose+40);
+                    }
+                    Config.set("themeAnimations",0);
+                    menu.openFor(menu.application,row,30,30);events.wait(30);
                     const pin = tests.find(menu.contentItem, "applicationPinToggle");
                     const notifications = tests.find(menu.contentItem, "applicationNotificationsToggle");
                     const pinRow = tests.find(menu.contentItem, "applicationPin");

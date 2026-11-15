@@ -93,13 +93,15 @@ def copy_image(path):
         raise ValueError(result.stderr.decode(errors="replace").strip() or "Clipboard copy failed")
 
 
-def publish(directory, save):
+def publish(directory, save, destination=""):
     source = session(directory) / "result.png"
     png_size(source)
     if not save:
         copy_image(source)
         return dict(saved=False, path="")
-    folder = pictures() / "Screenshots"
+    folder = Path(destination).expanduser() if destination else pictures() / "Screenshots"
+    if not folder.is_absolute():
+        raise ValueError("Choose an absolute screenshot save path")
     folder.mkdir(parents=True, exist_ok=True)
     name = "Screenshot " + datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S-%f")
     target = folder / (name + ".png")
@@ -115,7 +117,7 @@ def publish(directory, save):
     return dict(saved=True, path=str(target))
 
 
-def export(directory, save, x, y, width, height):
+def export(directory, save, x, y, width, height, destination=""):
     directory = session(directory)
     image_width, image_height = png_size(directory / "screen.png")
     if x < 0 or y < 0 or width < 1 or height < 1 or x + width > image_width or y + height > image_height:
@@ -130,7 +132,7 @@ def export(directory, save, x, y, width, height):
         result = subprocess.run(command, capture_output=True, text=True, timeout=15)
         if result.returncode:
             raise ValueError(result.stderr.strip() or "Screenshot cropping failed")
-    return publish(directory, save)
+    return publish(directory, save, destination)
 
 
 def interrupted(signum, frame):
@@ -143,13 +145,13 @@ def main():
     try:
         if len(args) in (4, 5) and args[0] == "capture":
             result = capture(args[1], float(args[2]), float(args[3]), float(args[4]) if len(args) == 5 else 1)
-        elif len(args) == 7 and args[0] == "export" and args[2] in ("copy", "save"):
-            result = export(args[1], args[2] == "save", *(int(value) for value in args[3:]))
+        elif len(args) == 8 and args[0] == "export" and args[2] in ("copy", "save"):
+            result = export(args[1], args[2] == "save", *(int(value) for value in args[3:7]), args[7])
         elif len(args) == 2 and args[0] == "cleanup":
             shutil.rmtree(session(args[1]), ignore_errors=True)
             return 0
         else:
-            raise ValueError("Usage: screenshot capture OUTPUT WIDTH HEIGHT [SCALE] | export SESSION copy/save X Y WIDTH HEIGHT | cleanup SESSION")
+            raise ValueError("Usage: screenshot capture OUTPUT WIDTH HEIGHT [SCALE] | export SESSION copy/save X Y WIDTH HEIGHT PATH | cleanup SESSION")
         print(json.dumps(result))
         return 0
     except (OSError, ValueError, subprocess.TimeoutExpired) as error:

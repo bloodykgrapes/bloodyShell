@@ -2,1014 +2,105 @@
 
 set -euo pipefail
 
-readonly REPO="bloodykgrapes/bloodyShell"
 readonly NAME="bloodyShell"
 readonly CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-readonly TARGET="$CONFIG_HOME/quickshell/$NAME"
 readonly BIN_HOME="${XDG_BIN_HOME:-$HOME/.local/bin}"
 readonly BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/$NAME/backups"
-readonly STATE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/$NAME"
-readonly STATUS_FILE="${BLOODYSHELL_STATUS:-$STATE_DIR/update.status}"
 readonly STAMP="$(date +%Y-%m-%d_%H-%M-%S)-$$"
 readonly PACKAGE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 
-BACKED_UP=false
+command -v python3 > /dev/null || { printf "Python 3 is required to run setup.\n" >&2; exit 1; }
+source "$PACKAGE/scripts/lib/system.sh"
 
-if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
-    B=$'\e[1m' D=$'\e[2m' R=$'\e[0m'
-    RED=$'\e[31m' GRN=$'\e[32m' YLW=$'\e[33m' BLU=$'\e[34m' MAG=$'\e[35m' CYN=$'\e[36m'
-else
-    B="" D="" R="" RED="" GRN="" YLW="" BLU="" MAG="" CYN=""
-fi
-interactive() { [[ -t 0 && -t 1 ]]; }
-use_gum() { interactive && command -v gum > /dev/null; }
-
-gum_choose()
+cmd_install()
 {
-    gum choose \
-        --cursor "› " \
-        --cursor.foreground 0 --cursor.background 6 --cursor.bold \
-        --selected.foreground 0 --selected.background 6 --selected.bold \
-        --header.foreground 6 --header.bold \
-        --cursor-prefix "[ ] " --selected-prefix "[✓] " --unselected-prefix "[ ] " \
-        --padding "1 2" "$@"
-}
-
-pretty() { printf '%s' "${1/#$HOME/\~}"; }
-hl()     { printf '%s%s%s' "$CYN" "$(pretty "$1")" "$R"; }
-
-message() { printf '  %s%s%-5s%s  %s\n' "$1" "$B" "$2" "$R" "$3"; }
-info() { message "$CYN" "INFO" "$*"; }
-ok()   { message "$GRN" "DONE" "$*"; }
-warn() { message "$YLW" "NOTE" "$*" >&2; }
-die()  { message "$RED" "ERROR" "$*" >&2; status "failed $*"; exit 1; }
-
-rule()
-{
-    local width="${COLUMNS:-80}"
-    [[ "$width" =~ ^[0-9]+$ ]] || width=80
-    width=$((width > 76 ? 72 : width > 8 ? width - 4 : 4))
-    printf '  %s' "$D"
-    printf '─%.0s' $(seq "$width")
-    printf '%s\n' "$R"
-}
-
-section() { printf '\n  %s%s%s%s\n' "$CYN" "$B" "$1" "$R"; rule; }
-detail() { printf '    %s%-10s%s %s\n' "$D" "$1" "$R" "$2"; }
-
-pad_choices()
-{
-    local -n rows="$1"
-    local width=0 row i
-    for row in "${rows[@]}"; do (( ${#row} > width )) && width=${#row}; done
-    for i in "${!rows[@]}"; do printf -v 'rows[i]' ' %-*s ' "$width" "${rows[$i]}"; done
-    return 0
-}
-
-STEP=0 STEPS=0
-steps() { STEP=0; STEPS="$1"; }
-step()
-{
-    local i
-    STEP=$((STEP + 1))
-    printf '\n  %s%s%02d / %02d%s  %s%s%s\n' "$CYN" "$B" "$STEP" "$STEPS" "$R" "$B" "$*" "$R"
-    printf '  '
-    for ((i=1; i<=STEPS; i++)); do
-        if (( i <= STEP )); then printf '%s━━━━' "$CYN"; else printf '%s────' "$D"; fi
-        (( i < STEPS )) && printf ' '
-    done
-    printf '%s\n\n' "$R"
-    status "step $STEP/$STEPS $*"
-}
-
-package_version() { [[ -f "$PACKAGE/version" ]] && tr -d '[:space:]' < "$PACKAGE/version" || echo "?"; }
-installed_version() { [[ -f "$TARGET/version" ]] && tr -d '[:space:]' < "$TARGET/version" || echo "0.0.0"; }
-
-banner()
-{
-    local installed="Not installed"
-    [[ -f "$TARGET/version" ]] && installed="$(installed_version)"
-    printf '\n  %s%s◆  %s%s  %sSetup%s\n' "$CYN" "$B" "$NAME" "$R" "$D" "$R"
-    rule
-    detail "Package" "$(package_version)"
-    detail "Installed" "$installed"
-    printf '\n'
-}
-
-finish()
-{
-    section "$1"
-    detail "Version" "$(installed_version)"
-    detail "Shell" "$(hl "$TARGET")"
-    if $BACKED_UP; then detail "Backup" "$(hl "$BACKUP_ROOT/$STAMP")"; fi
-    detail "Command" "$(hl "$BIN_HOME/$NAME")"
-    detail "Niri" "$(hl "$CONFIG_HOME/niri") · required; user files kept"
-    detail "Start" "bloodyShell"
-    detail "Settings" "bloodyShell settings"
-    detail "Check" "bloodyShell doctor"
-    detail "Update" "bloodyShell update"
-    info "Open a new terminal to use the command. Log out and back in for niri keybinds."
-    printf '\n'
-}
-
-ask()
-{
-    interactive || return 1
-
-    local default="${2:-y}" hint answer
-    if use_gum; then
-        local initial="No"
-        [[ "$default" == "y" ]] && initial="Yes"
-        if answer="$(gum_choose --header "$1" --selected "$initial" -- Yes No)"; then
-            [[ "$answer" == "Yes" ]]
-            return
-        else
-            local result=$?
-            [[ $result -eq 130 ]] && exit 130
-            return 1
-        fi
-    fi
-    [[ "$default" == "y" ]] && hint="Y/n" || hint="y/N"
-    while true; do
-        printf '  %s%s?%s %s%s%s %s[%s]%s\n' "$BLU" "$B" "$R" "$B" "$1" "$R" "$D" "$hint" "$R"
-        read -r -p $'\n'"  ${BLU}${B}›${R} " answer || return 1
-        answer="${answer,,}"
-        [[ -z "$answer" ]] && answer="$default"
-        case "$answer" in
-            y|yes) return 0 ;;
-            n|no)  return 1 ;;
-            *)     warn "Answer y or n" ;;
-        esac
-    done
-}
-
-CHOICE=0
-choose()
-{
-    local title="$1"; shift
-    local items=("$@") n="$#"
-
-    CHOICE=0
-    if use_gum; then
-        local display=() item label about chosen width=0
-        for item in "${items[@]}"; do
-            label="${item%%|*}"
-            (( ${#label} > width )) && width=${#label}
-        done
-        for item in "${items[@]}"; do
-            label="${item%%|*}"
-            about=""
-            [[ "$item" == *"|"* ]] && about="${item#*|}"
-            display+=("$(printf '%-*s  %s' "$width" "$label" "$about")")
-        done
-        display+=("Quit")
-        pad_choices display
-        if chosen="$(gum_choose --header "$title" -- "${display[@]}")"; then
-            for i in "${!display[@]}"; do
-                [[ "$chosen" == "${display[$i]}" ]] && { (( i < n )) && CHOICE=$((i + 1)); break; }
-            done
-        fi
-        return 0
-    fi
-
-    section "$title"
-    for i in $(seq "$n"); do
-        local item="${items[$((i - 1))]}"
-        local label="${item%%|*}" about=""
-        [[ "$item" == *"|"* ]] && about="${item#*|}"
-        printf '    %s%d)%s %-14s %s%s%s\n' "$CYN$B" "$i" "$R" "$label" "$D" "$about" "$R"
-    done
-    printf '    %s0)%s %sQuit%s\n' "$D" "$R" "$D" "$R"
-
-    local answer
-    while true; do
-        read -r -p $'\n'"  ${BLU}${B}›${R} " answer || { CHOICE=0; return; }
-        if [[ "$answer" =~ ^[0-9]+$ ]] && (( answer >= 0 && answer <= n )); then
-            CHOICE="$answer"
-            return
-        fi
-        warn "Enter a number from 0 to $n"
-    done
-}
-
-SELECTED=()
-choose_many()
-{
-    local title="$1"; shift
-    local defaults=1
-    if [[ "${1:-}" == --none ]]; then defaults=0; shift; fi
-    local items=("$@") n="$#" marks=() width=12
-    for item in "${items[@]}"; do marks+=("$defaults"); local l="${item%%|*}"; (( ${#l} > width )) && width=${#l}; done
-
-    if use_gum; then
-        local display=() item label about chosen line
-        SELECTED=()
-        for item in "${items[@]}"; do
-            label="${item%%|*}"
-            about=""
-            [[ "$item" == *"|"* ]] && about="${item#*|}"
-            display+=("$(printf '%-*s  %s' "$width" "$label" "$about")")
-        done
-        pad_choices display
-        local initial=""
-        [[ "$defaults" == 0 ]] || initial='*'
-        if chosen="$(gum_choose --no-limit --ordered --selected "$initial" --header "$title · X toggle · Enter continue" -- "${display[@]}")"; then
-            while IFS= read -r line; do
-                for i in "${!display[@]}"; do
-                    [[ "$line" == "${display[$i]}" ]] && { SELECTED+=("${items[$i]%%|*}"); break; }
-                done
-            done <<< "$chosen"
-        else
-            local result=$?
-            [[ $result -eq 130 ]] && exit 130
-        fi
-        return 0
-    fi
-
-    if interactive; then
-        local answer
-        while true; do
-            section "$title"
-            printf '  %snumbers toggle · a all · n none · Enter continue%s\n\n' "$D" "$R"
-            for i in $(seq "$n"); do
-                local item="${items[$((i - 1))]}"
-                local label="${item%%|*}" about="" box
-                [[ "$item" == *"|"* ]] && about="${item#*|}"
-                if [[ "${marks[$((i - 1))]}" == 1 ]]; then box="${GRN}${B}[✓]${R}"; else box="${D}[ ]${R}"; fi
-                printf '    %s %s%2d)%s %-*s  %s%s%s\n' "$box" "$CYN$B" "$i" "$R" "$width" "$label" "$D" "$about" "$R"
-            done
-
-            read -r -p $'\n'"  ${BLU}${B}›${R} " answer || break
-            [[ -z "$answer" ]] && break
-            case "${answer,,}" in
-                a) for i in "${!marks[@]}"; do marks[i]=1; done; continue ;;
-                n) for i in "${!marks[@]}"; do marks[i]=0; done; continue ;;
-            esac
-            for word in ${answer//,/ }; do
-                if [[ "$word" =~ ^[0-9]+$ ]] && (( word >= 1 && word <= n )); then
-                    marks[word - 1]=$(( 1 - marks[word - 1] ))
-                else
-                    warn "No item $word"
-                fi
-            done
-        done
-    fi
-
-    SELECTED=()
-    for i in $(seq "$n"); do
-        [[ "${marks[$((i - 1))]}" == 1 ]] && SELECTED+=("${items[$((i - 1))]%%|*}")
-    done
-    return 0
-}
-
-STATUS_ENABLED=false
-status() { if $STATUS_ENABLED; then mkdir -p "$(dirname "$STATUS_FILE")"; printf '%s\n' "$*" > "$STATUS_FILE"; fi; }
-
-backup()
-{
-    mkdir -p "$BACKUP_ROOT/$STAMP" || return 1
-    [[ ! -e "$BACKUP_ROOT/$STAMP/$2" && ! -L "$BACKUP_ROOT/$STAMP/$2" ]] || return 1
-    mv -- "$1" "$BACKUP_ROOT/$STAMP/$2" || return 1
-    BACKED_UP=true
-}
-
-lock_installation()
-{
-    local state="${XDG_STATE_HOME:-$HOME/.local/state}/$NAME"
-    mkdir -p -m 700 "$state"
-    exec {BLOODYSHELL_OPERATION_FD}> "$state/operation.lock"
-    flock -n "$BLOODYSHELL_OPERATION_FD" || die "Another installation, update or uninstall is in progress"
-}
-
-unlock_installation()
-{
-    if [[ -n "${BLOODYSHELL_OPERATION_FD:-}" ]]; then
-        flock -u "$BLOODYSHELL_OPERATION_FD"
-        exec {BLOODYSHELL_OPERATION_FD}>&-
-    fi
-}
-
-version_newer()
-{
-    local a="${1#v}" b="${2#v}"
-    [[ "$a" == "$b" ]] && return 1
-
-    local a_core="${a%%-*}" b_core="${b%%-*}" a_pre="" b_pre=""
-    [[ "$a" == *-* ]] && a_pre="${a#*-}"
-    [[ "$b" == *-* ]] && b_pre="${b#*-}"
-
-    if [[ "$a_core" != "$b_core" ]]; then
-        [[ "$(printf '%s\n%s\n' "$a_core" "$b_core" | sort -V | tail -n1)" == "$a_core" ]]
-        return
-    fi
-    [[ -z "$a_pre" ]] && return 0
-    [[ -z "$b_pre" ]] && return 1
-    [[ "$(printf '%s\n%s\n' "$a_pre" "$b_pre" | sort -V | tail -n1)" == "$a_pre" ]]
-}
-
-restart_shell()
-{
-    # A daemonized shell must not inherit a held installer lock.
-    unlock_installation
-    [[ -n "${WAYLAND_DISPLAY:-}" ]] || { warn "No Wayland session: run bloodyShell after logging into niri"; return 0; }
-    if python3 "$BIN_HOME/$NAME" restart; then
-        ok "Shell started"
-    else
-        warn "Shell could not start: use bloodyShell doctor and bloodyShell logs"
-    fi
-}
-
-install_command()
-{
-    python3 "$TARGET/scripts/bloodyShell" internal install-command "$TARGET/scripts/bloodyShell" "$BIN_HOME" "$BACKUP_ROOT/$STAMP/launcher" "$@" > /dev/null \
-        || { warn "Could not install the bloodyShell command"; return 1; }
-    [[ ! -d "$BACKUP_ROOT/$STAMP/launcher" ]] || BACKED_UP=true
-    ok "Command → $(hl "$BIN_HOME/$NAME")"
-    if [[ ":$PATH:" != *":$BIN_HOME:"* ]]; then export PATH="$BIN_HOME:$PATH"; fi
-    ok "PATH configured for your shells and user services"
+    [[ $EUID -ne 0 ]] || die "Run setup as your normal user"
+    exec python3 "$PACKAGE/scripts/bloodyShell" internal setup wizard
 }
 
 apply_shell()
 {
-    local package="${1:-$PACKAGE}"
-    [[ -f "$package/shell.qml" && -f "$package/version" ]] || die "No shell in $(pretty "$package") (shell.qml, version)"
-    command -v python3 > /dev/null || die "Python 3 is required to install the shell command"
-
-    (
-        stage=""; installed=false; backed=false; committed=false
-        cleanup_installation()
-        {
-            local result=$?
-            trap - EXIT INT TERM
-            if ! $committed; then
-                if $installed; then rm -rf -- "$TARGET"; fi
-                if $backed; then mv -- "$BACKUP_ROOT/$STAMP/shell" "$TARGET"; fi
-            fi
-            [[ -z "$stage" || ! -d "$stage" ]] || rm -rf -- "$stage"
-            exit "$result"
-        }
-        trap cleanup_installation EXIT
-        trap 'exit 130' INT
-        trap 'exit 143' TERM
-        if [[ "$package" != "$TARGET" ]]; then
-            mkdir -p "$CONFIG_HOME/quickshell" || exit 1
-            stage="$(mktemp -d "$CONFIG_HOME/quickshell/.$NAME.new.XXXXXX")" || exit 1
-            python3 "$PACKAGE/scripts/bloodyShell" internal stage-runtime "$package" "$stage" "$BIN_HOME" || exit 1
-            if [[ -e "$TARGET" || -L "$TARGET" ]]; then
-                backup "$TARGET" shell || exit 1
-                backed=true
-                info "Previous version → $(hl "$BACKUP_ROOT/$STAMP/shell")"
-            fi
-            mv -- "$stage" "$TARGET" || exit 1
-            stage=""; installed=true
-        fi
-        chmod +x "$TARGET/setup" || exit 1
-        install_command || exit 1
-        committed=true
-    ) || die "Installation failed; previous shell and settings were kept"
-    [[ ! -d "$BACKUP_ROOT/$STAMP" ]] || BACKED_UP=true
-    if [[ ":$PATH:" != *":$BIN_HOME:"* ]]; then export PATH="$BIN_HOME:$PATH"; fi
-    if [[ -f "$TARGET/scripts/lib/processes.py" ]]; then
-        python3 "$TARGET/scripts/bloodyShell" internal build-keyboard-monitor > /dev/null || warn "Alt+Tab modifier support needs Qt 6 development tools; see the installation guide in the source repository"
-    fi
-    ok "$NAME $(tr -d '[:space:]' < "$TARGET/version") → $(hl "$TARGET")"
+    python3 "$PACKAGE/scripts/bloodyShell" internal install-runtime "${1:-$PACKAGE}" "$BIN_HOME" "$BACKUP_ROOT/$STAMP"
 }
 
-apply_configs()
+cmd_install_stage()
 {
-    local programs=("$@")
-    if [[ ${#programs[@]} -eq 0 ]]; then
-        local items=() available=() names program
-        names="$(python3 "$PACKAGE/scripts/bloodyShell" internal resources programs)" || return 1
-        [[ -z "$names" ]] || mapfile -t available <<< "$names"
-        for program in "${available[@]}"; do
-            if [[ -e "$CONFIG_HOME/$program" ]]; then items+=("$program|replaces $(pretty "$CONFIG_HOME/$program") (backed up)")
-            else items+=("$program|new $(pretty "$CONFIG_HOME/$program")"); fi
-        done
-        [[ ${#items[@]} -gt 0 ]] || return 0
-
-        choose_many "App configs" "${items[@]}"
-        programs=("${SELECTED[@]+"${SELECTED[@]}"}")
-        [[ ${#programs[@]} -gt 0 ]] || { info "App configs skipped"; return 0; }
-    fi
-
-    ask "Import configs for ${programs[*]}? Existing files are backed up." y || { info "App configs skipped"; return 0; }
-
-    for program in "${programs[@]}"; do
-        [[ "$program" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "Invalid config name: $program"
-        python3 "$PACKAGE/scripts/bloodyShell" internal resources import "dots/$program" --human || return 1
-    done
-}
-
-
-readonly DEPENDENCIES=(
-    "required|qs|Runs the shell|quickshell|copr:errornointernet/quickshell quickshell|-"
-    "required|niri|Compositor|niri|niri|niri"
-    "required|awww|Wallpapers|awww|-|-"
-    "required|grim|Screenshots|grim|grim|grim"
-    "required|wl-copy|Screenshot clipboard|wl-clipboard|wl-clipboard|wl-clipboard"
-    "required|curl|Updates|curl|curl|curl"
-    "required|nmcli|Network and enterprise Wi-Fi|networkmanager python-gobject libnm|NetworkManager python3-gobject NetworkManager-libnm|network-manager python3-gi gir1.2-nm-1.0"
-    "required|wpctl|Sound|pipewire wireplumber|pipewire wireplumber|pipewire wireplumber"
-    "required|upower|Battery|upower|upower|upower"
-    "required|findmnt|Storage discovery|util-linux|util-linux|util-linux"
-    "optional|udisksctl|Mount disks once|udisks2|udisks2|udisks2"
-    "optional|pkexec|Administrator authorization|polkit|polkit|pkexec"
-    "required|python3|Shell helpers|python|python3|python3"
-    "required|gsettings|App theme|glib2|glib2|libglib2.0-bin"
-    "optional|brightnessctl|Screen brightness|brightnessctl|brightnessctl|brightnessctl"
-    "optional|bluetoothctl|Bluetooth|bluez bluez-utils|bluez|bluez"
-    "optional|wlsunset|Night light|wlsunset|wlsunset|wlsunset"
-    "required|ffmpeg|Screenshot cropping and wallpaper colors|ffmpeg|ffmpeg-free|ffmpeg"
-    "optional|lpstat|Printers|cups system-config-printer|cups system-config-printer|cups system-config-printer"
-    "optional|notify-send|Update notifications|libnotify|libnotify|libnotify-bin"
-    "optional|cava|Audio visualizer in the media menu|cava|cava|cava"
-    "optional|easyeffects|Audio effects and presets|easyeffects|easyeffects|easyeffects"
-    "optional|playerctl|Media keyboard shortcuts|playerctl|playerctl|playerctl"
-    "optional|btop|System monitor keyboard shortcut|btop|btop|btop"
-    "optional|nautilus|File manager keyboard shortcut|nautilus|nautilus|nautilus"
-    "optional|kitty|Terminal (its config is in App configs)|kitty|kitty|kitty"
-    "optional|fastfetch|System info (its config is in App configs)|fastfetch|fastfetch|fastfetch"
-    "optional|gum|Arrow-key installer menus|gum|gum|gum"
-    "optional|sddm|Login screen|sddm qt6-declarative qt6-svg|sddm qt6-qtdeclarative qt6-qtsvg|sddm qml6-module-qtquick-controls qml6-module-qtquick-effects qml6-module-qtquick-shapes"
-    "optional|qt6-multimedia|Video wallpapers|qt6-multimedia qt6-multimedia-ffmpeg|qt6-qtmultimedia|qml6-module-qtmultimedia"
-)
-
-
-readonly APPLICATIONS=(
-    "Web browser|firefox|Firefox|General-purpose web browser|firefox|firefox|firefox-esr"
-    "Web browser|chromium|Chromium|Chromium-based web browser|chromium|chromium|chromium"
-    "Media player|mpv|mpv|Lightweight audio and video player|mpv|mpv|mpv"
-    "Media player|vlc|VLC|Audio and video player with a full interface|vlc|vlc|vlc"
-    "Media player|celluloid|Celluloid|Simple graphical player based on mpv|celluloid|celluloid|celluloid"
-    "Image viewer|imv|imv|Lightweight image viewer|imv|imv|imv"
-    "Image viewer|gwenview|Gwenview|Graphical image viewer|gwenview|gwenview|gwenview"
-    "Text editor|kate|Kate|Full-featured graphical editor|kate|kate|kate"
-    "Text editor|mousepad|Mousepad|Simple graphical text editor|mousepad|mousepad|mousepad"
-    "Text editor|gnome-text-editor|GNOME Text Editor|Minimal graphical editor|gnome-text-editor|gnome-text-editor|gnome-text-editor"
-)
-
-application_installed() { command -v "$1" > /dev/null; }
-
-application_packages()
-{
-    local family="$1" line="$2" category tool label description arch fedora debian
-    IFS='|' read -r category tool label description arch fedora debian <<< "$line"
-    if [[ "$family" == debian && "$(os_field ID)" == ubuntu ]]; then
-        [[ "$tool" != firefox ]] || debian=firefox
-        [[ "$tool" != chromium ]] || debian=chromium-browser
-    fi
-    dependency_packages "$family" "optional|$tool|$description|$arch|$fedora|$debian"
-}
-
-install_applications()
-{
-    interactive || { info "Optional program choices require an interactive terminal"; return 0; }
-    local family; family="$(distro_family)"
-    [[ -n "$family" ]] || { warn "Choose optional programs with your distribution's package manager"; return 0; }
-
-    local category line group tool label description packages installed
-    local chosen=() choices=() package_lines=() candidates=() all_packages=()
-    for category in "Web browser" "Media player" "Image viewer" "Text editor"; do
-        installed=""
-        local alternatives=""
-        case "$category" in
-            "Web browser") alternatives="brave brave-browser google-chrome google-chrome-stable vivaldi librewolf zen-browser" ;;
-            "Media player") alternatives="haruna parole totem dragon" ;;
-            "Image viewer") alternatives="eog loupe ristretto feh qimgv" ;;
-            "Text editor") alternatives="code codium gedit xed leafpad" ;;
+    [[ $EUID -ne 0 ]] || die "Run setup as your normal user"
+    [[ $# -eq 2 && "$1" =~ ^[0-5]$ ]] || die "Invalid installation stage"
+    local stage="$1" plan="$2" family="" backup="" option key value data
+    local packages=() appearance=() options=()
+    data="$(python3 "$PACKAGE/scripts/bloodyShell" internal setup worker-plan "$plan")" || die "Invalid installation plan"
+    while IFS=$'\t' read -r key value; do
+        case "$key" in
+            family) family="$value" ;;
+            backup) backup="$value" ;;
+            packages) packages+=("$value") ;;
+            appearance_packages) appearance+=("$value") ;;
+            selected) options+=("$value") ;;
         esac
-        for tool in $alternatives; do
-            if application_installed "$tool"; then installed="$tool"; break; fi
-        done
-        if [[ -n "$installed" ]]; then info "$category: $installed is installed"; continue; fi
-        candidates=()
-        all_packages=()
-        for line in "${APPLICATIONS[@]}"; do
-            IFS='|' read -r group tool label description _ <<< "$line"
-            [[ "$group" == "$category" ]] || continue
-            if application_installed "$tool"; then installed="$label"; break; fi
-            candidates+=("$line")
-            packages="$(application_packages "$family" "$line")"
-            [[ -z "$packages" ]] || all_packages+=($packages)
-        done
-        if [[ -n "$installed" ]]; then info "$category: $installed is installed"; continue; fi
-        [[ ${#all_packages[@]} -gt 0 ]] || continue
-        query_available "$family" "${all_packages[@]}"
-        choices=("None|Skip this category")
-        package_lines=("")
-        for line in "${candidates[@]}"; do
-            IFS='|' read -r group tool label description _ <<< "$line"
-            packages="$(application_packages "$family" "$line")"
-            [[ -n "$packages" ]] && line_available "$packages" || continue
-            choices+=("$label|$description")
-            package_lines+=("$packages")
-        done
-        [[ ${#choices[@]} -gt 1 ]] || { info "$category: no matching repository packages found"; continue; }
-        choose "$category · optional" "${choices[@]}"
-        [[ "$CHOICE" -ne 0 ]] || { info "Optional program selection cancelled"; return 0; }
-        if (( CHOICE > 1 )); then chosen+=(${package_lines[$((CHOICE - 1))]}); fi
-    done
-    [[ ${#chosen[@]} -gt 0 ]] || { info "No extra programs selected"; return 0; }
-    if ask "Install selected programs: ${chosen[*]}? (needs sudo)" y; then
-        install_packages "$family" "${chosen[@]}" || { warn "Some selected programs could not be installed"; return 0; }
-        ok "Selected programs installed"
-    else
-        info "Optional program installation skipped"
-    fi
-}
+    done <<< "$data"
+    export BLOODYSHELL_SETUP_BATCH=1
+    export BLOODYSHELL_SETUP_BACKUP="$backup"
+    # The wizard owns authentication; worker output must never hide another prompt.
+    sudo() { command sudo -n "$@"; }
+    ask() { return 0; }
 
-readonly MANUAL_HINTS=(
-    "qs|https://quickshell.org/docs/guide/install-setup"
-    "niri|https://github.com/YaLTeR/niri/wiki/Getting-Started"
-    "awww|https://codeberg.org/LGFae/awww"
-)
-
-os_field() { [[ -f /etc/os-release ]] && sed -n "s/^$1=//p" /etc/os-release | head -n1 | tr -d '"' || true; }
-
-distro_family()
-{
-    case " $(os_field ID) $(os_field ID_LIKE) " in
-        *" arch "*)                 echo arch ;;
-        *" fedora "*|*" rhel "*)    echo fedora ;;
-        *" debian "*|*" ubuntu "*)  echo debian ;;
-        *)                          echo "" ;;
-    esac
-}
-
-dependency_packages()
-{
-    local family="$1" line="$2" field
-    IFS='|' read -r _ _ _ arch fedora debian <<< "$line"
-    case "$family" in
-        arch)   field="$arch" ;;
-        fedora) field="$fedora" ;;
-        debian) field="$debian" ;;
-        *)      field="-" ;;
-    esac
-    [[ "$field" == "-" ]] && echo "" || echo "$field"
-}
-
-AVAILABLE=" "
-query_available()
-{
-    local family="$1"; shift
-    case "$family" in
-        arch)   AVAILABLE=" $* " ;;
-        fedora) AVAILABLE=" $(dnf repoquery -q --qf '%{name}\n' "$@" 2> /dev/null | sort -u | tr '\n' ' ') " ;;
-        debian) AVAILABLE=" "; for p in "$@"; do apt-cache show "$p" > /dev/null 2>&1 && AVAILABLE+="$p "; done ;;
-    esac
-}
-line_available()
-{
-    local copr=false
-    for p in $1; do
-        [[ "$p" == copr:* ]] && { copr=true; continue; }
-        $copr || [[ "$AVAILABLE" == *" $p "* ]] || return 1
-    done
-}
-
-manual_hint() { local h; for h in "${MANUAL_HINTS[@]}"; do [[ "${h%%|*}" == "$1" ]] && { echo "${h#*|}"; return; }; done; }
-
-aur_helper() { command -v paru > /dev/null && { echo paru; return; }; command -v yay > /dev/null && echo yay; }
-
-ensure_aur_helper()
-{
-    [[ -n "$(aur_helper)" ]] && return 0
-    choose "Some packages are in the AUR only: install an AUR helper?" "paru|recommended" "yay|"
-    case "$CHOICE" in
-        1) local helper=paru ;;
-        2) local helper=yay ;;
-        *) return 1 ;;
-    esac
-    sudo pacman -S --needed base-devel git || return 1
-    local tmp; tmp="$(mktemp -d)"
-    git clone --depth 1 "https://aur.archlinux.org/$helper-bin.git" "$tmp/$helper" && (cd "$tmp/$helper" && makepkg -si --noconfirm)
-    local result=$?
-    rm -rf "$tmp"
-    [[ $result -eq 0 ]] && ok "$helper installed" || { warn "Could not install $helper"; return 1; }
-}
-
-install_packages()
-{
-    local family="$1"; shift
-    [[ $# -gt 0 ]] || return 0
-    case "$family" in
-        arch)
-            local repo=() aur=()
-            for p in "$@"; do if pacman -Si "$p" > /dev/null 2>&1; then repo+=("$p"); else aur+=("$p"); fi; done
-            [[ ${#repo[@]} -eq 0 ]] || sudo pacman -S --needed "${repo[@]}" || return 1
-            if [[ ${#aur[@]} -gt 0 ]]; then
-                ensure_aur_helper || { warn "Not installed (AUR): ${aur[*]}"; return 1; }
-                "$(aur_helper)" -S --needed "${aur[@]}" || return 1
-            fi ;;
-        fedora)
-            local plain=() coprs=()
-            for p in "$@"; do if [[ "$p" == copr:* ]]; then coprs+=("${p#copr:}"); else plain+=("$p"); fi; done
-            for c in "${coprs[@]+"${coprs[@]}"}"; do sudo dnf copr enable -y "$c" || return 1; done
-            [[ ${#plain[@]} -eq 0 ]] || sudo dnf install -y "${plain[@]}" || return 1 ;;
-        debian)
-            sudo apt-get update && sudo apt-get install -y "$@" || return 1 ;;
-        *) return 1 ;;
-    esac
-}
-
-tool_available()
-{
-    if [[ "$1" == qt6-multimedia ]]; then
-        python3 "$PACKAGE/scripts/bloodyShell" internal dependencies check "$1"
-        return
-    fi
-    command -v "$1" > /dev/null || return 1
-    if [[ "$1" == nmcli && -f "$PACKAGE/scripts/lib/network.py" ]]; then
-        python3 "$PACKAGE/scripts/bloodyShell" internal network-auth --check > /dev/null 2>&1
-    fi
-}
-
-install_dependencies()
-{
-    local family; family="$(distro_family)"
-    local manager=""
-    case "$family" in arch) manager=pacman ;; fedora) manager=dnf ;; debian) manager=apt ;; esac
-    [[ -n "$family" ]] && info "Distribution: $(os_field PRETTY_NAME) · $manager" \
-                       || warn "Unknown distribution: nothing is installed, only checked"
-
-    local missing=() wanted=()
-    for line in "${DEPENDENCIES[@]}"; do
-        IFS='|' read -r _ tool _ <<< "$line"
-        tool_available "$tool" && continue
-        missing+=("$line")
-        for p in $(dependency_packages "$family" "$line"); do [[ "$p" == copr:* ]] || wanted+=("$p"); done
-    done
-    [[ ${#wanted[@]} -eq 0 ]] || query_available "$family" "${wanted[@]}"
-
-    local install=() manual=() have=() optional=() optionalLines=()
-    for line in "${DEPENDENCIES[@]}"; do
-        IFS='|' read -r kind tool feature arch _ <<< "$line"
-        if tool_available "$tool"; then have+=("$tool"); continue; fi
-        local packages; packages="$(dependency_packages "$family" "$line")"
-        [[ -n "$packages" ]] && ! line_available "$packages" && packages=""
-        if [[ "$kind" == required ]]; then
-            if [[ -n "$packages" ]]; then install+=($packages); else manual+=("$tool|${arch%% *}"); fi
-        elif [[ -n "$packages" ]]; then
-            optional+=("${packages// /, }|$feature")
-            optionalLines+=("$packages")
-        fi
-    done
-
-    [[ ${#have[@]} -eq 0 ]] || ok "Installed: ${have[*]}"
-
-    if [[ ${#install[@]} -gt 0 ]]; then
-        section "Required packages"
-        for p in "${install[@]}"; do
-            [[ "$p" == copr:* ]] && { printf '    %s+%s Repository  %s\n' "$D" "$R" "${p#copr:}"; continue; }
-            printf '    %s•%s %s\n' "$CYN$B" "$R" "$p"
-        done
-    fi
-
-    local chosen=()
-    if [[ ${#optional[@]} -gt 0 ]] && interactive; then
-        choose_many "Optional packages" --none "${optional[@]}"
-        for i in "${!optional[@]}"; do
-            local label="${optional[$i]%%|*}"
-            for s in "${SELECTED[@]+"${SELECTED[@]}"}"; do [[ "$s" == "$label" ]] && chosen+=(${optionalLines[$i]}); done
-        done
-    fi
-
-    local all=("${install[@]+"${install[@]}"}" "${chosen[@]+"${chosen[@]}"}")
-    local count=0; for p in "${all[@]+"${all[@]}"}"; do [[ "$p" == copr:* ]] || count=$((count + 1)); done
-    if [[ ${#all[@]} -gt 0 ]]; then
-        if ! interactive; then
-            warn "Not installed (run ./setup install in a terminal): ${all[*]}"
-        elif [[ -z "$family" ]]; then
-            warn "Install by hand: ${all[*]}"
-        elif ask "Install $count packages with $manager? (needs sudo)" y; then
-            install_packages "$family" "${all[@]}" && ok "Packages installed" || warn "Some packages were not installed"
-        else
-            info "Packages skipped"
-        fi
-    fi
-
-    for entry in "${manual[@]+"${manual[@]}"}"; do
-        local hint; hint="$(manual_hint "${entry%%|*}")"
-        warn "${entry#*|} is not in the repositories here: install it by hand${hint:+ — $(hl "$hint")}"
-    done
-
-    command -v qs > /dev/null || warn "Quickshell is missing: the shell is installed, but won't start until it is"
-    install_native_support "$family"
-}
-
-
-install_native_support()
-{
-    if command -v c++ > /dev/null && command -v wayland-scanner > /dev/null && command -v pkg-config > /dev/null && pkg-config --exists Qt6Quick wayland-client xkbcommon; then return 0; fi
-    local family="$1" packages=()
-    case "$family" in
-        arch) packages=(gcc pkgconf qt6-base qt6-declarative wayland libxkbcommon) ;;
-        fedora) packages=(gcc-c++ pkgconf-pkg-config qt6-qtbase-devel qt6-qtdeclarative-devel wayland-devel libxkbcommon-devel) ;;
-        debian) packages=(g++ pkg-config qt6-base-dev qt6-base-dev-tools qt6-declarative-dev libwayland-dev libwayland-bin libxkbcommon-dev) ;;
-        *) warn "Install C++, Qt 6 Quick, Wayland, and xkbcommon development tools for native keyboard support"; return 0 ;;
-    esac
-    if interactive && ask "Install development tools for Alt+Tab and the on-screen keyboard? (needs sudo)" y; then
-        install_packages "$family" "${packages[@]}" || warn "Native keyboard support could not be prepared"
-    else
-        warn "Native keyboard build support skipped: ${packages[*]}"
-    fi
-}
-
-readonly SDDM_THEME="/usr/share/sddm/themes/$NAME"
-readonly GREETER_STATE="/var/lib/$NAME"
-readonly SDDM_CONF="/etc/sddm.conf.d/zz-$NAME.conf"
-readonly SDDM_SYSTEM_CONF="/etc/sddm.conf"
-
-restore_sddm_files()
-{
-    local theme_backup="$1" config_backup="$2" system_backup="${3:-}"
-    sudo rm -rf "$SDDM_THEME"
-    [[ -z "$theme_backup" ]] || sudo mv "$theme_backup" "$SDDM_THEME"
-    if [[ -n "$config_backup" ]]; then sudo cp -a "$config_backup" "$SDDM_CONF"; else sudo rm -f "$SDDM_CONF"; fi
-    [[ -z "$system_backup" ]] || sudo cp --preserve=all "$system_backup" "$SDDM_SYSTEM_CONF"
-}
-
-apply_greeter()
-{
-    local resource="${BLOODYSHELL_RESOURCE_DIR:-$PACKAGE}"
-    if [[ ! -d "$resource/dots/sddm" ]]; then
-        python3 "$PACKAGE/scripts/bloodyShell" internal resources import greeter --human
-        return
-    fi
-    if ! interactive && ! sudo -n true 2> /dev/null; then warn "Needs sudo in a terminal: login screen skipped"; return 0; fi
-    local file line sddm_dependency=""
-    for file in Main.qml Widgets.qml Theme.qml metadata.desktop theme.conf niri.kdl; do
-        [[ -s "$resource/dots/sddm/$file" ]] || { warn "Missing login-screen file: $file"; return 1; }
-    done
-    local family; family="$(distro_family)"
-    local missing=()
-    for line in "${DEPENDENCIES[@]}"; do [[ "$line" != "optional|sddm|"* ]] || sddm_dependency="$line"; done
-    if ! command -v sddm > /dev/null || ! command -v sddm-greeter-qt6 > /dev/null; then
-        missing+=($(dependency_packages "$family" "$sddm_dependency"))
-    fi
-    command -v niri > /dev/null || missing+=($(dependency_packages "$family" "${DEPENDENCIES[1]}"))
-    if [[ ${#missing[@]} -gt 0 ]]; then
-        if [[ -n "$family" ]] && ask "Install ${missing[*]}? (needs sudo)" y; then
-            install_packages "$family" "${missing[@]}" || return 1
-        else
-            warn "Needs ${missing[*]}: login screen skipped"
-            return 1
-        fi
-    fi
-    command -v sddm > /dev/null && command -v sddm-greeter-qt6 > /dev/null && command -v niri > /dev/null || { warn "Install SDDM with its Qt 6 greeter and niri first"; return 1; }
-    getent passwd sddm > /dev/null || { warn "The SDDM system account is missing: reinstall the sddm package"; return 1; }
-    [[ ! -L "$GREETER_STATE" && ( ! -e "$GREETER_STATE" || -d "$GREETER_STATE" ) ]] || { warn "Login-screen storage must be a directory, not a symlink"; return 1; }
-    niri validate -c "$resource/dots/sddm/niri.kdl" || return 1
-    sudo -v || return 1
-
-    local stage; stage="$(mktemp -d)"
-    local theme_backup="" config_backup="" system_backup="" niri_bin
-    niri_bin="$(command -v niri)"
-    if ! mkdir "$stage/theme" || ! cp -a "$resource/dots/sddm/." "$stage/theme/" || ! ln -s "$GREETER_STATE/theme.conf" "$stage/theme/theme.conf.user"; then
-        rm -rf "$stage"; return 1
-    fi
-    install_native_support "$family"
-    if ! mkdir -p "$stage/theme/keyboard" || ! cp -a "$PACKAGE/modules/common/keyboard/." "$stage/theme/keyboard/" ||
-       ! python3 "$PACKAGE/scripts/bloodyShell" internal build-virtual-keyboard "$stage/theme/native" > /dev/null; then
-        warn "Could not prepare the login-screen keyboard"; rm -rf "$stage"; return 1
-    fi
-    printf '\nkeyboardSource=keyboard/Keyboard.qml\n' >> "$stage/theme/theme.conf"
-    local config_stage="$stage/sddm.conf"
-    {
-        printf '[General]\nDisplayServer=wayland\n\n[Theme]\nCurrent=%s\n\n[Wayland]\n' "$NAME"
-        printf 'CompositorCommand="%s" -c "%s/niri.kdl"\nEnableHiDPI=true\n' "$niri_bin" "$SDDM_THEME"
-    } > "$config_stage"
-    if [[ -e "$SDDM_SYSTEM_CONF" ]]; then
-        if ! sudo cat "$SDDM_SYSTEM_CONF" > "$stage/system-original.conf"; then rm -rf "$stage"; return 1; fi
-        awk '
-            /^[[:space:]]*\[/ { section=$0; sub(/^[[:space:]]*\[/,"",section); sub(/\].*$/,"",section) }
-            section == "General" && /^[[:space:]]*DisplayServer[[:space:]]*=/ { next }
-            section == "Theme" && /^[[:space:]]*Current[[:space:]]*=/ { next }
-            section == "Wayland" && /^[[:space:]]*(CompositorCommand|EnableHiDPI)[[:space:]]*=/ { next }
-            { print }
-        ' "$stage/system-original.conf" > "$stage/system.conf"
-    fi
-    if [[ -e "$SDDM_THEME" || -L "$SDDM_THEME" ]]; then
-        theme_backup="$SDDM_THEME.bak-$STAMP-$RANDOM"
-        sudo mv "$SDDM_THEME" "$theme_backup" || { rm -rf "$stage"; return 1; }
-    fi
-    if [[ -e "$SDDM_CONF" ]]; then
-        config_backup="$SDDM_CONF.bak-$STAMP-$RANDOM"
-        if ! sudo cp -a "$SDDM_CONF" "$config_backup"; then
-            [[ -z "$theme_backup" ]] || sudo mv "$theme_backup" "$SDDM_THEME"
-            rm -rf "$stage"; return 1
-        fi
-    fi
-    if [[ -f "$stage/system.conf" ]] && ! cmp -s "$stage/system-original.conf" "$stage/system.conf"; then
-        system_backup="$SDDM_SYSTEM_CONF.bak-$STAMP-$RANDOM"
-        if ! sudo cp -L --preserve=all "$SDDM_SYSTEM_CONF" "$system_backup"; then
-            restore_sddm_files "$theme_backup" "$config_backup"
-            rm -rf "$stage"; return 1
-        fi
-    fi
-    if ! {
-        sudo mkdir -p "$SDDM_THEME" "$(dirname "$SDDM_CONF")" &&
-        sudo cp -a "$stage/theme/." "$SDDM_THEME/" &&
-        sudo chown -R root:root "$SDDM_THEME" &&
-        sudo chmod -R a+rX,go-w "$SDDM_THEME" &&
-        sudo install -d -m 2755 -o "$USER" -g sddm "$GREETER_STATE" &&
-        python3 "$PACKAGE/scripts/bloodyShell" internal greeter-settings "$CONFIG_HOME/$NAME/settings.json" "$GREETER_STATE" &&
-        sudo install -m 644 "$config_stage" "$SDDM_CONF" &&
-        { [[ -z "$system_backup" ]] || sudo tee "$SDDM_SYSTEM_CONF" < "$stage/system.conf" > /dev/null; };
-    }; then
-        restore_sddm_files "$theme_backup" "$config_backup" "$system_backup"
-        rm -rf "$stage"; return 1
-    fi
-    rm -rf "$stage"
-    ok "SDDM theme → $(hl "$SDDM_THEME")"
-    ok "Wayland login screen uses its own niri configuration"
-    [[ -z "$theme_backup" ]] || info "Previous theme → $(hl "$theme_backup")"
-    [[ -z "$config_backup" ]] || info "Previous configuration → $(hl "$config_backup")"
-    [[ -z "$system_backup" ]] || info "Managed login options moved to $SDDM_CONF (backup: $system_backup)"
-
-    local current previous
-    current="$(systemctl show --property=Id --value display-manager.service 2>/dev/null || true)"
-    if [[ "$current" == sddm.service ]] && systemctl is-enabled --quiet sddm.service 2> /dev/null; then
-        ok "SDDM is already enabled; the running session is unchanged"
-        return
-    fi
-    previous="$current"
-    [[ "$previous" =~ ^[A-Za-z0-9@_.-]+[.]service$ && "$previous" != sddm.service && "$previous" != display-manager.service ]] || previous=""
-    if ask "Use SDDM from the next boot${previous:+ (replaces $previous)}?" y; then
-        if [[ -n "$previous" ]] && ! sudo systemctl disable "$previous"; then
-            restore_sddm_files "$theme_backup" "$config_backup" "$system_backup"; return 1
-        fi
-        if ! sudo systemctl enable sddm.service; then
-            sudo systemctl disable sddm.service || true
-            if [[ -n "$previous" ]] && ! sudo systemctl enable "$previous"; then
-                warn "Could not re-enable $previous; restore it with sudo systemctl enable $previous"
+    case "$stage" in
+        0) python3 "$PACKAGE/scripts/bloodyShell" internal setup check "$plan" ;;
+        1)
+            case "$family" in
+                arch) sudo pacman -Syu --noconfirm ;;
+                fedora) sudo dnf upgrade -y ;;
+                debian) apt_command update; apt_command upgrade -y ;;
+            esac
+            install_packages "$family" "${packages[@]}" || die "Package installation failed"
+            ;;
+        2)
+            install_packages "$family" "${appearance[@]}" || die "Appearance packages could not be installed"
+            python3 "$PACKAGE/scripts/bloodyShell" internal setup theme "$plan"
+            ;;
+        3)
+            for option in "${options[@]}"; do
+                [[ "$option" != login ]] || apply_greeter
+            done
+            python3 "$PACKAGE/scripts/bloodyShell" internal setup theme-settings "$plan"
+            python3 "$PACKAGE/scripts/bloodyShell" internal setup login-shell "$plan"
+            ;;
+        4)
+            python3 "$PACKAGE/scripts/bloodyShell" internal setup configs "$plan"
+            apply_shell
+            if [[ "$backup" == false ]]; then
+                rm -rf -- "$BACKUP_ROOT/$STAMP/shell" "$BACKUP_ROOT/$STAMP/launcher"
+                rmdir -- "$BACKUP_ROOT/$STAMP" 2> /dev/null || true
             fi
-            restore_sddm_files "$theme_backup" "$config_backup" "$system_backup"
-            warn "Could not enable SDDM; theme configuration was rolled back"
-            return 1
-        fi
-        ok "SDDM will be used after a reboot"
-    else
-        info "Theme installed; login manager unchanged"
-    fi
-}
-
-latest_tag()
-{
-    local beta="$1" json
-    json="$(curl -fsSL --max-time 15 -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$REPO/releases?per_page=30")" \
-        || return 1
-
-    if command -v jq > /dev/null; then
-        jq -r --argjson beta "$beta" '[.[] | select(.draft | not) | select($beta or (.prerelease | not))][0].tag_name // empty' <<< "$json"
-        return
-    fi
-
-    tr -d '\n' <<< "$json" \
-        | grep -o '"tag_name": *"[^"]*"[^{}]*"draft": *[a-z]*, *"prerelease": *[a-z]*' \
-        | while IFS= read -r entry; do
-            local tag draft pre
-            tag="$(sed -E 's/.*"tag_name": *"([^"]*)".*/\1/' <<< "$entry")"
-            draft="$(sed -E 's/.*"draft": *([a-z]*).*/\1/' <<< "$entry")"
-            pre="$(sed -E 's/.*"prerelease": *([a-z]*).*/\1/' <<< "$entry")"
-            [[ "$draft" == "false" ]] || continue
-            [[ "$beta" == "true" || "$pre" == "false" ]] || continue
-            echo "$tag"
-            break
-        done
-}
-
-cmd_install()
-{
-    [[ $EUID -ne 0 ]] || die "Run setup as your normal user; it requests sudo only when needed"
-    lock_installation
-    section "Installation plan"
-    detail "Shell" "$(hl "$TARGET")"
-    detail "Command" "$(hl "$BIN_HOME/$NAME")"
-    detail "Backups" "$(hl "$BACKUP_ROOT/$STAMP")"
-    info "Choose optional programs, app configs and the login screen during setup"
-    info "Existing shell and replaced files are backed up; your shell settings are kept"
-    if interactive && ! ask "Continue with installation?" y; then info "Installation cancelled"; return 0; fi
-    steps 7
-
-    step "Dependencies"
-    install_dependencies
-
-    step "Optional programs"
-    install_applications
-
-    step "Compositor configuration"
-    python3 "$PACKAGE/scripts/bloodyShell" internal resources import compositor --human || die "Could not import the required compositor configuration"
-
-    step "Installing the shell"
-    info "Wallpapers are optional: import them from Settings → Updates when wanted"
-    apply_shell
-
-    step "App configs"
-    apply_configs
-
-    step "Login screen"
-    if ask "Set up the login screen in the shell's style (SDDM, needs sudo)?" n; then apply_greeter; else info "Login screen skipped: run ./setup sddm any time"; fi
-
-    step "Checking installation"
-    local missing=() kind tool line
-    for line in "${DEPENDENCIES[@]}"; do
-        IFS='|' read -r kind tool _ <<< "$line"
-        if [[ "$kind" == required ]] && ! tool_available "$tool"; then missing+=("$tool"); fi
-    done
-    if [[ ${#missing[@]} -gt 0 ]]; then
-        warn "Missing required tools: ${missing[*]}"
-        warn "Install these before starting; bloodyShell doctor shows the details"
-        finish "Files installed · dependencies need attention"
-        return 0
-    fi
-    restart_shell
-
-    finish "Installation complete"
+            ;;
+        5) python3 "$PACKAGE/scripts/bloodyShell" internal setup verify "$plan" ;;
+    esac
 }
 
 cmd_update()
 {
-    lock_installation
-    local beta=false tag="" force=false
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --beta)  beta=true ;;
-            --tag)   [[ $# -ge 2 && -n "$2" && "$2" != --* ]] || die "--tag needs a release tag"; tag="$2"; shift ;;
-            --force) force=true ;;
-            *) die "Unknown option: $1" ;;
-        esac
-        shift
-    done
-
-    banner
-    STATUS_ENABLED=true
-    status "running"
-    command -v curl > /dev/null && command -v python3 > /dev/null || die "Updating needs curl and Python 3"
-    steps 3
-
-    step "Looking for a release"
-    if [[ -z "$tag" ]]; then
-        tag="$(latest_tag "$beta")" || die "GitHub is unreachable"
-        [[ -n "$tag" ]] || die "No releases yet"
-    fi
-    local current; current="$(installed_version)"
-    if ! $force && ! version_newer "$tag" "$current"; then
-        ok "Up to date: installed $current, latest ${tag#v}"
-        if [[ -f "$TARGET/scripts/bloodyShell" && -f "$TARGET/scripts/lib/management.py" ]]; then install_command; fi
-        status "done $current"
-        return 0
-    fi
-    ok "${tag#v} is available (installed $current)"
-
-    UPDATE_TMP="$(mktemp -d)"
-    trap 'rm -rf -- "$UPDATE_TMP"' EXIT
-    local tmp="$UPDATE_TMP"
-
-    step "Downloading ${tag#v}"
-    curl -fsSL --retry 2 --max-time 120 -o "$tmp/package.tar.gz" "https://github.com/$REPO/archive/refs/tags/$tag.tar.gz" \
-        || die "Could not download $tag"
-    mkdir "$tmp/package"
-    python3 "$PACKAGE/scripts/bloodyShell" internal extract-release "$tmp/package.tar.gz" "$tmp/package" || die "Package $tag is damaged"
-
-    [[ -f "$tmp/package/setup" && -f "$tmp/package/shell.qml" && -f "$tmp/package/version" ]] || die "Package $tag has no shell in it"
-    local packaged; packaged="$(tr -d '[:space:]' < "$tmp/package/version")"
-    [[ "$packaged" == "${tag#v}" ]] || die "Package version ($packaged) doesn't match tag $tag"
-    ok "Package checked"
-
-    step "Installing ${tag#v}"
-    apply_shell "$tmp/package"
-    status "done $(installed_version)"
-    restart_shell
-    finish "Update complete"
+    python3 "$PACKAGE/scripts/bloodyShell" update "$@"
 }
 
 cmd_sddm()
 {
-    apply_greeter
-    return 0
+    python3 "$PACKAGE/scripts/bloodyShell" sddm
 }
 
 cmd_configs()
 {
-    apply_configs "$@"
-    $BACKED_UP && info "Backups → $(hl "$BACKUP_ROOT/$STAMP")"
-    return 0
+    python3 "$PACKAGE/scripts/bloodyShell" configs "$@"
 }
 
 cmd_doctor()
 {
-    command -v python3 > /dev/null || die "Doctor requires Python 3"
-    if [[ "${1:-}" != --json ]]; then banner; section "Diagnostics"; fi
-    python3 "$PACKAGE/scripts/bloodyShell" internal doctor "$@"
+    python3 "$PACKAGE/scripts/bloodyShell" doctor "$@"
 }
 
 cmd_uninstall()
 {
-    # Replace Bash before removing the installed script that Bash is reading.
     exec python3 "$PACKAGE/scripts/bloodyShell" internal uninstall "$@"
 }
 
@@ -1020,11 +111,11 @@ cmd_cli()
 
 usage()
 {
-    banner
+    printf '\n  %s%sbloodyShell Setup%s\n' "$CYN" "$B" "$R"
     section "Commands"
-    printf '    %s%-26s%s %s\n' "$CYN" "./setup"                  "$R" "menu"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup"                  "$R" "repository installation wizard"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup install"          "$R" "install dependencies, the shell and app configs, start it"
-    printf '    %s%-26s%s %s\n' "$CYN" "./setup uninstall"        "$R" "preview removal; --apply asks about SDDM and shell settings"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup uninstall"        "$R" "confirm removal and choose what to delete"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup update [--beta]"  "$R" "download and install the latest release"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup doctor [--json]"  "$R" "check dependencies and configuration"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup configs [names]"  "$R" "re-apply app configs (kitty, fastfetch, GTK…)"
@@ -1037,43 +128,6 @@ usage()
     printf '    %-22s %s\n\n' "--force"     "reinstall even if up to date"
     info "After installation: bloodyShell help · bloodyShell settings · bloodyShell doctor"
     printf '\n'
-}
-
-menu()
-{
-    banner
-
-    local items=() actions=()
-    items+=("Install|Set up the shell, dependencies and app configs"); actions+=(install)
-    items+=("Update|Download and install a release");               actions+=(update)
-    items+=("Doctor|Check dependencies and configuration");         actions+=(doctor)
-    items+=("Configs|Apply app configuration files"); actions+=(configs)
-    items+=("SDDM|Configure the login screen · administrator access");   actions+=(sddm)
-    items+=("Uninstall|Remove the shell; optionally remove SDDM theme and shell settings"); actions+=(uninstall)
-    items+=("Help|View commands and options");                         actions+=(help)
-
-    choose "Choose an action" "${items[@]}"
-    [[ "$CHOICE" -eq 0 ]] && return 0
-
-    case "${actions[$((CHOICE - 1))]}" in
-        install) cmd_install ;;
-        update)
-            choose "Update channel" "Stable|releases only" "Beta|also pre-releases: newer, less tested"
-            case "$CHOICE" in
-                1) cmd_update ;;
-                2) cmd_update --beta ;;
-                *) return 0 ;;
-            esac ;;
-        doctor)  cmd_doctor ;;
-        configs) cmd_configs ;;
-        sddm) cmd_sddm ;;
-        uninstall)
-            python3 "$PACKAGE/scripts/bloodyShell" internal uninstall
-            if ask "Stop and uninstall bloodyShell?" n; then
-                cmd_uninstall --apply
-            fi ;;
-        help)    usage ;;
-    esac
 }
 
 main()
@@ -1097,14 +151,19 @@ main()
     esac
 
     case "$command" in
-        install) banner; cmd_install ;;
+        install) cmd_install ;;
+        install-stage) cmd_install_stage "${args[@]}" ;;
         uninstall) cmd_uninstall "${args[@]+"${args[@]}"}" ;;
         update)  cmd_update  "${args[@]+"${args[@]}"}" ;;
         doctor)  cmd_doctor "${args[@]+"${args[@]}"}" ;;
-        configs) banner; cmd_configs "${args[@]+"${args[@]}"}" ;;
+        configs) cmd_configs "${args[@]+"${args[@]}"}" ;;
         cli) cmd_cli ;;
-        sddm) banner; cmd_sddm ;;
-        "")      if interactive; then menu; else usage; fi ;;
+        sddm) cmd_sddm ;;
+        "")
+            if interactive; then
+                cmd_install
+            else usage; fi
+            ;;
         help) usage ;;
         *) usage; exit 1 ;;
     esac

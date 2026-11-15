@@ -29,7 +29,27 @@ Singleton
 
     readonly property var pending: releases.filter(r => newer(r.version, version))
 
-    readonly property var currentRelease: releases.find(r => r.version === version) || null
+    property var cachedRelease: null
+    property bool currentCacheReady: false
+    property bool currentNotesRequested: false
+    property string currentNotesVersion: ""
+    property string currentNotesError: ""
+    property bool currentNotesMissing: false
+    property bool currentNotesLoading: false
+    readonly property var currentNotes: cachedRelease && cachedRelease.version === version
+        ? cachedRelease : releases.find(r => r.version === version) || null
+    readonly property var currentRelease: currentNotes
+        || { tag: "v" + version, version: version, name: version, notes: "", date: "", prerelease: version.includes("-"), url: "" }
+
+    onVersionChanged:
+    {
+        currentNotesVersion = "";
+        currentNotesError = "";
+        currentNotesMissing = false;
+        if (currentNotesRequested) Qt.callLater(loadCurrentRelease);
+    }
+    onVersionReadyChanged: if (versionReady && currentNotesRequested) Qt.callLater(loadCurrentRelease)
+    onCurrentCacheReadyChanged: if (currentCacheReady && currentNotesRequested) Qt.callLater(loadCurrentRelease)
 
     readonly property string releaseTag: latest ? latest.tag : ""
     readonly property string versionLatest: latest ? latest.version : ""
@@ -142,24 +162,101 @@ Singleton
 
         const beta = channel === "beta";
         const out = list
-            .filter(r => !r.draft && (beta || !r.prerelease))
-            .map(r => ({
-                tag: String(r.tag_name),
-                version: String(r.tag_name).replace(/^v/, ""),
-                name: String(r.name || r.tag_name),
-                notes: String(r.body || "").trim(),
-                url: String(r.html_url || ""),
-                date: String(r.published_at || r.created_at || ""),
-                prerelease: !!r.prerelease
-            }));
+            .map(releaseEntry).filter(r => r && (beta || !r.prerelease));
 
         out.sort((a, b) => newer(a.version, b.version) ? -1 : newer(b.version, a.version) ? 1 : 0);
 
         releases = out;
+        const current = out.find(r => r.version === version);
+        if (current) rememberCurrentRelease(current);
         checked = true;
         lastChecked = Date.now();
         checkStore.setText(String(lastChecked));
         Qt.callLater(serviceUpdate.autoUpdate);
+    }
+
+    function releaseEntry(release)
+    {
+        if (!release || release.draft || typeof release.tag_name !== "string") return null;
+        const tag = release.tag_name;
+        return { tag: tag, version: tag.replace(/^v/, ""), name: String(release.name || tag),
+            notes: String(release.body || "").trim(), url: String(release.html_url || ""),
+            date: String(release.published_at || release.created_at || ""), prerelease: !!release.prerelease };
+    }
+
+    function rememberCurrentRelease(release)
+    {
+        cachedRelease = release;
+        currentStore.setText(JSON.stringify({ repo: repo, release: release }));
+    }
+
+    function loadCurrentRelease(force = false)
+    {
+        currentNotesRequested = true;
+        if (!versionReady || !currentCacheReady || currentNotesLoading) return;
+        if (!force && currentNotesVersion === version) return;
+        currentNotesVersion = version;
+        currentNotesError = "";
+        currentNotesMissing = false;
+        const known = releases.find(r => r.version === version);
+        if (known && !force) { rememberCurrentRelease(known); return; }
+        currentRequest.requestedVersion = version;
+        currentNotesLoading = true;
+        currentRequest.running = true;
+    }
+
+    FileView
+    {
+        id: currentStore
+        path: serviceUpdate.stateDir + "/current-release.json"
+        printErrors: false
+        onLoaded:
+        {
+            if (!serviceUpdate.cachedRelease)
+            {
+                try
+                {
+                    const saved = JSON.parse(text()), release = saved.release;
+                    if (saved.repo === serviceUpdate.repo && release && typeof release.tag === "string"
+                        && release.version === release.tag.replace(/^v/, "")
+                        && ["name", "notes", "url", "date"].every(key => typeof release[key] === "string")
+                        && typeof release.prerelease === "boolean") serviceUpdate.cachedRelease = release;
+                }
+                catch (error) {}
+            }
+            serviceUpdate.currentCacheReady = true;
+        }
+        onLoadFailed: serviceUpdate.currentCacheReady = true
+    }
+
+    Process
+    {
+        id: currentRequest
+        property string requestedVersion: ""
+        command: ["curl", "-sSL", "--max-time", "15", "-w", "\n%{http_code}", "-H", "Accept: application/vnd.github+json",
+            "https://api.github.com/repos/" + serviceUpdate.repo + "/releases/tags/" + encodeURIComponent("v" + requestedVersion)]
+        stdout: StdioCollector { id: currentAnswer }
+        onExited: code =>
+        {
+            serviceUpdate.currentNotesLoading = false;
+            if (requestedVersion !== serviceUpdate.version) { Qt.callLater(serviceUpdate.loadCurrentRelease); return; }
+            const text = currentAnswer.text.trim(), cut = text.lastIndexOf("\n");
+            const http = parseInt(text.substring(cut + 1), 10);
+            if (code !== 0) serviceUpdate.currentNotesError = Tr.tr("service.update.connectionFailed");
+            else if (http === 404) serviceUpdate.currentNotesMissing = true;
+            else if (http === 403 || http === 429) serviceUpdate.currentNotesError = Tr.tr("service.update.rateLimited");
+            else if (http !== 200) serviceUpdate.currentNotesError = Tr.tr("service.update.httpError").arg(http);
+            else
+            {
+                try
+                {
+                    const release = serviceUpdate.releaseEntry(JSON.parse(text.substring(0, cut)));
+                    if (!release || release.version !== requestedVersion) throw new Error("Unexpected release");
+                    serviceUpdate.rememberCurrentRelease(release);
+                }
+                catch (error) { serviceUpdate.currentNotesError = Tr.tr("service.update.invalidResponse"); }
+            }
+        }
     }
 
     function autoUpdate()
@@ -264,7 +361,7 @@ Singleton
         timeout.restart();
 
         Quickshell.execDetached(["bash", "-c",
-            "mkdir -p \"$1\" && rm -f \"$1\"/update-*.status && BLOODYSHELL_STATUS=\"$4\" exec \"$2/setup\" update --tag \"$3\" > \"$1/update.log\" 2>&1",
+            "mkdir -p \"$1\" && rm -f \"$1\"/update-*.status && BLOODYSHELL_STATUS=\"$4\" exec python3 \"$2/scripts/bloodyShell\" internal update --tag \"$3\" > \"$1/update.log\" 2>&1",
             "bloodyShell-update", stateDir, installDir, releaseTag, statusFile]);
     }
 

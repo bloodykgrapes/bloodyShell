@@ -3,55 +3,171 @@ pragma ComponentBehavior: Bound
 import QtQuick
 
 import "." as Content
-import "../../../animations"
 import "../../../common"
 import "../../../core"
 import "../../../services"
 import "../settings/components"
-import "../settings/components" as Parts
 
 Column
 {
     id: helperPages
 
     property int currentPage: 0
-    readonly property bool saving: ServiceDisplay.busy || ServiceDisplay.confirming || ServiceKeyboard.busy || ServiceDevices.mouseBusy
-    readonly property string saveError: [ServiceDisplay.error, ServiceKeyboard.error, ServiceDevices.mouseError].filter(error => error !== "").join("\n")
+    property real availableHeight: 0
+    readonly property bool saving: ServiceDisplay.busy || ServiceDisplay.confirming || ServiceRegion.busy
+    readonly property string saveError: [ServiceDisplay.error, ServiceRegion.error].filter(error => error !== "").join("\n")
     signal navigate(int index)
-
-    function labelOf(options, value) { return options.find(option => option.value === value)?.label || String(value); }
-    function layoutSummary(prefix)
-    {
-        return Config[prefix + "Enabled"] ? labelOf(Registry.edgeOptions, Config[prefix + "Side"]) + " · " + labelOf(Registry.frameOptions, Config[prefix + "Type"]) : Tr.tr("common.off");
-    }
 
     width: parent.width
     spacing: 12
 
-    Column
+    Item
     {
-        visible: helperPages.currentPage === 0
+        id: message
+        objectName: "helperMessage"
+        visible: helperPages.currentPage === 0 || helperPages.currentPage === 5
+        readonly property bool complete: helperPages.currentPage === 5
+        readonly property bool ready: complete && !helperPages.saving && !helperPages.saveError
         width: parent.width
-        spacing: 12
-        Tip { objectName: "helperWelcome-1"; icon: Icon.settingsDisplay; title: Tr.tr("common.display"); description: Tr.tr("helper.displayHint"); onClicked: helperPages.navigate(1) }
-        Tip { objectName: "helperWelcome-2"; icon: Icon.settingsAppearance; title: Tr.tr("common.appearance"); description: Tr.tr("helper.appearanceHint"); onClicked: helperPages.navigate(2) }
-        Tip { objectName: "helperWelcome-3"; icon: Icon.settingsBar; title: Tr.tr("helper.layout"); description: Tr.tr("helper.layoutHint"); onClicked: helperPages.navigate(3) }
-        Tip { objectName: "helperWelcome-4"; icon: Icon.keyboard; title: Tr.tr("helper.input"); description: Tr.tr("helper.inputHint"); onClicked: helperPages.navigate(4) }
-        ShellText { width: parent.width; label: Tr.tr("helper.reopenHint"); size: 11; color: Theme.text3; wrapMode: Text.Wrap }
+        implicitHeight: Math.max(helperPages.availableHeight, visual.implicitHeight + 24)
+
+        Column
+        {
+            id: visual
+            anchors.centerIn: parent
+            width: Math.min(520, parent.width)
+            spacing: 18
+
+            Rectangle
+            {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: 88; height: 88; radius: 28
+                color: Theme.colorSelection
+                border.width: 1
+                border.color: Theme.colorPanelEdge
+                Image
+                {
+                    anchors.centerIn: parent
+                    width: 64; height: 64
+                    visible: !message.complete
+                    source: Qt.resolvedUrl("../../../../assets/icons/logo.png")
+                    sourceSize: Qt.size(128, 128)
+                    fillMode: Image.PreserveAspectFit
+                }
+                ShellIcon
+                {
+                    anchors.centerIn: parent
+                    visible: message.complete
+                    icon: message.ready ? Icon.check : Icon.settingsGeneral
+                    size: 38
+                }
+            }
+
+            Column
+            {
+                width: parent.width
+                spacing: 10
+                ShellText
+                {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    label: message.ready ? Tr.tr("helper.readyTitle") : Tr.tr(message.complete ? "helper.ready" : "helper.welcome")
+                    size: 28
+                    color: Theme.text1
+                    font.weight: Font.DemiBold
+                    wrapMode: Text.Wrap
+                }
+                ShellText
+                {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    visible: message.ready
+                    label: Tr.tr("helper.thanks")
+                    size: 16
+                    color: Theme.text1
+                    wrapMode: Text.Wrap
+                }
+                ShellText
+                {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    label: !message.complete ? Tr.tr("helper.welcomeHint") : helperPages.saving ? Tr.tr("helper.saving")
+                        : helperPages.saveError || Tr.tr("helper.readyHint")
+                    size: 13
+                    color: Theme.text2
+                    wrapMode: Text.Wrap
+                }
+            }
+
+            Row
+            {
+                width: parent.width
+                spacing: 10
+                visible: !message.complete
+                Repeater
+                {
+                    model: [
+                        {label: Tr.tr("common.timeLanguage"), icon: Icon.settingsTimeLanguage},
+                        {label: Tr.tr("common.display"), icon: Icon.settingsDisplay},
+                        {label: Tr.tr("common.appearance"), icon: Icon.settingsAppearance}
+                    ]
+                    Rectangle
+                    {
+                        required property var modelData
+                        width: (visual.width - 20) / 3
+                        height: 86; radius: 14
+                        color: Theme.colorField
+                        ShellIcon { anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: 14 } icon: modelData.icon; size: 22 }
+                        ShellText { x: 8; y: 46; width: parent.width - 16; horizontalAlignment: Text.AlignHCenter; label: modelData.label; size: 11; wrapMode: Text.Wrap }
+                    }
+                }
+            }
+
+            Rectangle
+            {
+                visible: message.ready
+                width: parent.width
+                height: issueContent.implicitHeight + 28
+                radius: 14
+                color: Theme.colorField
+                Column
+                {
+                    id: issueContent
+                    x: 14; y: 14; width: parent.width - 28
+                    spacing: 10
+                    ShellText { width: parent.width; horizontalAlignment: Text.AlignHCenter; label: Tr.tr("helper.issueHint"); wrapMode: Text.Wrap; size: 12 }
+                    SettingsButton
+                    {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: Tr.tr("helper.reportIssue")
+                        onClicked: Qt.openUrlExternally("https://github.com/" + ServiceUpdate.repo + "/issues/new/choose")
+                    }
+                }
+            }
+        }
+    }
+
+    Loader
+    {
+        objectName: "helperRegionLoader"
+        active: helperPages.currentPage === 1
+        width: parent.width
+        height: item ? item.implicitHeight : 0
+        sourceComponent: Content.HelperRegion {}
     }
 
     Loader
     {
         objectName: "helperDisplayLoader"
-        active: helperPages.currentPage === 1
+        active: helperPages.currentPage === 2
         width: parent.width
         height: item ? item.implicitHeight : 0
-        sourceComponent: Parts.SettingsDisplayControls { objectName: "helperDisplay"; active: helperPages.currentPage === 1 }
+        sourceComponent: SettingsDisplayControls { objectName: "helperDisplay"; active: helperPages.currentPage === 2 }
     }
 
     Column
     {
-        visible: helperPages.currentPage === 2
+        visible: helperPages.currentPage === 3
         width: parent.width
         spacing: 2
         SettingsRow
@@ -68,20 +184,15 @@ Column
         SettingsRow
         {
             label: Tr.tr("settings.appearance.automaticColor")
-            description: Tr.tr("settings.appearance.automaticColorHint")
             Toggle { objectName: "helperAccent"; checked: Config.themeAccent; onToggled: value => Config.set("themeAccent", value) }
         }
         SettingsRow
         {
             label: Tr.tr("settings.appearance.animations")
-            description: Tr.tr("settings.appearance.animationsHint")
-            stacked: true
-            SettingsStyleChoices
+            SettingsChoices
             {
-                kind: "animation"
+                objectName: "helperAnimations"
                 options: Registry.animationOptions
-                namePrefix: "helperAnimation-"
-                preferredCardWidth: 160
                 current: Config.themeAnimations
                 onSelected: value => Config.set("themeAnimations", value)
             }
@@ -90,81 +201,24 @@ Column
 
     Column
     {
-        visible: helperPages.currentPage === 3
+        visible: helperPages.currentPage === 4
         width: parent.width
         spacing: 20
         LayoutSection { prefix: "bar"; title: Tr.tr("common.bar") }
         LayoutSection { prefix: "dock"; title: Tr.tr("common.dock") }
     }
 
-    Loader
+    SettingsGroup
     {
-        objectName: "helperInputLoader"
-        active: helperPages.currentPage === 4
-        width: parent.width
-        height: item ? item.implicitHeight : 0
-        sourceComponent: Content.HelperInput {}
-    }
-
-    Column
-    {
-        visible: helperPages.currentPage === 5
-        width: parent.width
-        spacing: 20
-        ShellText { width: parent.width; label: helperPages.saving ? Tr.tr("helper.saving") : Tr.tr("helper.savedHint"); wrapMode: Text.Wrap; color: Theme.text2 }
+        visible: helperPages.currentPage === 5 && helperPages.saveError !== ""
         SettingsRow
         {
-            visible: helperPages.saveError !== ""
             label: Tr.tr("common.actionFailed")
             description: helperPages.saveError
-            badge: Tr.tr("common.error")
-            badgeColor: Theme.colorCritical
-            SettingsButton { text: Tr.tr(ServiceDisplay.error !== "" ? "helper.reviewDisplay" : "helper.reviewInput"); onClicked: helperPages.navigate(ServiceDisplay.error !== "" ? 1 : 4) }
-        }
-        SettingsGroup
-        {
-            title: Tr.tr("common.display")
-            visible: ServiceDisplay.outputs.length > 0
-            Repeater
+            SettingsButton
             {
-                model: ServiceDisplay.outputs
-                SettingsRow
-                {
-                    required property var modelData
-                    readonly property var display: ServiceDisplay.stateOf(modelData.name)
-                    objectName: "helperDisplaySummary-" + modelData.name
-                    label: modelData.name
-                    valueText: display.enabled ? display.mode + " · " + display.scale + "×" : Tr.tr("common.off")
-                }
-            }
-        }
-        SettingsGroup
-        {
-            title: Tr.tr("common.appearance")
-            SettingsRow { label: Tr.tr("settings.appearance.theme"); valueText: Tr.tr(Theme.light ? "settings.appearance.light" : "settings.appearance.dark") }
-            SettingsRow { label: Tr.tr("settings.appearance.automaticColor"); valueText: Tr.tr(Config.themeAccent ? "common.enabled" : "common.off") }
-            SettingsRow { label: Tr.tr("settings.appearance.animations"); valueText: Tr.tr(Config.themeAnimations === Enums.AnimationsDisabled ? "settings.appearance.minimal" : Config.themeAnimations === Enums.AnimationsFluid ? "settings.appearance.fluid" : "settings.appearance.standard") }
-        }
-        SettingsGroup
-        {
-            title: Tr.tr("helper.layout")
-            SettingsRow { objectName: "helperBarSummary"; label: Tr.tr("common.bar"); valueText: helperPages.layoutSummary("bar") }
-            SettingsRow { objectName: "helperDockSummary"; label: Tr.tr("common.dock"); valueText: helperPages.layoutSummary("dock") }
-        }
-        SettingsGroup
-        {
-            title: Tr.tr("helper.input")
-            SettingsRow { label: Tr.tr("settings.timeLanguage.keyboardLayouts"); description: ServiceKeyboard.layouts.map(layout => ServiceKeyboard.title(layout)).join(", ") }
-            SettingsRow
-            {
-                objectName: "helperMouseSummary"
-                visible: ServiceDevices.mouseLoaded && ServiceDevices.mouseAvailable
-                label: Tr.tr("settings.devices.mouse")
-                description: !visible ? "" : Tr.tr("helper.mouseSummary")
-                    .arg(Tr.tr(ServiceDevices.mouse.profile === "adaptive" ? "settings.devices.adaptive" : "common.off"))
-                    .arg(Math.round(ServiceDevices.mouse.speed * 100))
-                    .arg(Math.abs(ServiceDevices.mouse.scrollVertical).toFixed(1))
-                    .arg(Tr.tr(ServiceDevices.mouse.naturalScroll ? "common.enabled" : "common.off"))
+                text: Tr.tr(ServiceDisplay.error !== "" ? "helper.reviewDisplay" : "helper.reviewTimeLanguage")
+                onClicked: helperPages.navigate(ServiceDisplay.error !== "" ? 2 : 1)
             }
         }
     }
@@ -190,72 +244,5 @@ Column
                 onSelected: value => Config.set(section.prefix + "Side", value)
             }
         }
-        SettingsRow
-        {
-            label: Tr.tr("common.style")
-            stacked: true
-            enabled: Config[section.prefix + "Enabled"]
-            SettingsStyleChoices
-            {
-                kind: "frame"
-                options: Registry.frameOptions
-                namePrefix: "helper-" + section.prefix + "-style-"
-                current: Config[section.prefix + "Type"]
-                onSelected: value => Config.set(section.prefix + "Type", value)
-            }
-        }
-    }
-
-    component Tip: Rectangle
-    {
-        id: tip
-        property string icon: ""
-        property string title: ""
-        property string description: ""
-        signal clicked()
-        width: parent.width
-        height: Math.max(42, copy.implicitHeight) + 28
-        radius: Theme.radiusLarge
-        color: Theme.settingsColorCard
-        activeFocusOnTab: true
-        Keys.onReturnPressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
-        Keys.onEnterPressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
-        Keys.onSpacePressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
-        Accessible.role: Accessible.Button
-        Accessible.name: title + ", " + description
-        Accessible.onPressAction: clicked()
-        Rectangle
-        {
-            anchors.fill: parent
-            radius: parent.radius
-            color: Theme.colorHover
-            opacity: tipHover.hovered || tip.activeFocus ? 1 : 0
-            Smooth on opacity {}
-        }
-        ShellIcon { x: 16; y: 18; icon: tip.icon; size: 22 }
-        Column
-        {
-            id: copy
-            x: 54
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - x - 16
-            spacing: 6
-            Item
-            {
-                width: parent.width
-                height: tipTitle.implicitHeight
-                ShellText
-                {
-                    id: tipTitle
-                    width: Math.max(0, parent.width - chevron.width - 12)
-                    label: tip.title; size: 13; font.weight: Font.DemiBold; color: Theme.text1
-                    wrapMode: Text.Wrap
-                }
-                ShellIcon { id: chevron; anchors.right: parent.right; icon: Icon.chevronRight; size: 12 }
-            }
-            ShellText { width: parent.width; label: tip.description; size: 12; wrapMode: Text.Wrap; color: Theme.text2 }
-        }
-        HoverHandler { id: tipHover }
-        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tip.clicked() }
     }
 }

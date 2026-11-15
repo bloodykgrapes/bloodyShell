@@ -15,6 +15,7 @@ Singleton
     property var terminal: []
     property var pending: null
     property string operation: ""
+    property string operationAction: ""
     property string error: ""
     property string message: ""
     readonly property var helper: Paths.commandFor("resources")
@@ -34,20 +35,22 @@ Singleton
         probe.run(helper.concat(["status"]));
     }
 
-    function request(id)
+    function request(id, action = "import")
     {
         if (busy || ServiceUpdate.busy) return;
         const entry = entries.find(item => item.id === id);
-        if (!entry) return;
+        if (!entry || !["import", "clear"].includes(action)) return;
+        if (action === "import" && entry.available !== true) return;
+        if (action === "clear" && entry.kind !== "greeter") return;
         error = "";
         message = "";
-        pending = entry;
+        pending = Object.assign({}, entry, {action: action});
     }
 
     function apply()
     {
         if (!pending || busy || ServiceUpdate.busy) return;
-        const direct = pending.kind === "wallpapers" || pending.kind === "cli";
+        const direct = pending.kind === "wallpapers";
         if (!direct && terminal.length === 0)
         {
             error = Tr.tr("settings.dependencies.noTerminal");
@@ -56,8 +59,9 @@ Singleton
         const entry = pending;
         pending = null;
         operation = entry.id;
+        operationAction = entry.action;
         error = "";
-        const args = helper.concat(["import", entry.id]);
+        const args = helper.concat([entry.action, entry.id]);
         command.run(direct ? args : terminal.concat(args, ["--wait"]));
     }
 
@@ -84,10 +88,13 @@ Singleton
         onCompleted: code =>
         {
             const id = serviceResources.operation;
+            const action = serviceResources.operationAction;
             serviceResources.operation = "";
-            if (code !== 0) { serviceResources.error = errorMessage(Tr.tr("settings.imports.failed")); return; }
+            serviceResources.operationAction = "";
+            if (code !== 0) { serviceResources.error = errorMessage(Tr.tr(action === "clear" ? "settings.imports.clearFailed" : "settings.imports.failed")); return; }
             const entry = serviceResources.entries.find(item => item.id === id);
-            serviceResources.message = entry && entry.kind === "cli" ? Tr.tr("settings.imports.cliCompleted")
+            if (entry && entry.kind === "greeter") serviceResources.entries = serviceResources.entries.map(item => item.id === id ? Object.assign({}, item, {installed: action !== "clear"}) : item);
+            serviceResources.message = action === "clear" ? Tr.tr("settings.imports.cleared")
                 : Tr.tr("settings.imports.completed").arg(entry ? entry.destination : id);
         }
     }

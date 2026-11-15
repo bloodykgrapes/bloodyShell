@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -161,6 +162,11 @@ ShellRoot
             tests.check(ServiceLock.locked, "Wake unlocked the session");
             tests.check(TestLock.view.visible, "Wake did not restore the lock UI");
 
+            tests.check(!ServiceLock.promptVisible,"Wake opened the password prompt");
+            ServiceLock.submit("test password");
+            tests.check(!ServiceLock.checking,"Overview accepted a password without opening the prompt");
+            ServiceLock.showPrompt();
+            tests.check(ServiceLock.promptVisible,"Prompt did not open after wake");
             ServiceLock.submit("test password");
             TestLock.pam.success();
             tests.check(ServiceLock.leaving, "Authentication did not begin unlock animation");
@@ -190,6 +196,11 @@ ShellRoot
             tests.send("The name org.freedesktop.login1 is owned by :1.3");
             until(() => ServiceLock.sleepMonitorReady && tests.count("delay+") === 6, "New logind owner did not rearm");
 
+            tests.check(!ServiceLock.promptVisible,"Wake opened the password prompt");
+            ServiceLock.submit("test password");
+            tests.check(!ServiceLock.checking,"Overview accepted a password without opening the prompt");
+            ServiceLock.showPrompt();
+            tests.check(ServiceLock.promptVisible,"Prompt did not open after wake");
             ServiceLock.submit("test password");
             TestLock.pam.success();
             Config.animationsEnabled = false;
@@ -235,17 +246,21 @@ def checks():
             (base / name).symlink_to(ROOT / name)
         for name in ("runtime", "config/bloodyShell", "cache"):
             (base / name).mkdir(parents=True, mode=0o700)
-        (base / "config/bloodyShell/settings.json").write_text(json.dumps({"themeAnimations": 0, "lockNotificationsContent": False, "helperSeen": True}))
+        wallpaper = base / "wallpaper #.png"
+        wallpaper.write_bytes(runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["png"](200, 120))
+        (base / "config/bloodyShell/settings.json").write_text(json.dumps({"themeAnimations": 0, "lockNotificationsContent": False, "helperSeen": True, "wallpaperCurrent": str(wallpaper)}))
 
         def stub(name, body):
             (base / f"modules/services/{name}.qml").write_text("pragma Singleton\nimport QtQuick\nimport Quickshell\nSingleton\n{\n" + body + "\n}\n")
 
-        stub("ServiceLock", 'property bool checking: false; property bool failed: false; property bool leaving: false; property bool preparingForSleep: false; property int failures: 0; readonly property int unlockDuration: !Config.animationsEnabled ? 0 : Config.animationsFluid ? 380 : 220; function submit(password) {}')
+        stub("ServiceLock", 'property bool locked: true; property bool promptVisible: false; function showPrompt() { if (!preparingForSleep && !leaving) promptVisible = true; } function hidePrompt() { if (!checking && !leaving && !preparingForSleep) { promptVisible = false; failed = false; } } property bool checking: false; property bool failed: false; property bool leaving: false; property bool preparingForSleep: false; property int failures: 0; readonly property int unlockDuration: !Config.animationsEnabled ? 0 : Config.animationsFluid ? 380 : 220; property var submissions: []; function submit(password) { if (promptVisible) submissions = submissions.concat([password]); }')
         lock_stub = base / "modules/services/ServiceLock.qml"
         lock_stub.write_text(lock_stub.read_text().replace("import Quickshell\n", 'import Quickshell\nimport "../core"\n'))
-        stub("ServiceUser", 'property string avatar: ""; property string user: "tester"; property string fullName: "A long account name"')
+        stub("ServiceUser", 'property string avatar: ""; property string user: "tester"; property string fullName: "An account name long enough to wrap without covering the password field"')
         stub("ServicePower", 'function run(action) {}')
-        stub("ServiceAppearance", 'property color accent: "#8ecbff"; function iconPath(name) { return ""; }')
+        stub("ServiceAppearance", 'property color accent: "#8ecbff"; property string wallpaperImage: Config.wallpaperCurrent; function fileUrl(path) { return path ? "file://" + path.split("/").map(encodeURIComponent).join("/") : ""; } function iconPath(name) { return ""; }')
+        appearance = base / "modules/services/ServiceAppearance.qml"
+        appearance.write_text(appearance.read_text().replace("import Quickshell\n", 'import Quickshell\nimport "../core"\n'))
         stub("ServiceNotifications", '''
     property var history: [
         {appName:"Messages",summary:"Private title",body:"Private message",image:"sensitive-image",appIcon:""},
@@ -283,6 +298,7 @@ import Quickshell
 import "modules/core"
 import "modules/services"
 import "modules/ui/lock"
+
 ShellRoot
 {
     Window
@@ -290,114 +306,110 @@ ShellRoot
         id: window
         visible: true
         width: 1024; height: 768; color: "black"
-        Lock { id: lock; anchors.fill: parent }
-        Loader { id: animatedLock; anchors.fill: parent; active: false; sourceComponent: Component { Lock {} } }
-        function all(item, name) {
-            let result = item.objectName === name ? [item] : [];
-            for (const child of item.children || []) result = result.concat(all(child, name));
-            return result;
-        }
-        function check(ok, message) { if (!ok) throw new Error(message); }
+        Loader { id: view; anchors.fill: parent; active: false; sourceComponent: Lock {} }
         TestCase
         {
-            id: animations
-            when: false
-            optional: true
-            function settled(item, name, value)
-            {
-                for (let i = 0; i < 75 && item[name] !== value; i++) wait(20);
-                window.check(item[name] === value, "Animation did not settle: " + name);
+            id: events; when: false; optional: true
+            function check(ok,message) { if(!ok) throw new Error(message); }
+            function until(predicate,message) { for(let i=0;i<250 && !predicate();i++) wait(10); check(predicate(),message); }
+            function all(item,name) {
+                let result=item.objectName===name ? [item] : [];
+                for(const child of item.children || []) result=result.concat(all(child,name));
+                return result;
+            }
+            function bounds(item,bottom,message) {
+                const a=item.mapToItem(view.item,0,0), b=item.mapToItem(view.item,item.width,item.height);
+                check(a.x>=20 && a.y>=20 && b.x<=window.width-20 && b.y<=bottom,message+" at "+window.width+"x"+window.height);
+            }
+            function overview(lock) {
+                ServiceLock.hidePrompt(); until(()=>lock.promptReveal===0,"Clock view did not return");
             }
             function exercise()
             {
-                lock.visible = false;
-                for (const mode of [1, 2])
+                until(()=>Config.initialized,"Settings did not load"); window.requestActivate();
+                for(const mode of [0,1,2])
                 {
-                    Config.set("themeAnimations", mode);
-                    animatedLock.active = true;
-                    window.check(animatedLock.item !== null, "Lock did not load");
-                    const view = animatedLock.item;
-                    const clock = window.all(view, "lockClockReveal")[0];
-                    const field = window.all(view, "lockPasswordReveal")[0];
-                    const input = window.all(view, "lockPasswordInput")[0];
-                    wait(140);
-                    window.check(clock.progress > field.progress && clock.progress > 0 && clock.progress < 1, "Lock entrance did not stagger");
-                    settled(field, "progress", 1);
-                    settled(view, "introBack", 1);
-                    window.check(view.introBack === 1, "Wallpaper entrance did not finish");
-                    input.text = "temporary password";
-                    ServiceLock.leaving = true;
-                    window.check(input.text === "", "Unlock retained the typed password");
-                    wait(70);
-                    window.check(field.opacity > 0 && field.opacity < 1, "Unlock did not animate");
-                    Config.set("themeAnimations", 0);
-                    window.check(field.opacity === 0, "Animations-off left an unfinished unlock");
-                    ServiceLock.leaving = false;
-                    window.check(field.opacity === 1, "Cancelled unlock did not restore content");
-                    input.text = "another password";
-                    ServiceLock.preparingForSleep = true;
-                    window.check(input.text === "", "Suspend retained the typed password");
-                    window.check(input.readOnly, "Password input stayed editable during suspend");
-                    ServiceLock.preparingForSleep = false;
-                    animatedLock.active = false;
-                    wait(20);
+                    ServiceLock.checking=false; ServiceLock.leaving=false; ServiceLock.preparingForSleep=false; ServiceLock.promptVisible=false;
+                    Config.set("themeAnimations",mode); view.active=true;
+                    check(view.item!==null,"Lock view did not load");
+                    const lock=view.item, clock=findChild(lock,"lockClockReveal"), prompt=findChild(lock,"lockPrompt"), info=findChild(lock,"lockOverview");
+                    const field=findChild(lock,"lockPasswordField"), input=findChild(lock,"lockPasswordInput"), footer=findChild(lock,"lockFooter"), wallpaper=findChild(lock,"lockWallpaper");
+                    check(!ServiceLock.promptVisible && !prompt.visible && input.readOnly && input.text==="","Lock did not start with a noneditable overview");
+                    const backdrop=findChild(lock,"lockBackdrop");
+                    check(backdrop.blurAmount===0 && wallpaper.scale===1,"Overview wallpaper started blurred or zoomed");
+                    check(wallpaper.status===Image.Ready && wallpaper.opacity===1 && !wallpaper.asynchronous,"Wallpaper appeared late or faded in");
+                    if(mode) {
+                        wait(140);
+                        check(clock.progress>0 && prompt.opacity===0,"Password appeared during the first clock entrance");
+                        until(()=>clock.progress===1,"Clock did not finish entering");
+                    }
+                    until(()=>ServiceMedia.positionClients.length===1,"Overview media did not subscribe");
+                    const summaries=all(lock,"lockNotificationSummary"), bodies=all(lock,"lockNotificationBody");
+                    check(summaries.length===3 && summaries.every(item=>!item.label.includes("Private")),"Private titles leaked");
+                    check(bodies.every(item=>item.label==="" && !item.visible),"Private message bodies leaked");
+                    check(all(lock,"lockNotificationImage").every(item=>String(item.source)===""),"Private images leaked");
+                    Config.set("lockNotificationsContent",true);
+                    check(summaries[0].label==="Private title" && bodies[0].label==="Private message","Notification content toggle did not apply");
+                    Config.set("lockNotificationsContent",false);
+                    if(mode===0) {
+                        for(const size of [Qt.size(1024,768),Qt.size(800,600),Qt.size(683,512),Qt.size(533,400),Qt.size(480,800)]) {
+                            window.width=size.width; window.height=size.height; wait(25);
+                            bounds(findChild(lock,"lockOverviewContent"),window.height-40,"Overview clips");
+                            lock.showPrompt();
+                            bounds(findChild(lock,"lockContent"),footer.y-20,"Sign-in content clips");
+                            overview(lock);
+                        }
+                        window.width=1024; window.height=768; wait(25);
+                        window.contentItem.grabToImage(result=>result.saveToFile("/tmp/bloodyShell-lock-overview.png")); wait(80);
+                    }
+                    mouseClick(findChild(lock,"lockWakeArea"),8,8,mode===2 ? Qt.RightButton : Qt.LeftButton);
+                    check(ServiceLock.promptVisible && prompt.enabled,"Click did not reveal sign-in");
+                    if(mode) {
+                        wait(70);
+                        check(lock.promptReveal>0 && lock.promptReveal<1 && info.opacity>0 && prompt.opacity>0,"Switching views did not animate");
+                        check(backdrop.blurAmount>0 && backdrop.blurAmount<0.8 && wallpaper.scale>1 && wallpaper.scale<1.035,"Wallpaper blur and zoom did not animate with sign-in");
+                    }
+                    until(()=>lock.promptReveal===1,"Sign-in entrance did not finish");
+                    check(backdrop.blurAmount===0.8 && Math.abs(wallpaper.scale-1.035)<0.0001,"Sign-in wallpaper did not finish blurring and zooming");
+                    check(!info.visible && footer.visible && !input.readOnly && input.activeFocus,"Sign-in controls or password focus are missing");
+                    until(()=>ServiceMedia.positionClients.length===0,"Hidden information kept media polling");
+                    input.text="discard this password";
+                    keyClick(Qt.Key_Escape);
+                    until(()=>lock.promptReveal===0,"Escape did not return to the clock");
+                    check(input.text==="" && input.readOnly,"Returning retained a hidden password");
+                    check(backdrop.blurAmount===0 && wallpaper.scale===1,"Returning to the clock retained blur or zoom");
+                    keyClick(Qt.Key_A);
+                    check(ServiceLock.promptVisible && input.text==="a","Typing did not preserve the first password character");
+                    until(()=>lock.promptReveal===1,"Typing did not finish revealing sign-in");
+                    keyClick(Qt.Key_Return);
+                    check(ServiceLock.submissions[ServiceLock.submissions.length-1]==="a","Password did not submit from sign-in");
+                    ServiceLock.checking=true; keyClick(Qt.Key_Escape);
+                    check(ServiceLock.promptVisible,"Escape hid an active password check"); ServiceLock.checking=false;
+                    input.text="temporary password"; ServiceLock.preparingForSleep=true;
+                    check(input.text==="" && input.readOnly,"Suspend retained or allowed editing a password"); ServiceLock.preparingForSleep=false;
+                    check(!input.readOnly,"Password field did not restore after suspend");
+                    input.text="temporary password"; ServiceLock.leaving=true;
+                    check(input.text==="","Unlock retained the password");
+                    if(mode) { wait(70); check(prompt.opacity>0 && prompt.opacity<1,"Unlock did not animate"); }
+                    Config.set("themeAnimations",0);
+                    check(prompt.opacity===0,"Disabling animations left an unfinished unlock");
+                    ServiceLock.leaving=false; check(prompt.opacity===1,"Cancelled unlock did not restore sign-in");
+                    if(mode===0) { window.contentItem.grabToImage(result=>result.saveToFile("/tmp/bloodyShell-lock-prompt.png")); wait(80); }
+                    Config.set("themeAnimations",mode);
+                    lock.visible=false; ServiceLock.hidePrompt(); wait(20); lock.visible=true; wait(20);
+                    check(lock.promptReveal===0 && input.text==="" && input.readOnly,"Reopening the same lock view retained sign-in or a password");
+                    if(mode) {
+                        lock.showPrompt(); wait(45); keyClick(Qt.Key_Escape); wait(20); lock.showPrompt();
+                        until(()=>lock.promptReveal===1,"Rapid prompt reversal did not settle");
+                        check(input.activeFocus && backdrop.blurAmount===0.8,"Rapid reversal lost focus or wallpaper effects");
+                    }
+                    ServiceLock.hidePrompt(); view.active=false; wait(30);
+                    check(ServiceMedia.positionClients.length===0,"Unmounted lock retained media polling");
                 }
-                console.log("LOCK_PASSED responsive layout, privacy, fades, media lifecycle, and animation modes");
-                Qt.quit();
+                console.log("LOCK_PASSED two stages, click/typing/Escape, first character, immediate wallpaper, responsive layout, privacy, focus, password clearing and animation modes"); Qt.quit();
             }
         }
-        Timer
-        {
-            interval: 180; repeat: true; running: Config.initialized
-            property int step: 0
-            property var sizes: [Qt.size(1024,768), Qt.size(800,600), Qt.size(683,512), Qt.size(533,400)]
-            onTriggered:
-            {
-                try
-                {
-                    const content = window.all(lock, "lockContent")[0];
-                    const footer = window.all(lock, "lockFooter")[0];
-                    const a = content.mapToItem(lock, 0, 0), b = content.mapToItem(lock, content.width, content.height);
-                    window.check(a.x >= 20 && a.y >= 20 && b.x <= lock.width - 20 && b.y <= footer.y - 20, "Lock content clips: " + lock.width + "x" + lock.height);
-                    if (step === 0)
-                    {
-                        const summaries = window.all(lock, "lockNotificationSummary");
-                        const bodies = window.all(lock, "lockNotificationBody");
-                        window.check(summaries.length === 3 && summaries.every(item => !item.label.includes("Private")), "Private notification titles leaked");
-                        window.check(bodies.every(item => item.label === "" && !item.visible), "Private notification bodies leaked");
-                        window.check(window.all(lock, "lockNotificationImage").every(item => String(item.source) === ""), "Private image previews leaked");
-                        const cards = summaries.map(item => item.parent.parent);
-                        window.check(cards[0].opacity === 1 && cards[1].opacity === 0.75 && cards[2].opacity === 0.5, "Notification fade was lost");
-                        window.check(ServiceMedia.positionClients.length === 1, "Media timing did not subscribe");
-                        Config.set("lockNotificationsContent", true);
-                    }
-                    if (step === 1)
-                    {
-                        window.check(window.all(lock, "lockNotificationSummary")[0].label === "Private title", "Content toggle did not restore titles");
-                        window.check(window.all(lock, "lockNotificationBody")[0].label === "Private message", "Content toggle did not restore body");
-                        Config.set("lockNotificationsContent", false);
-                    }
-                    if (step >= 2 && step < 6)
-                    {
-                        window.width = sizes[step - 2].width; window.height = sizes[step - 2].height;
-                    }
-                    if (step === 6) lock.visible = false;
-                    if (step === 7)
-                    {
-                        window.check(ServiceMedia.positionClients.length === 0, "Hidden lock screen kept polling media");
-                        lock.visible = true;
-                        window.width = 1024; window.height = 768;
-                    }
-                    if (step === 8)
-                    {
-                        window.contentItem.grabToImage(result => { result.saveToFile("/tmp/bloodyshell-lock-preview.png"); try { animations.exercise(); } catch (error) { console.error("LOCK_FAILED", error); Qt.quit(); } });
-                        stop();
-                    }
-                    step++;
-                }
-                catch (error) { console.error("LOCK_FAILED", step, error); Qt.quit(); }
-            }
-        }
+        Timer { interval:100; running:true; onTriggered:{try{events.exercise();}catch(error){console.error("LOCK_FAILED",error);Qt.quit();}} }
     }
 }
 ''')

@@ -138,6 +138,8 @@ Common.InteractiveControl
         {
             anchors.fill: parent
             radius: notificationRow.highlighted && Config.animationsFluid ? 14 : 18
+            border.width: 1
+            border.color: Theme.colorHairline
             color: notificationRow.critical ? Qt.tint(Theme.colorField, Qt.rgba(Theme.colorCritical.r, Theme.colorCritical.g, Theme.colorCritical.b, 0.08)) : Theme.colorField
             opacity: card.fade
             Tint on color {}
@@ -196,7 +198,7 @@ Common.InteractiveControl
                     id: summary
                     anchors { left: parent.left; right: side.left; rightMargin: 8; verticalCenter: parent.verticalCenter }
                     label: notificationRow.n ? (notificationRow.n.summary || notificationRow.n.appName || "") : ""
-                    size: 12
+                    size: 13
                     color: Theme.text1
                     font.weight: Font.Medium
                 }
@@ -240,7 +242,7 @@ Common.InteractiveControl
             {
                 width: parent.width
                 label: notificationRow.n ? (notificationRow.n.body || "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim() : ""
-                size: 11
+                size: 12
                 color: Theme.text2
                 wrapMode: Text.Wrap
                 maximumLineCount: 3

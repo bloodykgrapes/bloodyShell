@@ -15,6 +15,7 @@ Item
     property rect before: Qt.rect(0, 0, 0, 0)
     property string operation: ""
     readonly property bool dragging: pointer.pressed
+    signal selected()
     property rect savedArea: Qt.rect(0, 0, 0, 0)
 
     function nudge(dx, dy, resize)
@@ -91,7 +92,11 @@ Item
         {
             if (selection.mode === Enums.ScreenshotArea && pressed) selection.update(mouse.x, mouse.y);
         }
-        onReleased: mouse => { if (selection.mode === Enums.ScreenshotArea) selection.update(mouse.x, mouse.y); }
+        onReleased: mouse =>
+        {
+            if (selection.mode === Enums.ScreenshotArea) selection.update(mouse.x, mouse.y);
+            if (selection.valid) selection.selected();
+        }
         onCanceled: selection.operation = ""
     }
 

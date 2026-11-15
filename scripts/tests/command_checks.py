@@ -6,6 +6,7 @@ from contextlib import redirect_stdout
 import os
 from pathlib import Path
 import runpy
+import shlex
 import shutil
 import subprocess
 import sys
@@ -27,7 +28,8 @@ def run_checks():
         target.mkdir(parents=True)
         (target / "shell.qml").write_text("test")
         (target / "version").write_text("1.2.3\n")
-        (target / "setup").write_text('#!/bin/bash\nprintf "%s\\n" "$@"\n')
+        (target / "scripts/lib").mkdir(parents=True)
+        (target / "scripts/lib/backend.py").write_text('MODULES={}\ndef dispatch(args, root):\n    print("\\n".join(args))\n    return 0\n')
         original = home / "managed-bashrc"
         original.write_text("export KEEP_ME=yes\n")
         (home / ".bashrc").symlink_to(original)
@@ -73,7 +75,7 @@ def run_checks():
                                   env=dict(env, PATH=str(system.parent) + ":/usr/bin:/bin"), capture_output=True, text=True, timeout=5)
         assert resolved.returncode == 0 and resolved.stdout.strip() == "bloodyShell 1.2.3", resolved.stderr
         default = base / "default-install-path"
-        default.write_text((ROOT / "setup").read_text().rsplit('main "$@"', 1)[0] + '\nprintf "%s" "$BIN_HOME"\n')
+        default.write_text((ROOT / "setup").read_text().replace('source "$PACKAGE/scripts/lib/system.sh"', 'source ' + shlex.quote(str(ROOT / 'scripts/lib/system.sh'))).rsplit('main "$@"', 1)[0] + '\nprintf "%s" "$BIN_HOME"\n')
         clean = dict(env)
         clean.pop("XDG_BIN_HOME", None)
         result = subprocess.run(["bash", str(default)], env=clean, capture_output=True, text=True, timeout=5)
@@ -117,11 +119,16 @@ else:
         assert invoke("help").returncode == 0
         assert invoke("version").stdout.strip() == "bloodyShell 1.2.3"
         assert invoke("path").stdout.strip() == str(target)
-        for action in ("install", "update", "doctor", "configs", "sddm"):
+        for action in ("update",):
             result = invoke(action, "--example")
             assert result.returncode == 0 and result.stdout == action + "\n--example\n", result.stderr
-        assert invoke("setup").returncode == 0
-        assert invoke().returncode == 0
+        assert invoke("doctor", "--json").stdout == "doctor\n--json\n"
+        assert invoke("configs", "kitty").stdout == "resources\nimport\ndots\n--human\n--only\nkitty\n"
+        assert invoke("configs", "kitty", "gtk-3.0").stdout == "resources\nimport\ndots\n--human\n--only\nkitty\ngtk-3.0\n"
+        assert invoke("sddm").stdout == "resources\nimport\ngreeter\n--human\n"
+        assert invoke("install").returncode != 0 and invoke("setup").returncode != 0
+        assert "interactive menu" in invoke().stdout and not (base / "calls").exists()
+        assert invoke("start").returncode == 0
         assert calls()[-1] == ["--no-duplicate", "--path", str(target), "--daemonize"]
         assert json.loads(invoke("status", "--json").stdout)["running"]
         assert invoke("restart").returncode == 0
@@ -343,7 +350,6 @@ def application_routing_checks():
         for root in (installed, checkout, other):
             (root / "scripts/lib").mkdir(parents=True)
             (root / "shell.qml").write_text("fixture")
-            (root / "setup").write_text('case "$1" in cli|uninstall) printf "%s" "$0" > "$TEST_CLI_ROUTE";; *) exit 1;; esac\n')
         instances = base / "instances.json"
         calls = base / "calls.json"
         (binary / "qs").write_text('#!/usr/bin/env python3\nimport os\nfrom pathlib import Path\nprint(Path(os.environ["TEST_APPLICATION_INSTANCES"]).read_text())\n')
@@ -361,7 +367,7 @@ def dispatch(arguments, root):
 '''
         (checkout / "scripts/lib/backend.py").write_text(newer)
         (other / "scripts/lib/backend.py").write_text('raise RuntimeError("Unrelated config was executed")\n')
-        (installed / "scripts/lib/backend.py").write_text('MODULES={}\n')
+        (installed / "scripts/lib/backend.py").write_text(newer.replace('MODULES={"applications": None}', 'MODULES={}'))
         instances.write_text(json.dumps([
             dict(id="old-install",shell_id="bloodyShell",config_path=str(installed / "shell.qml"),launch_time="2026-01-01"),
             dict(id="current-checkout",shell_id="bloodyShell",config_path=str(checkout / "shell.qml"),launch_time="2026-02-01"),
@@ -374,16 +380,16 @@ def dispatch(arguments, root):
             assert result.returncode==0,result.stderr
             assert json.loads(calls.read_text())==dict(root=str(checkout),arguments=["applications","launch",role])
         result=invoke("cli")
-        assert result.returncode==0 and (base / "cli-route").read_text()==str(checkout / "setup"),result.stderr
+        assert result.returncode==0 and json.loads(calls.read_text())==dict(root=str(checkout),arguments=["resources","import","cli","--human"]),result.stderr
         result=invoke("uninstall","--json")
-        assert result.returncode==0 and (base / "cli-route").read_text()==str(checkout / "setup"),result.stderr
+        assert result.returncode==0 and json.loads(calls.read_text())==dict(root=str(checkout),arguments=["uninstall","--json"]),result.stderr
         result=invoke("cli","unexpected")
         assert result.returncode!=0 and "does not take arguments" in result.stderr,result.stderr
         instances.write_text("[]")
         result=invoke("cli")
-        assert result.returncode==0 and (base / "cli-route").read_text()==str(installed / "setup"),result.stderr
+        assert result.returncode==0 and json.loads(calls.read_text())==dict(root=str(installed),arguments=["resources","import","cli","--human"]),result.stderr
         result=invoke("uninstall","--json")
-        assert result.returncode==0 and (base / "cli-route").read_text()==str(installed / "setup"),result.stderr
+        assert result.returncode==0 and json.loads(calls.read_text())==dict(root=str(installed),arguments=["uninstall","--json"]),result.stderr
         result=invoke("open","terminal")
         assert result.returncode!=0 and "Update the shell" in result.stderr and "Unknown internal command" not in result.stderr,result.stderr
         (installed / "scripts/lib/backend.py").write_text(newer)

@@ -27,8 +27,20 @@ Rectangle
 
     color: Theme.colorField
     border.width: 1
-    border.color: editor.activeFocus ? Theme.colorAccent : Theme.colorHairline
+    border.color: editor.activeFocus ? Theme.colorFocus : Theme.colorHairline
     Tint on border.color {}
+
+    Rectangle
+    {
+        anchors.fill: parent
+        anchors.margins: -3
+        radius: settingsInput.radius + 3
+        color: "transparent"
+        border.width: 2
+        border.color: Theme.accentShell ? Theme.accentAlpha(0.18) : Theme.inkAlpha(0.10)
+        opacity: editor.activeFocus ? 1 : 0
+        Smooth on opacity { duration: 160 }
+    }
 
     MouseArea
     {
@@ -54,7 +66,7 @@ Rectangle
         selectionColor: Theme.colorSelection
         selectedTextColor: Theme.text1
         font.family: Theme.fontText
-        font.pixelSize: 12
+        font.pixelSize: 13
 
         onAccepted: settingsInput.accepted()
         onEditingFinished: settingsInput.editingFinished()
@@ -67,6 +79,7 @@ Rectangle
         verticalAlignment: Text.AlignVCenter
         visible: editor.text === ""
         label: settingsInput.placeholderText
-        color: Theme.text4
+        size: 13
+        color: Theme.text3
     }
 }

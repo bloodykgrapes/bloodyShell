@@ -48,7 +48,6 @@ SettingsPage
     SettingsGroup
     {
         title: Tr.tr("settings.power.whenIdle")
-        subtitle: Tr.tr("settings.power.idleHint")
 
         SettingsRow
         {
@@ -133,7 +132,6 @@ SettingsPage
     SettingsGroup
     {
         title: Tr.tr("settings.power.last24Hours")
-        subtitle: Tr.tr("settings.power.historyHint")
         visible: ServicePower.present && ServicePower.history.length > 1
 
         Item
@@ -306,7 +304,6 @@ SettingsPage
     SettingsGroup
     {
         title: Tr.tr("settings.power.batteryHealth")
-        subtitle: Tr.tr("settings.power.healthHint")
         visible: ServicePower.present && ServicePower.healthPercent >= 0
 
         SettingsRow

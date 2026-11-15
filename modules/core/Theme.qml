@@ -11,11 +11,14 @@ Singleton
 
     readonly property string fontText: "sans-serif"
     readonly property string fontMono: "JetBrains Mono"
+    readonly property string fontBrand: comfortaa.status === FontLoader.Ready ? comfortaa.name : fontText
+
+    FontLoader { id: comfortaa; source: Qt.resolvedUrl("../../assets/fonts/comfortaa/Comfortaa.ttf") }
 
     readonly property var neutralStyles:
     [
-        ["#eeeef2", "#e3e3e9", "#fafafd"],
-        ["#101012", "#08080a", "#1c1c1e"]
+        ["#f0f0f4", "#e6e6ec", "#fcfcfe"],
+        ["#141416", "#101012", "#212124"]
     ]
     function tinted(base: color, saturation: real): color
     {
@@ -50,6 +53,9 @@ Singleton
     readonly property color colorPressed:     tone(0.14)
     readonly property color colorRaised: tinted(light ? "#ffffff" : "#343438", 0.18)
     readonly property color colorHairline: inkAlpha(light ? 0.10 : 0.09)
+    readonly property color colorPanelEdge: inkAlpha(light ? 0.14 : 0.16)
+    readonly property color colorShadow: Qt.rgba(0, 0, 0, light ? 0.18 : 0.42)
+    readonly property color colorFocus: accentShell ? accentAlpha(0.65) : inkAlpha(0.42)
 
     readonly property color colorField:       inkAlpha(0.07)
     readonly property color colorAccent:      accentShell ? accent : text1
@@ -92,6 +98,9 @@ Singleton
     readonly property int barWidgetHeight:  24
     readonly property int barWidgetPadding: 2
     readonly property int barWidgetRadius:  barWidgetHeight / 2
+    readonly property int workspaceDotSize: 7
+    readonly property int workspaceActiveLength: 24
+    readonly property int workspaceDotPadding: 3
 
     readonly property int barGroupThickness:  barWidgetHeight + 4
 
@@ -120,12 +129,12 @@ Singleton
     readonly property int settingsHeight:  720
     readonly property int settingsSidebar: 224
     readonly property int settingsRadius:  24
-    readonly property int settingsControlHeight: 36
+    readonly property int settingsControlHeight: 38
     readonly property int settingsRowHeight: 64
     readonly property int settingsRowInset: 20
     readonly property int settingsRowGap: 24
-    readonly property int settingsSectionGap: 24
-    readonly property int settingsTabHeight: 36
+    readonly property int settingsSectionGap: 26
+    readonly property int settingsTabHeight: 38
 
     function controlWidth(item, preferred)
     {

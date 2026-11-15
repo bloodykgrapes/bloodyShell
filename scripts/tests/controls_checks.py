@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import shutil
 import subprocess
 import tempfile
@@ -912,26 +913,61 @@ def config_validation_checks():
         for name in ("Config", "Paths", "Enums"):
             shutil.copyfile(ROOT / "modules/core" / (name + ".qml"), core / (name + ".qml"))
         (core / "qmldir").write_text("\n".join(f"singleton {name} 1.0 {name}.qml" for name in ("Config", "Paths", "Enums")))
-        settings.write_text(json.dumps(dict(themeScale=1.5, themeBorder=True, scrollSpeed=-10, barSide=99, dockPinned=[None, 42])))
+        settings.write_text(json.dumps(dict(themeScale=1.5, themeBorder=True, scrollSpeed=-10, barSide=99, dockPinned=[None, 42],
+                                           barType=1.5, barMenu=2, screenshotMode=1, updateCheck=5, equalizerStyle=2)))
         (base / "shell.qml").write_text('''import QtQuick
+import QtTest
 import Quickshell
+import Quickshell.Io
 import "core"
 ShellRoot {
+    FileView { id: external; path: Config.file; blockWrites: true }
+    TestCase {
+        id: events; when: false; optional: true
+        function persistence() {
+            for (let i = 0; i < 4; i++) {
+                Config.set("themeStyle", 0);
+                wait(305);
+                Config.set("themeStyle", 1);
+                wait(30);
+                if (Config.themeStyle !== 1) throw new Error("A watched read reverted a newer local edit");
+            }
+            wait(400);
+            const updated = Config.snapshot();
+            updated.scrollSpeed = 3.5;
+            external.setText(JSON.stringify(updated));
+            for (let i = 0; i < 100 && Config.scrollSpeed !== 3.5; i++) wait(10);
+            if (Config.scrollSpeed !== 3.5) throw new Error("External settings changes were not loaded");
+            Config.set("scrollSpeed", 1.5);
+            wait(400);
+            if (Config.scrollSpeed !== 1.5) throw new Error("A saved setting was reverted");
+        }
+    }
     Timer {
         interval: 30; running: true; repeat: true
         onTriggered: {
             if (!Config.initialized) return;
+            running = false;
             function check(ok) { if (!ok) throw new Error("Invalid configuration was accepted"); }
             try {
                 check(Config.scrollSpeed === 2.5 && Config.barSide === 0 && Config.dockPinned.length === 0);
+                check(Config.barType === 0 && Config.barMenu === 0 && Config.screenshotMode === Enums.ScreenshotArea && Config.updateCheck === 4 && Config.equalizerStyle === 0);
                 check(!("themeScale" in Config) && !("themeBorder" in Config));
                 check(!("themeScale" in Config.snapshot()) && !("themeBorder" in Config.snapshot()));
+                check(!Config.valid("__proto__", {}) && !Config.valid("constructor", {}) && !Config.valid("defaults", {}));
+                Config.applyText('{"__proto__":{"barSide":3},"barSide":1.5,"configVersion":999}');
+                Config.applyObject(Object.create({barSide: 3}));
+                Config.applyObject(Object.assign([], {barSide: 3}));
+                check(Config.barSide === 0 && Config.configVersion === 1);
                 Config.set("dockPinned", null);
                 Config.set("scrollSpeed", -1);
                 check(Config.dockPinned !== null && Config.scrollSpeed === 2.5);
                 Config.set("scrollSpeed", 1.25);
+                Config.set("desktopEqualizerOpacity", 0.75);
                 Config.set("barType", Enums.Islands);
-                check(Config.scrollSpeed === 1.25 && Config.barType === Enums.Islands);
+                Config.set("screenshotMode", Enums.ScreenshotScreen);
+                check(Config.scrollSpeed === 1.25 && Config.desktopEqualizerOpacity === 0.75 && Config.barType === Enums.Islands && Config.screenshotMode === Enums.ScreenshotScreen);
+                events.persistence();
                 console.log("CONFIG_VALIDATION_PASSED");
             } catch (error) { console.error(error); }
             Qt.quit();
@@ -941,10 +977,229 @@ ShellRoot {
 ''')
         result = subprocess.run([shutil.which("qs"), "-p", str(base), "--no-color"], env=dict(env, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software"), text=True, capture_output=True, timeout=8)
         assert "CONFIG_VALIDATION_PASSED" in result.stdout + result.stderr, result.stdout + result.stderr
+        assert json.loads(settings.read_text())["scrollSpeed"] == 1.5, "The latest setting was not persisted"
+
+def calendar_checks():
+    import runpy
+
+    prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-calendar-") as temporary:
+        base = Path(temporary)
+        env = prepare(base)
+        (base / "home").mkdir()
+        env.update(HOME=str(base / "home"), XDG_STATE_HOME=str(base / "state"))
+        env.pop("WAYLAND_DISPLAY", None)
+        localectl = base / "bin/localectl"
+        localectl.write_text('''#!/usr/bin/env python3
+import os, sys
+assert sys.argv[1:] == ["status"], sys.argv
+print("System Locale: LANG=" + os.environ["TEST_CALENDAR_SYSTEM_LOCALE"])
+''')
+        localectl.chmod(0o700)
+        timedatectl = base / "bin/timedatectl"
+        timedatectl.write_text('''#!/usr/bin/env python3
+import os, sys
+assert sys.argv[1:] == ["show", "-p", "Timezone", "-p", "NTP", "-p", "CanNTP"], sys.argv
+print("Timezone=" + os.environ["TEST_CALENDAR_TIMEZONE"])
+print("NTP=yes")
+print("CanNTP=yes")
+''')
+        timedatectl.chmod(0o700)
+        zones = base / "zoneinfo"
+        zones.mkdir()
+        (zones / "zone.tab").write_text("# Fixture timezones\nRU\t+5545+03737\tEurope/Moscow\nUS\t+4043-07400\tAmerica/New_York\nGB\t+5130-00007\tEurope/London\nPT\t+3843-00908\tEurope/Lisbon\nIR\t+3540+05126\tAsia/Tehran\nMV\t+0410+07330\tIndian/Maldives\nGP\t+1614-06132\tAmerica/Guadeloupe\nPR\t+182806-0660622\tAmerica/Puerto_Rico\n")
+        (zones / "tzdata.zi").write_text("L America/New_York US/Eastern\nL Europe/Moscow W-SU\nL US/Eastern AliasChain\nL America/Puerto_Rico America/Guadeloupe\n")
+        env["TZDIR"] = str(zones)
+        (base / "shell.qml").write_text('''import QtQuick
+import QtQuick.Window
+import Quickshell
+import "modules/core"
+import "modules/services"
+import "modules/ui/bar/menus"
+ShellRoot {
+    id: tests
+    property int phase: 0
+    readonly property int expected: Number(Quickshell.env("TEST_CALENDAR_WEEK_START"))
+    function check(ok,message) { if(!ok)throw new Error(message); }
+    function find(item,name) { if(item.objectName===name)return item;for(const child of item.children||[]){const found=find(child,name);if(found)return found;}return null; }
+    Window { visible:true;width:400;height:600;MenuClock {id:calendar;width:implicitWidth;height:implicitHeight} }
+    Timer { interval:180;running:true;repeat:true;onTriggered:{
+        if(!Config.initialized || Tr.languages.length<2 || ServiceRegion.locale!==Quickshell.env("TEST_CALENDAR_SYSTEM_LOCALE") || ServiceRegion.timezone!==Quickshell.env("TEST_CALENDAR_TIMEZONE"))return;
+        try {
+            tests.check(calendar.weekStart===tests.expected,"Calendar ignored the regional first weekday");
+            const header=tests.find(calendar,"calendarWeekday-0");
+            tests.check(header && header.label===Tr.locale.dayName(tests.expected,Locale.NarrowFormat),"Weekday heading disagrees with the grid");
+            const february=calendar.datesFor(new Date(2026,1,1));
+            tests.check(february.length===42 && february.findIndex(day=>day.inMonth)===[0,6,5,4,3,2,1][tests.expected],"Sunday/Monday grid padding is wrong");
+            const january=calendar.datesFor(new Date(2027,0,1));
+            tests.check(january[0].day===[27,28,29,30,31,1,26][tests.expected] && january[0].inMonth===(tests.expected===5),"Year-boundary dates are misaligned");
+            const leap=calendar.datesFor(new Date(2024,1,1)).filter(day=>day.inMonth);
+            tests.check(leap.length===29 && leap.every((day,index)=>day.day===index+1),"Leap month lost or duplicated dates");
+            if(tests.phase===0) {Config.set("shellLanguage","ru");tests.phase++;return;}
+            tests.check(Tr.language==="ru","Translated calendar did not load");
+            ServiceRegion.locale="en_US.UTF-8";
+            const fallback=Quickshell.env("TEST_CALENDAR_SYSTEM_FALLBACK")==="1";
+            tests.check(calendar.weekStart===(fallback?0:tests.expected),"Regional locale changes do not update the calendar or override the wrong source");
+            ServiceRegion.timezone="Europe/Moscow";
+            tests.check(calendar.weekStart===1 && header.label===Tr.locale.dayName(1,Locale.NarrowFormat),"Switching to Moscow did not select Monday");
+            ServiceRegion.timezone="America/New_York";
+            tests.check(calendar.weekStart===0 && header.label===Tr.locale.dayName(0,Locale.NarrowFormat),"Switching to New York did not select Sunday");
+            ServiceRegion.timezone="AliasChain";
+            tests.check(calendar.weekStart===0,"Timezone alias chains do not resolve");
+            console.log("CALENDAR_PASSED",Quickshell.env("TEST_CALENDAR_CASE"));Qt.quit();
+        }catch(error){console.error("CALENDAR_FAILED",error);Qt.quit();}
+    }}
+    Timer {interval:4000;running:true;onTriggered:{console.error("CALENDAR_FAILED timeout");Qt.quit();}}
+}
+''')
+        scenarios = [
+            ("neutral-time-US", "en_US.UTF-8", "C.UTF-8", "C.UTF-8", "ru_RU.UTF-8", 0, False, ""),
+            ("Monday-Russia", "ru_RU.UTF-8", "", "C.UTF-8", "en_US.UTF-8", 1, False, ""),
+            ("Monday-UK-time", "en_US.UTF-8", "en_GB.UTF-8", "", "en_US.UTF-8", 1, False, ""),
+            ("Sunday-US-time", "ru_RU.UTF-8", "en_US.UTF-8", "", "ru_RU.UTF-8", 0, False, ""),
+            ("LC-ALL-override", "ru_RU.UTF-8", "ru_RU.UTF-8", "en_US.UTF-8", "ru_RU.UTF-8", 0, False, ""),
+            ("system-fallback", "C.UTF-8", "POSIX", "C.UTF-8", "ru_RU.UTF-8", 1, True, ""),
+            ("invalid-time-fallback", "en_US.UTF-8", "invalid_locale", "C.UTF-8", "ru_RU.UTF-8", 0, False, ""),
+            ("language-tag", "en-GB", "", "C.UTF-8", "en_US.UTF-8", 1, False, ""),
+            ("Moscow-English", "en_US.UTF-8", "en_US.UTF-8", "en_US.UTF-8", "en_US.UTF-8", 1, False, "Europe/Moscow"),
+            ("Moscow-Russian", "ru_RU.UTF-8", "", "C.UTF-8", "ru_RU.UTF-8", 1, False, "Europe/Moscow"),
+            ("Moscow-alias", "en_US.UTF-8", "", "C.UTF-8", "en_US.UTF-8", 1, False, "W-SU"),
+            ("New-York-Russian", "ru_RU.UTF-8", "ru_RU.UTF-8", "ru_RU.UTF-8", "ru_RU.UTF-8", 0, False, "America/New_York"),
+            ("London-English-US", "en_US.UTF-8", "", "C.UTF-8", "en_US.UTF-8", 1, False, "Europe/London"),
+            ("Lisbon-English-GB", "en_GB.UTF-8", "", "C.UTF-8", "en_GB.UTF-8", 0, False, "Europe/Lisbon"),
+            ("Tehran-Saturday", "en_US.UTF-8", "", "C.UTF-8", "en_US.UTF-8", 6, False, "Asia/Tehran"),
+            ("Maldives-Friday", "en_US.UTF-8", "", "C.UTF-8", "en_US.UTF-8", 5, False, "Indian/Maldives"),
+            ("country-before-alias", "en_US.UTF-8", "", "C.UTF-8", "en_US.UTF-8", 1, False, "America/Guadeloupe"),
+            ("unknown-zone-fallback", "en_GB.UTF-8", "", "C.UTF-8", "en_US.UTF-8", 1, False, "Etc/UTC"),
+        ]
+        if Path("/usr/share/zoneinfo/zone.tab").is_file():
+            scenarios.append(("Moscow-installed-tzdata", "en_US.UTF-8", "en_US.UTF-8", "en_US.UTF-8", "en_US.UTF-8", 1, False, "Europe/Moscow"))
+        for name, language, time_locale, all_locale, system, first, fallback, timezone in scenarios:
+            (base / "config/bloodyShell/settings.json").write_text(json.dumps(dict(helperSeen=True, themeAnimations=0, shellLanguage="en")))
+            case_env = dict(env, LANG=language, LC_TIME=time_locale, LC_ALL=all_locale,
+                            TEST_CALENDAR_CASE=name, TEST_CALENDAR_SYSTEM_LOCALE=system, TEST_CALENDAR_TIMEZONE=timezone,
+                            TEST_CALENDAR_WEEK_START=str(first), TEST_CALENDAR_SYSTEM_FALLBACK="1" if fallback else "0")
+            if name == "Moscow-installed-tzdata":
+                case_env["TZDIR"] = "/usr/share/zoneinfo"
+            result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=case_env, text=True, capture_output=True, timeout=6)
+            output = result.stdout + result.stderr
+            assert result.returncode == 0 and "CALENDAR_PASSED" in output, output
+            assert not re.search(r"CALENDAR_FAILED|TypeError|ReferenceError|Binding loop|Cannot assign|Unable to assign|Failed to load configuration", output), output
+            print(next(line for line in output.splitlines() if "CALENDAR_PASSED" in line))
+    print("Calendar timezone-country ordering, aliases, locale fallback, translated headings, month boundaries, leap days and live timezone changes passed.")
+
+
+def bar_settings_checks():
+    prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-bar-settings-") as temporary:
+        base = Path(temporary)
+        env = prepare(base)
+        env.update(HOME=str(base / "home"), XDG_STATE_HOME=str(base / "state"))
+        (base / "home").mkdir()
+        env.pop("WAYLAND_DISPLAY", None)
+        source = base / "modules/services/ServiceApplications.qml"
+        text = source.read_text().replace("readonly property var applications: DesktopEntries.applications.values || []", "property var applications: []")
+        text = text.replace("DesktopEntries.byId(appId) || DesktopEntries.heuristicLookup(appId)", "applications.find(entry => entry.id === appId) || null")
+        source.write_text(text)
+        source = base / "modules/services/ServiceMedia.qml"
+        source.write_text(source.read_text().replace("readonly property var players: Mpris.players.values", "property var players: []"))
+        (base / "shell.qml").write_text('''import QtQuick
+import QtQuick.Window
+import QtTest
+import Quickshell
+import "modules/core"
+import "modules/services"
+import "modules/ui/overlay/settings/pages"
+import "modules/ui/bar/widgets"
+
+ShellRoot {
+    id: tests
+    QtObject {
+        id: player
+        property string dbusName: "org.example.Player"
+        property bool isPlaying: true
+        property string trackTitle: "Song"
+        property string trackArtist: "Artist"
+        property bool canSeek: false
+    }
+    function check(ok,message) {if(!ok)throw new Error(message);}
+    function find(item,match) {
+        if(typeof match==="string"?item.objectName===match:match(item))return item;
+        for(const child of item.children||[]){const found=find(child,match);if(found)return found;}
+        return null;
+    }
+    function reveal(item) {
+        const y=item.mapToItem(page.contentItem,0,0).y;
+        page.contentY=Math.max(0,Math.min(page.contentHeight-page.height,y-80));events.wait(10);
+    }
+    function click(item) {reveal(item);events.mouseClick(item,item.width/2,item.height/2,Qt.LeftButton,Qt.NoModifier,0);events.wait(10);}
+    function open(section) {click(section.children.find(item=>typeof item.toggled==="function"));check(section.expanded,"Foldout did not open");}
+    Window {
+        id:window;visible:true;width:1200;height:900;color:Theme.colorSolid
+        PageBar {id:page;width:820;height:parent.height}
+        WidgetWindow {id:windowTitle;x:850;y:40;width:implicitWidth;height:implicitHeight}
+        WidgetStatus {id:status;x:850;y:100;width:implicitWidth;height:implicitHeight}
+        TestCase {id:events;name:"BarSettings";when:false;optional:true}
+    }
+    Timer {interval:250;running:true;onTriggered:{try {
+        check(!Registry.settings.some(tab=>tab.id==="island"),"Obsolete island settings tab remains");
+        ServiceApplications.applications=[{id:"org.example.Player",name:"Player",startupClass:"Player"}];
+        const backend=ServiceCompositor.backend;
+        backend.windowsApply([{id:1,app_id:"org.example.Player",title:"A song — Player",workspace_id:1,is_focused:true}]);
+        backend.keyboardLayouts=["English","Russian"];backend.keyboardLayoutIndex=0;
+        const widgets=find(page,"barWidgets"),island=find(page,"barDynamicIsland");
+        check(widgets && island && !widgets.expanded && !island.expanded,"Missing collapsed bar foldouts");
+        open(widgets);
+        const title=find(page,"barWindowTitle");reveal(title);title.forceActiveFocus();
+        events.keyClick(Qt.Key_Home);check(windowTitle.title==="A song — Player","Window title mode failed");
+        events.keyClick(Qt.Key_Right);check(windowTitle.title==="Player","Application name mode failed");
+        events.keyClick(Qt.Key_Right);check(windowTitle.title==="org.example.Player","Application ID mode failed");
+        const layout=find(status,item=>item.menu&&String(item.menu).endsWith("MenuLayout.qml"));
+        check(layout&&layout.visible,"Keyboard layout was hidden by default");
+        click(find(page,"barKeyboardLayout"));check(!layout.visible,"Keyboard visibility toggle did not hide the bar widget");
+        click(find(page,"barKeyboardLayout"));check(layout.visible,"Keyboard visibility toggle did not restore the bar widget");
+        open(island);
+        ServiceOSD.armed=true;
+        for(const [key,type] of [["osdTypeVolume","volume"],["osdTypeBrightness","brightness"],["osdTypeBattery","battery"],["osdTypeLayout","layout"],["osdTypeNetwork","wifi"],["osdTypeBluetooth","bluetooth"]]) {
+            const toggle=find(page,"island-"+key);check(toggle,"Missing island event toggle: "+key);
+            check(!toggle.checked,"Fixture event preference was not restored");
+            click(toggle);check(ServiceOSD.allowed(type),"Event toggle did not enable "+type);
+            ServiceOSD.show(type,"","Event",0.5,false);check(ServiceOSD.active,"Enabled event did not show");
+            click(toggle);check(!ServiceOSD.active&&!ServiceOSD.allowed(type),"Disabling event did not dismiss it: "+type);
+        }
+        ServiceMedia.players=[player];
+        const output=ServiceIsland.primaryOutput;
+        check(ServiceIsland.view(output).kind==="media","Playing media was missing");
+        click(find(page,"island-islandMedia"));
+        check(ServiceMedia.playing&&ServiceIsland.view(output).kind==="","Media toggle affected playback or failed to hide the island");
+        click(find(page,"island-islandMedia"));check(ServiceIsland.view(output).kind==="media","Media toggle did not restore playback status");
+        const recording=find(page,"island-islandRecordingIndicator");click(recording);check(!Config.islandRecordingIndicator,"Recording toggle did not apply");
+        Config.set("barEnabled",false);
+        check(ServiceIsland.view(output).kind==="media","Disabling the bar also disabled the independent island");
+        for(const language of ["en","ru"]) {
+            Config.set("shellLanguage",language);events.wait(50);
+            check(title.options.length===3&&title.width<=page.width,"Localized window modes do not fit");
+        }
+        events.wait(400);
+        ServiceMedia.players=[];events.wait(20);
+        console.log("BAR_SETTINGS_PASSED foldouts, title/app name/app ID, keyboard visibility, per-event toggles, active-event dismissal, media, recording, independent bar and localization");Qt.quit();
+    }catch(error){console.error("BAR_SETTINGS_FAILED",error);Qt.quit();}}}
+}
+''')
+        result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, text=True, capture_output=True, timeout=12)
+        output = result.stdout + result.stderr
+        print(output)
+        assert result.returncode == 0 and "BAR_SETTINGS_PASSED" in output, output
+        assert not re.search(r"BAR_SETTINGS_FAILED|TypeError|ReferenceError|Binding loop|Cannot assign|Unable to assign|is not a type|Failed to load configuration", output), output
+        saved = json.loads((base / "config/bloodyShell/settings.json").read_text())
+        assert saved["barWidgetWindowMode"] == 2 and saved["barWidgetKeyboardLayout"] is True
+        assert saved["islandMedia"] is True and saved["islandRecordingIndicator"] is False
 
 
 if __name__ == "__main__":
+    bar_settings_checks()
     config_validation_checks()
+    calendar_checks()
     checks()
     tray_backend_checks()
     tray_checks()

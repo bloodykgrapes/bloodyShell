@@ -1,6 +1,7 @@
 pragma Singleton
 
 import QtQuick
+import QtCore
 import Quickshell
 import Quickshell.Io
 
@@ -51,7 +52,8 @@ Singleton
     property bool barWidgetClock24: true
     property bool barWidgetBatteryValue: true
     property bool barWidgetVolumeValue: false
-    property bool barWidgetWindowAppID: false
+    property int  barWidgetWindowMode: 0
+    property bool barWidgetKeyboardLayout: true
 
     property bool dockEnabled: true
     property var  dockScreens: []
@@ -67,8 +69,9 @@ Singleton
     property var  dockPinned: []
 
     property bool islandEnabled: true
+    property bool islandMedia: true
+    property bool islandRecordingIndicator: true
 
-    property bool osdEnabled: true
     property int  osdDuration: 2000
 
     property bool osdTypeBattery: true
@@ -86,7 +89,15 @@ Singleton
     property double notificationsDndUntil: 0
 
     property int screenshotMode: 0
-    property bool screenshotSave: false
+    property string screenshotsPath: screenshotsDefault()
+    property string screenshotsAction: "copy"
+    property bool screenshotsInstantly: false
+
+    function screenshotsDefault()
+    {
+        const directory = decodeURIComponent(String(StandardPaths.writableLocation(StandardPaths.PicturesLocation)).replace(/^file:\/\//, ""));
+        return (directory || Paths.home + "/Pictures") + "/Screenshots";
+    }
 
     property bool lockNotifications: true
     property bool lockNotificationsContent: true
@@ -158,8 +169,12 @@ Singleton
     function clone(v) { return JSON.parse(JSON.stringify(v)) }
     function valid(key, v)
     {
+        if (key === "configVersion" || !Object.prototype.hasOwnProperty.call(defaults, key)) return false;
         const d = defaults[key];
         if (key === "wallpaperTransition") return ["none", "simple", "fade", "left", "right", "top", "bottom", "wipe", "wave", "grow", "center", "any", "outer", "random"].includes(v);
+        if (key === "screenshotMode") return v === Enums.ScreenshotArea || v === Enums.ScreenshotScreen;
+        if (key === "screenshotsAction") return ["copy", "save"].includes(v);
+        if (key === "screenshotsPath") return typeof v === "string" && (v === "" || /^(\/|~\/)/.test(v)) && !/[\x00-\x1f]/.test(v);
 
         if (Array.isArray(d))
             return Array.isArray(v) && v.every(item => typeof item === "string" && item.length > 0);
@@ -170,10 +185,12 @@ Singleton
         if (typeof v !== typeof d) return false;
         if (typeof v !== "number") return true;
         if (!Number.isFinite(v)) return false;
-        if (key === "powerProfileBattery" || key === "powerProfilePlugged") return Number.isInteger(v) && v >= 0 && v <= 2;
+        if (!["scrollSpeed", "desktopEqualizerOpacity", "notificationsDndUntil"].includes(key) && !Number.isInteger(v)) return false;
         const ranges = {
             themeStyle: [0, 1], themeAnimations: [0, 2], desktopBlur: [0, 2], desktopEqualizerOpacity: [0.25, 1],
             barSide: [0, 3], dockSide: [0, 3], barType: [0, 3], dockType: [0, 3],
+            updateCheck: [0, 4], equalizerStyle: [0, 1], barMenu: [0, 1], barWidgetWindowMode: [0, 2],
+            powerProfileBattery: [0, 2], powerProfilePlugged: [0, 2],
             frameThickness: [0, 8], scrollSpeed: [1, 4], dockIconSize: [16, 128],
             osdDuration: [0, 60000], notificationsDuration: [0, 600000],
             notificationsDndUntil: [0, 8640000000000000],
@@ -199,11 +216,9 @@ Singleton
 
     function applyObject(obj)
     {
-        // TODO: config version
-
-        for (const key in obj)
+        if (obj === null || typeof obj !== "object" || Array.isArray(obj)) return;
+        for (const key of Object.keys(obj))
         {
-            if (key === "configVersion" || !(key in config) || !isOption(key)) continue;
             if (!valid(key, obj[key])) continue;
 
             if (JSON.stringify(config[key]) !== JSON.stringify(obj[key])) config[key] = obj[key];
@@ -215,8 +230,7 @@ Singleton
 
         try
         {
-            const obj = JSON.parse(text);
-            if (obj !== null && typeof obj === "object") applyObject(obj);
+            applyObject(JSON.parse(text));
         }
         catch(e)
         {
@@ -226,7 +240,7 @@ Singleton
 
     function set(key, value)
     {
-        if (!(key in config) || !isOption(key))
+        if (key === "configVersion" || !Object.prototype.hasOwnProperty.call(defaults, key))
         {
             console.warn("Config: unknown option " + key);
             return;
@@ -270,7 +284,9 @@ Singleton
 
         onLoaded:
         {
-            config.applyText(text());
+            // A watched read can finish after another local edit. Its older
+            // snapshot must not replace values waiting to be saved.
+            if (!config.initialized || !saveTimer.running) config.applyText(text());
             config.initialized = true;
         }
         onLoadFailed: function(error)

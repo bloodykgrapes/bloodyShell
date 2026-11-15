@@ -1,3 +1,8 @@
+// ------------------------------------------------------------
+// Environment and startup
+// Starts bloodyShell and the wallpaper daemon; sets the screenshot path.
+// ------------------------------------------------------------
+
 spawn-at-startup "awww-daemon"
 
 spawn-sh-at-startup "qs -n -c bloodyShell"

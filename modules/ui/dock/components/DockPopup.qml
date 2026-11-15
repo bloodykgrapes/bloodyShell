@@ -77,44 +77,33 @@ Item
     HoverHandler { id: hover }
     readonly property bool hovered: hover.hovered
 
-    Item
+    MenuReveal
     {
         id: sheet
+        objectName: "dockPopupReveal"
 
         x: dockPopup.horizontal ? 0 : (dockPopup.side === Enums.EdgeLeft ? dockPopup.gap : 0)
         y: dockPopup.horizontal ? (dockPopup.side === Enums.EdgeTop ? dockPopup.gap : 0) : 0
         width: dockPopup.panelW
         height: dockPopup.panelH
+        radius: 14
+        origin: dockPopup.horizontal ? Qt.point(0.5, dockPopup.side === Enums.EdgeTop ? 0 : 1)
+            : Qt.point(dockPopup.side === Enums.EdgeLeft ? 0 : 1, 0.5)
 
-        property real offset: dockPopup.open ? 0 : 8
-        opacity: dockPopup.open ? 1 : 0
-
-        Smooth on opacity { duration: dockPopup.open ? 160 : 110 }
-        Glide on offset {}
-
-        transform: Translate
+        property real reveal: dockPopup.open ? 1 : 0
+        progress: Config.animationsEnabled ? reveal : dockPopup.open ? 1 : 0
+        Ease on reveal
         {
-            x: dockPopup.horizontal ? 0 : (dockPopup.side === Enums.EdgeLeft ? -sheet.offset : sheet.offset)
-            y: dockPopup.horizontal ? (dockPopup.side === Enums.EdgeTop ? -sheet.offset : sheet.offset) : 0
+            duration: dockPopup.open ? Theme.animationDurationControl : Theme.animationDurationClose
+            curve: dockPopup.open ? Theme.easingEmphasized : Theme.easingAccelerate
         }
 
-        Rectangle
+        MouseArea { anchors.fill: parent }
+
+        Loader
         {
-            id: card
-
-            anchors.fill: parent
-            radius: 14
-            clip: true
-
-            color: Theme.colorSolid
-
-            MouseArea { anchors.fill: parent }
-
-            Loader
-            {
-                id: content
-                sourceComponent: body
-            }
+            id: content
+            sourceComponent: body
         }
     }
 

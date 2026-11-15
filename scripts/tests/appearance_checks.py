@@ -236,7 +236,7 @@ else:
             state.mkdir()
             with patch("pwd.getpwuid", return_value=SimpleNamespace(pw_dir=str(base / "home"), pw_name="fixture")):
                 api["export"](source, state)
-            assert (state / "wallpaper.png").is_file(), "Video sharing did not export a still frame"
+            assert not list(state.glob("wallpaper.*")), "Desktop video was automatically shared with the login screen"
             assert not list(state.glob("*.mkv")), "Login screen received the video itself"
         management = runpy.run_path(str(ROOT / "scripts/lib/management.py"))
         modes = ["missing", "mock"] + (["native"] if management["available"]("qt6-multimedia") else [])
@@ -247,6 +247,10 @@ else:
             (stage / "home").mkdir()
             qenv.update(HOME=str(stage / "home"), XDG_STATE_HOME=str(stage / "state"), TEST_WALLPAPER_BASE=str(base), PATH=str(base / "bin") + os.pathsep + qenv["PATH"])
             qenv.pop("WAYLAND_DISPLAY", None)
+            cli = stage / "scripts/bloodyShell"
+            cli.write_text(cli.read_text().replace('if __name__ == "__main__":', 'if sys.argv[1:4] == ["internal", "wallpaper", "inspect"]:\n    time.sleep(0.6)\n\nif __name__ == "__main__":', 1))
+            appearance = stage / "modules/services/ServiceAppearance.qml"
+            appearance.write_text(appearance.read_text().replace("id: serviceAppearance", "id: serviceAppearance\n    readonly property var testWallpaperCaches: wallpaperCaches.instances\n    readonly property string testWallpaperProbeSelection: wallpaperCheck.selection\n    readonly property bool testWallpaperProbeBusy: wallpaperCheck.busy", 1))
             (stage / "config/bloodyShell/settings.json").write_text(json.dumps(dict(helperSeen=True, themeAnimations=1, wallpaperCurrent=str(photo))))
             if mode == "missing":
                 component = stage / "modules/ui/desktop/VideoWallpaper.qml"
@@ -290,26 +294,42 @@ import "modules/common"
 import "modules/core"
 import "modules/services"
 import "modules/ui/overlay/settings/pages"
+import "modules/ui/lock/components"
 ShellRoot {
     Window {
         visible: true; width: 800; height: 600
         Loader { id: playback; anchors.fill: parent; active: ServiceAppearance.videoPath !== "" && ServiceAppearance.videoComponent !== null && ServiceAppearance.videoComponent.status === Component.Ready; sourceComponent: ServiceAppearance.videoComponent }
+        Loader { id: lockBackdrop; width: Quickshell.screens[0].width; height: Quickshell.screens[0].height; active: false; sourceComponent: LockBackdrop {} }
         WallpaperImage { id: thumb; width: 160; height: 90; wallpaper: VIDEO_PATH }
         TestCase {
             id: input; when: false; optional: true
             function check(ok, message) { if (!ok) throw new Error(message); }
             function until(predicate, message) { for (let i=0; i<150; i++) { if (predicate()) return; wait(20); } throw new Error(message); }
+            function warmed(path) {
+                check(ServiceAppearance.wallpaperImage === path, "Lock wallpaper still does not follow the selected wallpaper");
+                const caches = ServiceAppearance.testWallpaperCaches;
+                check(caches.length === Quickshell.screens.length, "Lock wallpaper preloads are missing");
+                until(() => caches.every(image => image.status === Image.Ready), "Lock wallpaper did not preload");
+                check(caches.every(image => image.sourceSize.width === Math.round(image.modelData.width) && image.sourceSize.height === Math.round(image.modelData.height)), "Lock cache dimensions differ from monitor dimensions");
+                lockBackdrop.active = true;
+                const image = findChild(lockBackdrop.item, "lockWallpaper");
+                check(image.status === Image.Ready && image.opacity === 1 && !image.asynchronous, "Lock waited for or faded a preloaded wallpaper");
+                lockBackdrop.active = false;
+            }
             function exercise() {
                 Config.set("wallpaperTransition", "invalid");
                 check(Config.wallpaperTransition !== "invalid", "Invalid transition was accepted");
                 Config.set("wallpaperTransition", "wave");
                 check(ServiceAppearance.applyWallpaper(PHOTO_TWO), "Photo apply did not start");
                 until(() => !ServiceAppearance.wallpaperBusy, "Photo apply timed out");
-                check(Config.wallpaperCurrent === PHOTO_TWO, "Photo did not become current");
+                check(Config.wallpaperCurrent === PHOTO_TWO, "Photo did not become current"); warmed(PHOTO_TWO);
+                check(ServiceAppearance.testWallpaperProbeSelection === PHOTO_ONE, "Startup wallpaper check did not inspect the original selection");
+                until(() => !ServiceAppearance.testWallpaperProbeBusy, "Startup wallpaper check did not finish");
+                check(Config.wallpaperCurrent === PHOTO_TWO && ServiceAppearance.wallpaperImage === PHOTO_TWO, "Late startup inspection replaced the newer wallpaper");
                 Config.set("themeAnimations", 0);
                 ServiceAppearance.applyWallpaper(PHOTO_ONE);
                 until(() => !ServiceAppearance.wallpaperBusy, "Instant photo apply timed out");
-                check(Config.wallpaperCurrent === PHOTO_ONE, "Instant photo did not become current");
+                check(Config.wallpaperCurrent === PHOTO_ONE, "Instant photo did not become current"); warmed(PHOTO_ONE);
                 ServiceAppearance.applyWallpaper("/nonexistent/wallpaper.png");
                 until(() => !ServiceAppearance.wallpaperBusy, "Invalid file did not finish");
                 check(Config.wallpaperCurrent === PHOTO_ONE && ServiceAppearance.wallpaperError !== "", "Failed apply changed the saved wallpaper");
@@ -318,6 +338,8 @@ ShellRoot {
                     check(ServiceAppearance.applyWallpaper(VIDEO_PATH), "Video apply did not start: " + (ServiceAppearance.videoComponent ? ServiceAppearance.videoComponent.errorString() : ServiceAppearance.wallpaperError));
                     until(() => !ServiceAppearance.wallpaperBusy, "Video did not start");
                     check(Config.wallpaperCurrent === VIDEO_PATH && playback.item, "Video was not committed after playback");
+                    const still = ServiceAppearance.wallpaperSnapshot.preview;
+                    check(still && still !== VIDEO_PATH, "Video lock background has no still image"); warmed(still);
                     const player = findChild(playback.item, "wallpaperVideoPlayer");
                     check(player && player.activeAudioTrack === -1 && player.loops !== 1, "Video is not silent and looping");
                     ServiceLock.locked = true; until(() => player.playbackState === 2, "Locking did not pause video");
@@ -325,11 +347,11 @@ ShellRoot {
                     if (MOCK_DECODER) {
                         ServiceAppearance.applyWallpaper(REJECT_PATH);
                         until(() => !ServiceAppearance.wallpaperBusy, "Failed video did not recover");
-                        check(Config.wallpaperCurrent === VIDEO_PATH && ServiceAppearance.videoPath === VIDEO_PATH && ServiceAppearance.wallpaperError !== "", "Failed video did not restore the previous selection");
+                        check(Config.wallpaperCurrent === VIDEO_PATH && ServiceAppearance.videoPath === VIDEO_PATH && ServiceAppearance.wallpaperError !== "", "Failed video did not restore the previous selection"); warmed(still);
                     }
                     ServiceAppearance.applyWallpaper(PHOTO_TWO);
                     until(() => !ServiceAppearance.wallpaperBusy, "Switching back to a photo timed out");
-                    check(ServiceAppearance.videoPath === "" && !playback.item, "Switching to a photo retained the video player");
+                    check(ServiceAppearance.videoPath === "" && !playback.item, "Switching to a photo retained the video player"); warmed(PHOTO_TWO);
                 } else {
                     check(!ServiceAppearance.applyWallpaper(VIDEO_PATH) && Config.wallpaperCurrent === PHOTO_ONE && ServiceAppearance.wallpaperError !== "", "Missing video support changed the wallpaper or failed silently");
                 }
@@ -359,6 +381,7 @@ def desktop_checks():
         base = Path(temporary)
         env = prepare(base)
         env.pop("WAYLAND_DISPLAY", None)
+        env["XDG_CURRENT_DESKTOP"] = "niri"
         desktop = (base / "modules/ui/desktop/Desktop.qml").read_text().replace("PanelWindow\n{", "Item\n{", 1)
         desktop = desktop.replace("    screen: modelData", "    property var screen: modelData")
         desktop = re.sub(r'^    (?:WlrLayershell\.|exclusionMode:|color:|anchors \{).*\n', '', desktop, flags=re.M)
@@ -391,11 +414,29 @@ ShellRoot {
         TestCase {
             id: events; when: false; optional: true
             function check(ok, message) { if (!ok) throw new Error(message); }
-            function until(test, message) { for(let i=0;i<120;i++) { if(test()) return; wait(20); } throw new Error(message); }
-            function send(event) { ServiceCompositor.event(JSON.stringify(event)); }
+            function until(test, message) {
+                for(let i=0;i<120;i++) { if(test()) return; wait(20); }
+                const image = findChild(a, "wallpaperBlurImage");
+                throw new Error(message + " " + JSON.stringify({mode:Config.desktopBlur, animations:Config.themeAnimations, requested:a.blurRequested,
+                    progress:a.blurProgress, changing:a.changing, imagePath:a.imagePath, source:String(image.source), status:image.status}));
+            }
+            function send(event) { ServiceCompositor.backend.event(JSON.stringify(event)); }
             function exercise() {
                 const equalizer = findChild(desktop, "desktopEqualizer");
                 equalizer.samples = [2, 1.5, 1];
+                for (const size of [Qt.size(1920,1080), Qt.size(1080,1920), Qt.size(640,1280), Qt.size(3840,2160)]) {
+                    desktop.width = size.width; desktop.height = size.height; wait(20);
+                    check(equalizer.bars === 0 && equalizer.actualBarWidth >= 18 && equalizer.actualBarWidth < 19,
+                          "Rotating or resizing the desktop changed equalizer bar thickness");
+                    const first = findChild(equalizer, "equalizerBar");
+                    const bars = first.parent.children.filter(child => child.objectName === "equalizerBar");
+                    const last = bars.find(bar => bar.index === equalizer.barCount - 1);
+                    check(bars.length === equalizer.barCount && Math.abs(last.x + last.width - desktop.width) < 0.01,
+                          "Width-based bars do not fill the desktop or extend beyond it");
+                    check(equalizer.height === desktop.height / 2 && first.height === equalizer.peakHeight,
+                          "Width-based bars lost the half-screen height limit");
+                }
+                desktop.width = 800; desktop.height = 600;
                 equalizer.bars = 3;
                 wait(20);
                 const peak = findChild(equalizer, "equalizerBar");
@@ -559,6 +600,32 @@ ShellRoot {
                         check(findChild(picker,"wallpaperPrevious").enabled && findChild(picker,"wallpaperNext").enabled,"Carousel stops browsing at an edge");
                     }
                 }
+                for(const mode of [1,2]) {
+                    Config.set("themeAnimations",mode);
+                    picker.instant=true; picker.select(4); picker.instant=false;
+                    const next=findChild(picker,"wallpaperNext"), previous=findChild(picker,"wallpaperPrevious");
+                    const singleStart=picker.pos;
+                    next.clicked();
+                    wait(Math.round(Theme.animationDurationMorph*0.18));
+                    check(picker.pos>singleStart && picker.pos<singleStart+0.45,"A single step jumps most of its distance immediately");
+                    wait(Theme.animationDurationMorph+60);
+                    check(Math.abs(picker.pos-singleStart-1)<0.001,"A single step does not finish centred");
+                    const burstStart=picker.pos;
+                    let last=burstStart;
+                    for(let i=0;i<6;i++) {
+                        next.clicked(); wait(18);
+                        check(picker.pos>=last-0.001,"Rapid next clicks reverse the carousel");
+                        last=picker.pos;
+                    }
+                    wait(Theme.animationDurationMorph+60);
+                    check(Math.abs(picker.pos-burstStart-6)<0.001 && picker.index===2,"Rapid clicks lose steps or take the opposite wraparound path");
+                    previous.clicked(); wait(40);
+                    const before=picker.pos;
+                    next.clicked();
+                    check(Math.abs(picker.pos-before)<0.001,"Reversing a running animation jumps between cards");
+                    wait(Theme.animationDurationMorph+60);
+                    check(Math.abs(picker.pos-burstStart-6)<0.001,"Reversing does not settle at the requested wallpaper");
+                }
                 Config.set("themeAnimations",0);
                 for(const size of [Qt.size(480,360),Qt.size(360,640),Qt.size(1920,1080)]) {
                     window.width=size.width; window.height=size.height;
@@ -580,13 +647,19 @@ ShellRoot {
                 picker.forceActiveFocus(); keyClick(Qt.Key_F5);
                 until(()=>!picker.loading,"Refresh did not finish");
                 check(picker.selectedPath===selected,"Refresh loses the browsed wallpaper");
-                picker.select(4);
-                const start=card(4).mapToItem(window.contentItem,card(4).width/2,card(4).height/2);
-                mousePress(window.contentItem,start.x,start.y,Qt.LeftButton,Qt.NoModifier,0);
-                mouseMove(window.contentItem,start.x-12,start.y,0);
-                mouseMove(window.contentItem,start.x-picker.step*1.4,start.y,0);
-                mouseRelease(window.contentItem,start.x-picker.step*1.4,start.y,Qt.LeftButton,Qt.NoModifier,0);
-                check(!picker.dragging && picker.index===((Math.round(picker.pos)%all.length)+all.length)%all.length && ServiceAppearance.applies===0,"Dragging applies a wallpaper or does not settle");
+                for(const mode of [0,1,2]) {
+                    Config.set("themeAnimations",mode);
+                    picker.instant=true; picker.select(4); picker.instant=false;
+                    if(mode!==0) { picker.advance(1); wait(Math.round(Theme.animationDurationMorph*0.18)); }
+                    const start=Qt.point(window.width/2,picker.cardY+picker.cardH/2);
+                    mousePress(window.contentItem,start.x,start.y,Qt.LeftButton,Qt.NoModifier,0);
+                    mouseMove(window.contentItem,start.x-12,start.y,0);
+                    mouseMove(window.contentItem,start.x-picker.step*1.4,start.y,0);
+                    mouseRelease(window.contentItem,start.x-picker.step*1.4,start.y,Qt.LeftButton,Qt.NoModifier,0);
+                    wait(Theme.animationDurationMorph+60);
+                    check(!picker.dragging && picker.index===((Math.round(picker.pos)%all.length)+all.length)%all.length && Math.abs(picker.pos-Math.round(picker.pos))<0.001 && ServiceAppearance.applies===0,"Dragging interrupts motion incorrectly, applies a wallpaper or does not settle");
+                }
+                Config.set("themeAnimations",0);
                 picker.select(3); OverlayState.show("wallpapers");
                 click(card(3));
                 check(ServiceAppearance.applies===1 && ServiceAppearance.wallpaperBusy,"Clicking the centred wallpaper does not apply it");
@@ -611,7 +684,7 @@ ShellRoot {
                 until(()=>!picker.loading,"Refresh shortcut did not finish");
                 window.contentItem.grabToImage(result=>{
                     result.saveToFile("/tmp/bloodyShell-wallpaper-picker-preview.png");
-                    console.log("WALLPAPER_PICKER_PASSED five cover-flow previews, centred selection, no panel background, wraparound, all modes/sizes, click-to-apply, drag, keyboard, busy/retry, refresh, stale scans, empty state and localization");
+                    console.log("WALLPAPER_PICKER_PASSED five cover-flow previews, balanced single steps, continuous rapid navigation/reversal, drag interruption, wraparound, all modes/sizes, click-to-apply, keyboard, busy/retry, refresh, stale scans, empty state and localization");
                     Qt.quit();
                 });
             }
@@ -627,8 +700,48 @@ ShellRoot {
         assert not re.search(r"WALLPAPER_PICKER_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|Failed to load configuration", output), output
 
 
+def initial_wallpaper_checks():
+    prepare=runpy.run_path(str(ROOT/'scripts/tests/screenshot_checks.py'))['prepare']
+    with tempfile.TemporaryDirectory(prefix='bloodyshell-first-wallpaper-') as temporary:
+        base=Path(temporary); env=prepare(base);(base/'home').mkdir();env['HOME']=str(base/'home');env.pop('WAYLAND_DISPLAY',None)
+        (base/'modules/services/ServiceGreeter.qml').write_text('pragma Singleton\nimport Quickshell\nSingleton {}\n')
+        tool=base/'bin/awww'
+        tool.write_text('#!/usr/bin/env python3\nimport json,os,sys\nfrom pathlib import Path\nwith (Path(os.environ["TEST_SCREENSHOT_BASE"])/"wallpaper-calls").open("a") as out: out.write(json.dumps(sys.argv[1:])+"\\n")\n')
+        tool.chmod(0o700)
+        (base/'shell.qml').write_text('''import QtQuick
+    import Quickshell
+    import "modules/core"
+    import "modules/services"
+    ShellRoot {
+     Timer {interval:100;repeat:true;running:true;property int ticks:0;onTriggered:{
+      if(++ticks>100){console.error("FIRST_WALLPAPER_FAILED timeout");Qt.quit();return;}
+      if(!Config.initialized)return;
+      void ServiceAppearance.wallpaperImage;
+      if(!ServiceAppearance.wallpaperInitialized||ServiceAppearance.wallpaperBusy)return;
+      if(Config.wallpaperCurrent!==Quickshell.env("EXPECTED_WALLPAPER"))return;
+      if(ticks<7)return;
+      console.log("FIRST_WALLPAPER_PASSED");Qt.quit();
+     }}
+    }''')
+        settings=base/'config/bloodyShell/settings.json'; calls=base/'wallpaper-calls'
+        default=str((ROOT/'assets/wallpapers/default.png').resolve())
+        for mode in ('fresh','restart','custom','missing'):
+            expected=default
+            if mode=='fresh':settings.write_text(json.dumps({'themeAnimations':0,'helperSeen':True}))
+            elif mode in ('custom','missing'):
+                path=base/(mode+'.png');expected=str(path)
+                if mode=='custom':path.write_bytes((base/'fixture.png').read_bytes())
+                settings.write_text(json.dumps({'themeAnimations':0,'helperSeen':True,'wallpaperCurrent':expected}))
+            result=subprocess.run(['qs','-p',str(base),'--no-color'],env=dict(env,EXPECTED_WALLPAPER=expected),capture_output=True,text=True,timeout=14)
+            assert result.returncode==0 and 'FIRST_WALLPAPER_PASSED' in result.stdout,result.stdout+result.stderr
+            commands=[json.loads(line) for line in calls.read_text().splitlines()]
+            assert len(commands)==1 and commands[0][0]=='img',(mode,commands)
+            assert json.loads(settings.read_text())['wallpaperCurrent']==expected
+            print(mode,'passed; selection preserved; total wallpaper applications:',len(commands))
+
 if __name__ == "__main__":
     checks()
     wallpaper_checks()
     desktop_checks()
     picker_checks()
+    initial_wallpaper_checks()

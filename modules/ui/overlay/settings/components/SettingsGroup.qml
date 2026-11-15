@@ -1,6 +1,5 @@
 import QtQuick
 
-import "../../../../common"
 import "../../../../core"
 
 Column
@@ -8,12 +7,11 @@ Column
     id: settingsGroup
 
     property string title: ""
-    property string subtitle: ""
 
     default property alias content: rows.data
 
     width: parent ? parent.width : 400
-    spacing: 10
+    spacing: 12
 
     property real rise: 0
     transform: Translate { y: settingsGroup.rise }
@@ -56,29 +54,10 @@ Column
         }
     }
 
-    Column
+    SettingsSectionHeading
     {
-        visible: settingsGroup.title !== "" || settingsGroup.subtitle !== ""
         width: parent.width
-        spacing: 4
-
-        ShellText
-        {
-            width: parent.width
-            label: settingsGroup.title
-            wrapMode: Text.Wrap
-            size: 13
-            color: Theme.text1
-            font.weight: Font.DemiBold
-        }
-        ShellText
-        {
-            width: parent.width
-            label: settingsGroup.subtitle
-            size: 11
-            color: Theme.text3
-            wrapMode: Text.Wrap
-        }
+        title: settingsGroup.title
     }
 
     Column { id: rows; width: parent.width; spacing: 1 }

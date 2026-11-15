@@ -11,7 +11,9 @@ Widget
     id: widgetWindow
 
     property bool   stale: false
-    property string title: Config.barWidgetWindowAppID ? ServiceCompositor.windowAppId : ServiceCompositor.windowTitle
+    property string title: Config.barWidgetWindowMode === 2 ? ServiceCompositor.windowAppId
+        : Config.barWidgetWindowMode === 1 ? ServiceApplications.appName(ServiceCompositor.windowAppId, ServiceCompositor.windowAppId)
+        : ServiceCompositor.windowTitle
 
     active: title !== "" && !stale
 

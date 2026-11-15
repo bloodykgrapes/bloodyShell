@@ -3,6 +3,7 @@ import QtQuick
 import "." as Content
 import "../../../animations"
 import "../../../core"
+import "../../../common"
 import ".."
 
 OverlayView
@@ -11,8 +12,18 @@ OverlayView
 
     name: "launcher"
 
+    SurfaceShadow
+    {
+        surface: panel
+        cornerRadius: Theme.launcherRadius
+        opacity: launcher.reveal
+        scale: panel.scale
+        transform: Translate { y: launcher.lift }
+    }
+
     Item
     {
+        id: panel
         anchors.horizontalCenter: parent.horizontalCenter
         y: Math.max(24, Math.round((parent.height - content.fullHeight) / 2))
 

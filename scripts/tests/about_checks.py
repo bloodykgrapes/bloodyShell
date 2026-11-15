@@ -16,6 +16,7 @@ def checks():
         base = Path(temporary)
         env = prepare(base)
         env.pop("WAYLAND_DISPLAY", None)
+        env["XDG_CURRENT_DESKTOP"] = "niri"
         env["TEST_ABOUT_BASE"] = str(base)
         (base / "config/bloodyShell/settings.json").write_text(json.dumps(dict(helperSeen=True, themeAnimations=0, themeAccent=True, shellLanguage="en")))
         (base / "system").mkdir()
@@ -45,6 +46,8 @@ import sys
 import time
 base = Path(os.environ["TEST_ABOUT_BASE"])
 name = Path(sys.argv[0]).name
+if name == "niri" and sys.argv[1:] == ["msg", "--json", "event-stream"]:
+    sys.exit(0)
 with (base / "calls").open("a") as stream: stream.write(name + "\\n")
 time.sleep(0.05)
 if name == "niri":
@@ -113,7 +116,7 @@ ShellRoot
                         page.active = true; step = 1; break;
                     case 1:
                         if (ServiceSystem.loading || ServiceSystem.memoryKiB === 0) return;
-                        tests.check(ServiceSystem.hostname === "test-machine" && ServiceSystem.kernel === "6.12-test" && ServiceSystem.compositor === "25.11-test", "System information is incomplete");
+                        tests.check(ServiceSystem.hostname === "test-machine" && ServiceSystem.kernel === "6.12-test" && ServiceSystem.compositor === "niri 25.11-test", "System information is incomplete");
                         tests.check(ServiceSystem.processor === "Example Processor with a Very Long Model Name 123456789" && ServiceSystem.threads === 2, "Processor parsing is incorrect");
                         tests.check(ServiceSystem.device === "Example Very Long Device Model for Responsive Layout Verification", "Device name repeats its vendor");
                         tests.check(ServiceSystem.memoryKiB === 16777216 && ServiceSystem.graphics.join(",") === "Intel Iris Xe Graphics,NVIDIA GeForce Test", "Memory or graphics parsing is incorrect");

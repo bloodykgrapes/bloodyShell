@@ -147,7 +147,7 @@ FocusScope
     {
         id: islandLoader
         anchors.fill: parent
-        active: Config.islandEnabled
+        active: Config.islandEnabled && frame.screen !== null && frame.screen.name === ServiceIsland.primaryOutput
         sourceComponent: OSD
         {
             screen: frame.screen
