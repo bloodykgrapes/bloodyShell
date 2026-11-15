@@ -47,10 +47,10 @@ Die Unterstützung weiterer verbreiteter Wayland-Compositors ist für zukünftig
 ## Screenshots
 
 <p align="center">
-  <img src="../../docs/images/image-1.png" alt="desktop"    width="100%">
-  <img src="../../docs/images/image-2.png" alt="launcher"   width="49.8%">
-  <img src="../../docs/images/image-3.png" alt="settings"   width="49.8%">
-  <img src="../../docs/images/image-4.png" alt="wallpapers" width="100%">
+  <img src="../../docs/images/image-1.png" alt="desktop"    width="98.5%">
+  <img src="../../docs/images/image-2.png" alt="launcher"   width="49%">
+  <img src="../../docs/images/image-3.png" alt="settings"   width="49%">
+  <img src="../../docs/images/image-4.png" alt="wallpapers" width="98.5%">
 </p>
 
 ## Installation
