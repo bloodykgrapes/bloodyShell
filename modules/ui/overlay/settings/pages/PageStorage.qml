@@ -210,11 +210,4 @@ SettingsPage
         badgeColor: Theme.colorCritical
     }
 
-    SettingsRow
-    {
-        visible: ServiceStorage.message !== ""
-        label: Tr.tr("common.status")
-        description: ServiceStorage.message
-    }
-
 }

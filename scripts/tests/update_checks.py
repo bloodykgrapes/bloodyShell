@@ -240,6 +240,8 @@ data=json.loads((base/'control.json').read_text())
 with (base/'requests.jsonl').open('a') as output: output.write(json.dumps(sys.argv[-1])+'\\n')
 time.sleep(data.get('delay',0.02))
 if data.get('fail'): sys.exit(7)
+if data.get('plain_only') and '/tags/v' in sys.argv[-1]:
+    sys.stdout.write('{}\\n404'); sys.exit(0)
 sys.stdout.write(data.get('raw',json.dumps(data.get('release',{})))+'\\n'+str(data.get('http',200)))
 ''')
         curl.chmod(0o700)
@@ -276,6 +278,10 @@ ShellRoot {
                 const before=tests.requests().length;
                 ServiceUpdate.loadCurrentRelease();events.wait(50);
                 check(tests.requests().length===before,"Reopening a fetched changelog made a duplicate request");
+                tests.fetch({release:Object.assign(tests.entry("1.0.0","Plain tag notes."),{tag_name:"1.0.0"}),plain_only:true});
+                check(ServiceUpdate.currentNotes.tag==="1.0.0" && tests.requests().slice(-2).map(url=>url.split("/tags/")[1]).join(",")==="v1.0.0,1.0.0","Plain version tag did not work after prefixed tag returned 404");
+                tests.fetch({release:Object.assign(tests.entry("1.0.0","Plain tag notes."),{tag_name:"1.0.0"})});
+                check(tests.requests().slice(-1)[0].endsWith("/tags/1.0.0"),"Known plain tag was not reused");
                 tests.response({http:404});ServiceUpdate.version="1.1.0";
                 tests.until(()=>ServiceUpdate.currentNotesMissing&&!ServiceUpdate.currentNotesLoading,"Unpublished tag did not report missing notes");
                 check(!ServiceUpdate.currentNotes,"Unpublished version displayed another version's cached notes");

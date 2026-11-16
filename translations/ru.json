@@ -582,7 +582,6 @@
         "settings.imports.dots": "Конфиги",
         "settings.imports.dotsHint": "Заменить настройки приложений.",
         "settings.imports.failed": "Не удалось импортировать файлы",
-        "settings.imports.finished": "Готово",
         "settings.imports.greeter": "Экран входа",
         "settings.imports.greeterHint": "Установить экран входа SDDM. Нужны права администратора.",
         "settings.imports.import": "Импортировать",

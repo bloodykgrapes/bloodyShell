@@ -513,6 +513,54 @@ with files["operation_signals"]():
     print("Managed workers stop on SIGTERM, terminal hangup and timeout, including children that ignore SIGTERM.")
 
 
+def release_tag_checks():
+    api = runpy.run_path(str(ROOT / "scripts/lib/resources.py"))
+    scope = api["programs"].__globals__
+    refs = [api["REF"], api["VERSION"].removeprefix("v")]
+    calls = []
+    def operation(reference):
+        calls.append(reference)
+        if reference == refs[0]:
+            raise api["DownloadError"]("HTTP 404", 404)
+        return reference
+    assert api["release_resource"](operation) == refs[1] and calls == refs
+    for status in (403, 429, 500, 0):
+        calls.clear()
+        def failed(reference):
+            calls.append(reference)
+            raise api["DownloadError"]("Unavailable", status)
+        try:
+            api["release_resource"](failed)
+        except api["DownloadError"]:
+            pass
+        else:
+            raise AssertionError("Failed download was accepted")
+        assert calls == refs[:1], "Non-404 failure tried another tag"
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-release-tags-") as temporary:
+        base = Path(temporary)
+        archive = base / "source.tar.gz"
+        with tarfile.open(archive, "w:gz") as package:
+            member = tarfile.TarInfo("repository/dots/config/kitty/kitty.conf")
+            contents = b"config from plain version tag"
+            member.size = len(contents)
+            package.addfile(member, io.BytesIO(contents))
+        urls = []
+        def download(url, destination=None):
+            urls.append(url)
+            if refs[0] in url:
+                raise api["DownloadError"]("HTTP 404", 404)
+            if destination:
+                shutil.copyfile(archive, destination)
+            else:
+                return json.dumps(dict(tree=[dict(type="blob", path="dots/config/kitty/kitty.conf")]))
+        with patch.dict(scope, ROOT=base / "installed", download=download):
+            assert api["programs"]() == ["kitty"]
+            with api["source_for"]("dots/kitty") as source:
+                assert (source / "dots/config/kitty/kitty.conf").read_bytes() == contents
+        assert len(urls) == 4 and refs[1] in urls[1] and refs[1] in urls[3]
+    print("Prefixed/plain release tags work for catalogs and archive imports; rate limits, server and connection failures do not fall back.")
+
+
 if __name__ == "__main__":
     checks()
     availability_checks()
@@ -521,3 +569,4 @@ if __name__ == "__main__":
     file_checks()
     backend_checks()
     cancellation_checks()
+    release_tag_checks()

@@ -201,6 +201,7 @@ Singleton
         const known = releases.find(r => r.version === version);
         if (known && !force) { rememberCurrentRelease(known); return; }
         currentRequest.requestedVersion = version;
+        currentRequest.requestedTag = currentNotes ? currentNotes.tag : "v" + version;
         currentNotesLoading = true;
         currentRequest.running = true;
     }
@@ -233,15 +234,27 @@ Singleton
     {
         id: currentRequest
         property string requestedVersion: ""
+        property string requestedTag: ""
         command: ["curl", "-sSL", "--max-time", "15", "-w", "\n%{http_code}", "-H", "Accept: application/vnd.github+json",
-            "https://api.github.com/repos/" + serviceUpdate.repo + "/releases/tags/" + encodeURIComponent("v" + requestedVersion)]
+            "https://api.github.com/repos/" + serviceUpdate.repo + "/releases/tags/" + encodeURIComponent(requestedTag)]
         stdout: StdioCollector { id: currentAnswer }
         onExited: code =>
         {
-            serviceUpdate.currentNotesLoading = false;
-            if (requestedVersion !== serviceUpdate.version) { Qt.callLater(serviceUpdate.loadCurrentRelease); return; }
+            if (requestedVersion !== serviceUpdate.version)
+            {
+                serviceUpdate.currentNotesLoading = false;
+                Qt.callLater(serviceUpdate.loadCurrentRelease);
+                return;
+            }
             const text = currentAnswer.text.trim(), cut = text.lastIndexOf("\n");
             const http = parseInt(text.substring(cut + 1), 10);
+            if (code === 0 && http === 404 && requestedTag === "v" + requestedVersion)
+            {
+                requestedTag = requestedVersion;
+                Qt.callLater(() => currentRequest.running = true);
+                return;
+            }
+            serviceUpdate.currentNotesLoading = false;
             if (code !== 0) serviceUpdate.currentNotesError = Tr.tr("service.update.connectionFailed");
             else if (http === 404) serviceUpdate.currentNotesMissing = true;
             else if (http === 403 || http === 429) serviceUpdate.currentNotesError = Tr.tr("service.update.rateLimited");

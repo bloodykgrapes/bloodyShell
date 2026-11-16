@@ -107,7 +107,7 @@ SettingsPage
                     {
                         id: badge
 
-                        y: head.y
+                        y: Math.round((statusHeading.height - height) / 2)
                         width: 46
                         height: 46
                         radius: 23
@@ -156,7 +156,7 @@ SettingsPage
                                 color: Theme.text1
                                 font.bold: true
                             }
-                            Chip { text: Config.updateBeta ? Tr.tr("settings.updates.channelBeta") : Tr.tr("settings.updates.channelStable") }
+                            Chip { text: ServiceUpdate.currentRelease.prerelease ? Tr.tr("settings.updates.channelBeta") : Tr.tr("settings.updates.channelStable") }
                             Chip { visible: !ServiceUpdate.installed; text: Tr.tr("settings.updates.developmentCopy"); tint: Theme.colorWarning }
                         }
                         ShellText
@@ -332,6 +332,7 @@ SettingsPage
         title: Tr.tr("settings.imports.title")
         description: Tr.tr("settings.imports.description")
         icon: Icon.importFiles
+        summary: ServiceResources.busy ? Tr.tr("common.working") : ""
         onExpandedChanged:
         {
             if (expanded) ServiceResources.refresh();
@@ -340,17 +341,11 @@ SettingsPage
 
         SettingsRow
         {
-            visible: ServiceResources.busy && ServiceResources.entries.length === 0
-            label: Tr.tr("common.checking")
-        }
-        SettingsRow
-        {
-            visible: ServiceResources.error !== "" || ServiceResources.message !== ""
-            label: ServiceResources.error !== "" ? Tr.tr("common.error") : Tr.tr("settings.imports.finished")
-            description: ServiceResources.error || ServiceResources.message
+            visible: ServiceResources.error !== ""
+            label: Tr.tr("common.error")
+            description: ServiceResources.error
             SettingsButton
             {
-                visible: ServiceResources.error !== ""
                 text: Tr.tr("common.refresh")
                 enabled: !ServiceResources.busy && !ServiceUpdate.busy && ServiceResources.pending === null
                 onClicked: ServiceResources.refresh()
@@ -421,7 +416,8 @@ SettingsPage
         readonly property var entries: requiredPackages ? ServiceDependencies.dependencies : ServiceDependencies.packages
 
         icon: Icon.packages
-        summary: entries.length > 0 ? entries.filter(entry => entry.installed).length + " / " + entries.length : ""
+        summary: ServiceDependencies.busy ? Tr.tr("common.checking")
+            : entries.length > 0 ? entries.filter(entry => entry.installed).length + " / " + entries.length : ""
         onExpandedChanged:
         {
             if (expanded) ServiceDependencies.refresh();
@@ -434,11 +430,6 @@ SettingsPage
             label: Tr.tr("settings.dependencies.error")
             description: ServiceDependencies.error
             SettingsButton { text: Tr.tr("common.refresh"); onClicked: ServiceDependencies.refresh(); enabled: !ServiceDependencies.busy }
-        }
-        SettingsRow
-        {
-            visible: ServiceDependencies.busy && ServiceDependencies.entries.length === 0
-            label: Tr.tr("common.checking")
         }
         Repeater
         {

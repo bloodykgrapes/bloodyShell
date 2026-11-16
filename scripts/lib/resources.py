@@ -54,14 +54,31 @@ def program_name(value):
     return value
 
 
+class DownloadError(RuntimeError):
+    def __init__(self, message, status):
+        super().__init__(message)
+        self.status = status
+
+
 def download(url, destination=None):
-    command = ["curl", "-fsSL", "--retry", "1", "--max-time", "120" if destination else "20"]
+    command = ["curl", "-fsSL", "--retry", "1", "--max-time", "120" if destination else "20", "-w", "\n%{http_code}"]
     if destination:
         command += ["-o", str(destination)]
     result = FILES["run"](command + [url], capture_output=True, text=True, timeout=130)
+    body, _, status = result.stdout.rpartition("\n")
     if result.returncode:
-        raise RuntimeError(result.stderr.strip() or "Could not download repository files")
-    return result.stdout
+        raise DownloadError(result.stderr.strip() or "Could not download repository files", int(status) if status.isdigit() else 0)
+    return body
+
+
+def release_resource(operation):
+    references = tuple(dict.fromkeys((REF, VERSION.removeprefix("v"))))
+    for index, reference in enumerate(references):
+        try:
+            return operation(reference)
+        except DownloadError as error:
+            if error.status != 404 or index == len(references) - 1:
+                raise
 
 
 def repository_paths(repository, reference):
@@ -76,7 +93,7 @@ def repository_paths(repository, reference):
 def shell_paths():
     if (ROOT / "dots").is_dir():
         return {path.relative_to(ROOT).as_posix() for path in (ROOT / "dots").rglob("*") if path.is_file() and not path.is_symlink()}
-    return repository_paths(REPO, REF)
+    return release_resource(lambda reference: repository_paths(REPO, reference))
 
 
 def config_programs(paths):
@@ -94,7 +111,7 @@ def resource_catalog():
         available.update(dots=bool(names), greeter=all("dots/sddm/" + name in paths for name in GREETER_FILES),
                          compositor=all(compositor["resource"] + "/" + name in paths for name in compositor["files"]))
         if not (ROOT / "dots").is_dir() and not all(available[key] for key in ("dots", "greeter", "compositor")):
-            errors.append("Import files are missing from " + REF + ".")
+            errors.append("Import files are missing from release " + VERSION + ".")
     except (OSError, RuntimeError, ValueError) as error:
         errors.append("Shell files: " + str(error))
     try:
@@ -145,7 +162,10 @@ def source_for(resource):
         archive, extracted = stage / "source.tar.gz", stage / "source"
         extracted.mkdir()
         ref = quote(reference, safe="")
-        download(f"https://github.com/{repository}/archive/refs/{namespace}/{ref}.tar.gz", archive)
+        if resource == "wallpapers":
+            download(f"https://github.com/{repository}/archive/refs/{namespace}/{ref}.tar.gz", archive)
+        else:
+            release_resource(lambda tag: download(f"https://github.com/{repository}/archive/refs/tags/{quote(tag, safe='')}.tar.gz", archive))
         FILES["extract_archive"](archive, extracted, prefix=relative)
         if not (extracted / relative).is_dir():
             raise ValueError("The repository does not contain this resource")

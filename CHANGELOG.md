@@ -6,6 +6,18 @@
     The format is based on Keep a Changelog.
 </p>
 
+## [0.1.1] - 2026-11-16
+
+### Changed
+
+- **UI:** Moved refresh button in foldouts to header.
+- **UI:** Moved information output rows in foldout to header.
+- **UI:** The version tag now shows the version channel rather than the selected channel.
+
+### Fixed
+
+- **Core:** Fixed a problem with finding config files to import from the GitHub repository.
+
 ## [0.1.0] - 2026-11-15
 
 <p align="center">

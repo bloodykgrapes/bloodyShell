@@ -582,7 +582,6 @@
         "settings.imports.dots": "Configs",
         "settings.imports.dotsHint": "Replace configs for applications.",
         "settings.imports.failed": "Import failed",
-        "settings.imports.finished": "Complete",
         "settings.imports.greeter": "Login screen",
         "settings.imports.greeterHint": "Install the SDDM login screen. Requires administrator access.",
         "settings.imports.import": "Import",

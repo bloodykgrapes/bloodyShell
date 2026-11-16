@@ -149,7 +149,7 @@ SettingsPage
     {
         visible: !ServiceUser.confirming
         label: ServiceUser.busy ? Tr.tr("common.working") : Tr.tr("settings.user.pendingChanges")
-        description: Tr.tr("settings.user.applyHint")
+        description: ServiceUser.message || Tr.tr("settings.user.applyHint")
 
         Row
         {
@@ -182,13 +182,6 @@ SettingsPage
         acceptEnabled: !ServiceUser.busy
         onAccepted: ServiceUser.confirmApply()
         onRejected: ServiceUser.cancelApply()
-    }
-
-    SettingsRow
-    {
-        visible: ServiceUser.message !== ""
-        label: Tr.tr("common.status")
-        description: ServiceUser.message
     }
 
     SettingsRow
