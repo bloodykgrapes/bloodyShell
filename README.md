@@ -14,14 +14,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL">Install</a>
-  &bull;
-  <a href="https://github.com/bloodykgrapes/bloodyShell/wiki/KEYBINDS">Keybinds</a>
-  &bull;
-  <a href="https://discord.gg/">Discord</a>
-</p>
-
-<p align="center">
   <sub>
     English
     &bull;

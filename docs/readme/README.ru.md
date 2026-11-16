@@ -14,14 +14,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/bloodykgrapes/bloodyShell/wiki/INSTALL">Установка</a>
-  &bull;
-  <a href="https://github.com/bloodykgrapes/bloodyShell/wiki/KEYBINDS">Горячие клавиши</a>
-  &bull;
-  <a href="https://discord.gg/">Discord</a>
-</p>
-
-<p align="center">
   <sub>
     <a href="../../README.md">English</a>
     &bull;
