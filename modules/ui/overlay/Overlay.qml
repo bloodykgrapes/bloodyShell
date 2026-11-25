@@ -24,6 +24,7 @@ PanelWindow
     property string output: ""
     property Item screenshotFocus: null
     property Item stackedFocus: null
+    property bool refreshBlurOnFrame: false
     readonly property Item currentView: OverlayState.current === OverlayState.stacked ? stackedPage.item : page.item
     readonly property var preparationOrder: ["launcher", "settings", "power", "wallpapers", "helper", "desktopMenu"]
     property var preparedComponents: []
@@ -138,14 +139,43 @@ PanelWindow
     exclusionMode: ExclusionMode.Ignore
     mask: authenticating || ServiceScreenshot.active || OverlayState.active ? null : switching ? switcherInput : transientInput
     BackgroundEffect.blurRegion: ShellMaterial.blur ? shellBlur : null
+    onBackingWindowVisibleChanged: refreshBlurOnFrame = backingWindowVisible && ShellMaterial.blur
 
     WlrLayershell.namespace: "bloodyShell:overlay"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: modal ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     Region { id: transientInput }
-    Region { id: shellBlur; regions: ShellMaterial.blur ? ShellMaterial.regionsFor(overlay.contentItem.Window.window) : [] }
+    Region
+    {
+        id: shellBlur
+        regions: ShellMaterial.blur ? ShellMaterial.regionsFor(overlay.contentItem.Window.window) : []
+        onChanged: if (overlay.backingWindowVisible) Qt.callLater(overlay.commitBlurRegion)
+    }
     Region { id: switcherInput; regions: switcher.item && ServiceAltTab.presented ? [switcher.item.inputRegion] : [] }
+
+    function commitBlurRegion()
+    {
+        // Wayland applies the region on a surface commit, even when nothing in QML needs repainting.
+        if (backingWindowVisible && ShellMaterial.blur) contentItem.Window.window?.update();
+    }
+    function refreshBlurRegion()
+    {
+        if (backingWindowVisible && ShellMaterial.blur) shellBlur.changed();
+    }
+    Connections
+    {
+        target: overlay.contentItem.Window.window
+        enabled: overlay.refreshBlurOnFrame
+        function onAfterAnimating()
+        {
+            // Republish after the backing window has started rendering on this output.
+            overlay.refreshBlurOnFrame = false;
+            Qt.callLater(overlay.refreshBlurRegion);
+        }
+    }
+
+    ShellWallpaperTexture { visible: false }
 
     PolkitAgent { id: authAgent }
     Binding { target: OverlayState; property: "inhibited"; value: overlay.authenticating || ServiceLock.locked || ServiceScreenshot.active }

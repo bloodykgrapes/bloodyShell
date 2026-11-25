@@ -335,8 +335,8 @@ ShellRoot
                     const lock=view.item, clock=findChild(lock,"lockClockReveal"), prompt=findChild(lock,"lockPrompt"), info=findChild(lock,"lockOverview");
                     const field=findChild(lock,"lockPasswordField"), input=findChild(lock,"lockPasswordInput"), footer=findChild(lock,"lockFooter"), wallpaper=findChild(lock,"lockWallpaper");
                     check(!ServiceLock.promptVisible && !prompt.visible && input.readOnly && input.text==="","Lock did not start with a noneditable overview");
-                    const backdrop=findChild(lock,"lockBackdrop");
-                    check(backdrop.blurAmount===0 && wallpaper.scale===1,"Overview wallpaper started blurred or zoomed");
+                    const backdrop=findChild(lock,"lockBackdrop"), wallpaperLayer=findChild(lock,"lockWallpaperLayer");
+                    check(backdrop.blurAmount===0 && wallpaperLayer.scale===1,"Overview wallpaper started blurred or zoomed");
                     check(wallpaper.status===Image.Ready && wallpaper.opacity===1 && !wallpaper.asynchronous,"Wallpaper appeared late or faded in");
                     if(mode) {
                         wait(140);
@@ -367,17 +367,17 @@ ShellRoot
                     if(mode) {
                         wait(70);
                         check(lock.promptReveal>0 && lock.promptReveal<1 && info.opacity>0 && prompt.opacity>0,"Switching views did not animate");
-                        check(backdrop.blurAmount>0 && backdrop.blurAmount<0.8 && wallpaper.scale>1 && wallpaper.scale<1.035,"Wallpaper blur and zoom did not animate with sign-in");
+                        check(backdrop.blurAmount>0 && backdrop.blurAmount<0.8 && wallpaperLayer.scale>1 && wallpaperLayer.scale<1.035,"Wallpaper blur and zoom did not animate with sign-in");
                     }
                     until(()=>lock.promptReveal===1,"Sign-in entrance did not finish");
-                    check(backdrop.blurAmount===0.8 && Math.abs(wallpaper.scale-1.035)<0.0001,"Sign-in wallpaper did not finish blurring and zooming");
+                    check(backdrop.blurAmount===0.8 && Math.abs(wallpaperLayer.scale-1.035)<0.0001,"Sign-in wallpaper did not finish blurring and zooming");
                     check(!info.visible && footer.visible && !input.readOnly && input.activeFocus,"Sign-in controls or password focus are missing");
                     until(()=>ServiceMedia.positionClients.length===0,"Hidden information kept media polling");
                     input.text="discard this password";
                     keyClick(Qt.Key_Escape);
                     until(()=>lock.promptReveal===0,"Escape did not return to the clock");
                     check(input.text==="" && input.readOnly,"Returning retained a hidden password");
-                    check(backdrop.blurAmount===0 && wallpaper.scale===1,"Returning to the clock retained blur or zoom");
+                    check(backdrop.blurAmount===0 && wallpaperLayer.scale===1,"Returning to the clock retained blur or zoom");
                     keyClick(Qt.Key_A);
                     check(ServiceLock.promptVisible && input.text==="a","Typing did not preserve the first password character");
                     until(()=>lock.promptReveal===1,"Typing did not finish revealing sign-in");

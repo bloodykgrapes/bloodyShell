@@ -7,6 +7,7 @@ Item
     default property alias content: body.data
     property alias baseColor: fill.baseColor
     property alias materialEnabled: fill.materialEnabled
+    property alias transitionMaterial: fill.transitionMaterial
     property alias border: outline.border
     property alias radius: fill.radius
     property Item cutout: null

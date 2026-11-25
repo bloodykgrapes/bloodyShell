@@ -327,7 +327,7 @@ else:
             cli = stage / "scripts/bloodyShell"
             cli.write_text(cli.read_text().replace('if __name__ == "__main__":', 'if sys.argv[1:4] == ["internal", "wallpaper", "inspect"]:\n    time.sleep(0.6)\n\nif __name__ == "__main__":', 1))
             appearance = stage / "modules/services/ServiceAppearance.qml"
-            appearance.write_text(appearance.read_text().replace("id: serviceAppearance", "id: serviceAppearance\n    readonly property var testWallpaperCaches: wallpaperCaches.instances\n    readonly property string testWallpaperProbeSelection: wallpaperCheck.selection\n    readonly property bool testWallpaperProbeBusy: wallpaperCheck.busy", 1))
+            appearance.write_text(appearance.read_text().replace("id: serviceAppearance", "id: serviceAppearance\n    readonly property Item testLockPreview: lockPreview\n    readonly property string testWallpaperProbeSelection: wallpaperCheck.selection\n    readonly property bool testWallpaperProbeBusy: wallpaperCheck.busy", 1))
             (stage / "config/bloodyShell/settings.json").write_text(json.dumps(dict(helperSeen=True, themeAnimations=1, wallpaperCurrent=str(photo))))
             if mode == "missing":
                 component = stage / "modules/ui/desktop/VideoWallpaper.qml"
@@ -376,7 +376,7 @@ ShellRoot {
     Window {
         visible: true; width: 800; height: 600
         Loader { id: playback; anchors.fill: parent; active: ServiceAppearance.videoPath !== "" && ServiceAppearance.videoComponent !== null && ServiceAppearance.videoComponent.status === Component.Ready; sourceComponent: ServiceAppearance.videoComponent }
-        Loader { id: lockBackdrop; width: Quickshell.screens[0].width; height: Quickshell.screens[0].height; active: false; sourceComponent: LockBackdrop {} }
+        Loader { id: lockBackdrop; width: 1920; height: 1080; active: false; sourceComponent: LockBackdrop {} }
         WallpaperImage { id: thumb; width: 160; height: 90; wallpaper: VIDEO_PATH }
         TestCase {
             id: input; when: false; optional: true
@@ -384,13 +384,16 @@ ShellRoot {
             function until(predicate, message) { for (let i=0; i<150; i++) { if (predicate()) return; wait(20); } throw new Error(message); }
             function warmed(path) {
                 check(ServiceAppearance.wallpaperImage === path, "Lock wallpaper still does not follow the selected wallpaper");
-                const caches = ServiceAppearance.testWallpaperCaches;
-                check(caches.length === Quickshell.screens.length, "Lock wallpaper preloads are missing");
-                until(() => caches.every(image => image.status === Image.Ready), "Lock wallpaper did not preload");
-                check(caches.every(image => image.sourceSize.width === Math.round(image.modelData.width) && image.sourceSize.height === Math.round(image.modelData.height)), "Lock cache dimensions differ from monitor dimensions");
+                const warm = ServiceAppearance.testLockPreview;
+                until(() => warm.status === Image.Ready, "Lock wallpaper did not preload");
+                check(warm.implicitWidth <= 768 && warm.implicitHeight <= 768 && warm.cache, "Warm lock image exceeds its memory budget");
                 lockBackdrop.active = true;
                 const image = findChild(lockBackdrop.item, "lockWallpaper");
                 check(image.status === Image.Ready && image.opacity === 1 && !image.asynchronous, "Lock waited for or faded a preloaded wallpaper");
+                check(image.sourceSize === warm.sourceSize, "Lock is not using the shared preview");
+                const detail = findChild(lockBackdrop.item, "lockWallpaperDetail");
+                check(!detail.cache && detail.asynchronous, "Full-size lock image can remain cached or block the first frame");
+                until(() => detail.status === Image.Ready && detail.visible, "Lock wallpaper did not finish loading");
                 lockBackdrop.active = false;
             }
             function exercise() {
@@ -532,6 +535,8 @@ ShellRoot {
                 check(Config.desktopBlur === 0, "Invalid blur mode was accepted");
                 Config.set("desktopBlur", Enums.BlurAlways);
                 until(()=>a.blurProgress === 1 && b.blurProgress === 1, "Always mode did not load the wallpaper");
+                check(image.sourceSize.width === 432 && image.sourceSize.height === 332 && image.parent.layer.textureSize === image.sourceSize,
+                      "Blur did not downsample the wallpaper and its effect texture together");
                 send({WorkspacesChanged:{workspaces:[
                     {id:10,idx:1,output:"A",is_active:true,is_focused:true},
                     {id:11,idx:2,output:"A",is_active:false,is_focused:false},
@@ -646,7 +651,10 @@ ShellRoot {
             function inspect() {
                 const visible=[];
                 const gallery=findChild(picker,"wallpaperGallery");
-                for(let i=0;i<picker.images.length;i++) if(card(i).visible) visible.push(card(i));
+                const cards=gallery.children.filter(item=>item.objectName.startsWith("wallpaperCard-"));
+                check(cards.length===Math.min(6,picker.images.length),"Picker keeps offscreen cards resident");
+                check(Math.max(picker.previewSourceSize.width,picker.previewSourceSize.height)<=1600,"Preview decode size is unbounded");
+                for(const item of cards) if(item.visible) visible.push(item);
                 check(visible.length===Math.min(5,picker.images.length),"Picker does not show five items at rest");
                 const bounds=item=>{
                     const points=[item.mapToItem(gallery,0,0),item.mapToItem(gallery,item.width,0),item.mapToItem(gallery,0,item.height),item.mapToItem(gallery,item.width,item.height)];
@@ -654,7 +662,14 @@ ShellRoot {
                     return {x:left,y:top,width:Math.max(...points.map(p=>p.x))-left,height:Math.max(...points.map(p=>p.y))-top};
                 };
                 check(visible.every(item=>{const r=bounds(item); return r.x>=-0.1 && r.y>=0 && r.x+r.width<=gallery.width+0.1 && r.y+r.height<=gallery.height+0.1;}),"Wallpaper extends beyond the gallery");
-                const selected=bounds(card(picker.index));
+                const centerCard=card(picker.index);
+                const preview=findChild(centerCard,"wallpaperCardImage");
+                until(()=>preview?.status===Image.Ready,"Selected preview did not decode");
+                check(Math.max(preview.implicitWidth,preview.implicitHeight)<=1600 && !preview.cache,
+                    "Wallpaper preview exceeds its memory budget");
+                check(preview.width>=preview.parent.width-0.01 && preview.height>=preview.parent.height-0.01,
+                    "Bounded decode left gaps around the wallpaper");
+                const selected=bounds(centerCard);
                 check(visible.filter(item=>!item.selected).every(item=>bounds(item).width<selected.width*0.85),"Neighbour previews are not smaller");
                 check(Math.abs(selected.x+selected.width/2-gallery.width/2)<0.1,"Selected wallpaper is not centred");
                 check(!findChild(picker,"wallpaperPickerPanel"),"Picker still has a panel background");

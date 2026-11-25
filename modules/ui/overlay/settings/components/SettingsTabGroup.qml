@@ -65,6 +65,7 @@ Item
         visible: group.visible
         radius: Math.min(Theme.settingsRadius - 8, width / 2, height / 2)
         baseColor: Theme.settingsColorSidebar
+        transitionMaterial: group.surfaceHost !== null
     }
 
     Flickable

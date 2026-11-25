@@ -47,6 +47,7 @@ Item
         border.width: Math.min(menuReveal.borderWidth, width / 2, height / 2)
         border.color: menuReveal.borderColor
         materialEnabled: menuReveal.useSurfaceMaterial
+        transitionMaterial: true
 
         Item
         {

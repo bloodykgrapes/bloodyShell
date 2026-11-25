@@ -44,6 +44,14 @@ Item
     readonly property real cardH: Math.round(cardW / aspect)
     readonly property real cardY: Math.round((height - cardH) / 2 - 24)
     readonly property real step: cardW * 0.57
+    readonly property int previewRadius: 3
+    readonly property int previewCount: Math.min(images.length, 2 * previewRadius)
+    readonly property int firstPreview: Math.floor(pos) - previewRadius + 1
+    readonly property size previewSourceSize:
+    {
+        const density = Math.min(1.5, 1600 / Math.max(1, cardW, cardH));
+        return Qt.size(Math.round(cardW * density), Math.round(cardH * density));
+    }
 
     opacity: fluid ? 1 : reveal
 
@@ -62,6 +70,7 @@ Item
         curve: [0.28, 0.0, 0.3, 1.0, 1.0, 1.0]
     }
 
+    function wrap(index, count) { return ((index % count) + count) % count; }
     function distanceOf(i)
     {
         if (images.length === 0) return 0;
@@ -79,13 +88,13 @@ Item
     function select(i)
     {
         if (images.length === 0 || wallpapersContent.applying) return;
-        index = ((i % images.length) + images.length) % images.length;
+        index = wrap(i, images.length);
         targetPos = pos + distanceOf(index);
     }
     function advance(steps)
     {
         if (images.length === 0 || wallpapersContent.applying) return;
-        index = (((index + steps) % images.length) + images.length) % images.length;
+        index = wrap(index + steps, images.length);
         targetPos += steps;
     }
     function apply(i)
@@ -225,24 +234,33 @@ Item
 
         Repeater
         {
-            model: wallpapersContent.images
+            model: wallpapersContent.previewCount
             Item
             {
                 id: card
-                required property string modelData
                 required property int index
-                objectName: "wallpaperCard-" + index
-                readonly property real distance: wallpapersContent.distanceOf(index)
+                readonly property int wallpaperIndex:
+                {
+                    const count = wallpapersContent.previewCount;
+                    if (count === 0) return -1;
+                    // Reuse only the slot crossing the edge when the carousel advances.
+                    const first = wallpapersContent.firstPreview;
+                    const slot = first + wallpapersContent.wrap(index - first, count);
+                    return wallpapersContent.wrap(slot, wallpapersContent.images.length);
+                }
+                readonly property string wallpaper: wallpapersContent.images[wallpaperIndex] ?? ""
+                objectName: "wallpaperCard-" + wallpaperIndex
+                readonly property real distance: wallpapersContent.distanceOf(wallpaperIndex)
                 readonly property real depth: Math.abs(distance)
-                readonly property bool selected: index === wallpapersContent.index
-                readonly property real shown: Math.max(0, Math.min(1, 3 - depth))
+                readonly property bool selected: wallpaperIndex === wallpapersContent.index
+                readonly property real shown: Math.max(0, Math.min(1, wallpapersContent.previewRadius - depth))
                 readonly property real entranceDelay: Math.min(depth, 2) * 0.18
                 readonly property real entrance: wallpapersContent.fluid
                     ? Motion.phase(wallpapersContent.galleryReveal, entranceDelay, entranceDelay + 0.60) : 1
                 property real hover: hit.containsMouse && selected && !wallpapersContent.dragging ? 1.02 : 1
                 Spring on hover {}
 
-                visible: shown > 0.001
+                visible: wallpaperIndex >= 0 && shown > 0.001
                 opacity: shown * entrance
                 width: wallpapersContent.cardW
                 height: wallpapersContent.cardH
@@ -258,9 +276,9 @@ Item
                     angle: -Math.max(-1, Math.min(1, card.distance)) * Math.min(44, card.depth * 32)
                 }
                 Accessible.role: Accessible.Button
-                Accessible.name: wallpapersContent.nameOf(modelData)
-                Accessible.description: modelData
-                Accessible.onPressAction: selected ? wallpapersContent.apply(index) : wallpapersContent.select(index)
+                Accessible.name: wallpapersContent.nameOf(wallpaper)
+                Accessible.description: wallpaper
+                Accessible.onPressAction: selected ? wallpapersContent.apply(wallpaperIndex) : wallpapersContent.select(wallpaperIndex)
 
                 Rectangle
                 {
@@ -284,13 +302,24 @@ Item
                     {
                         anchors.fill: parent
                         active: card.visible
-                        sourceComponent: WallpaperImage
+                        sourceComponent: Item
                         {
-                            wallpaper: card.modelData
-                            sourceSize: Qt.size(Math.round(wallpapersContent.cardW * 1.5), Math.round(wallpapersContent.cardH * 1.5))
-                            opacity: status === Image.Ready ? 1 : 0
-                            scale: 1.02
-                            Smooth on opacity { enabled: Config.animationsEnabled && wallpapersContent.reveal >= 1; duration: 220 }
+                            WallpaperImage
+                            {
+                                objectName: "wallpaperCardImage"
+                                readonly property real cover: Math.max(parent.width / Math.max(1, implicitWidth),
+                                    parent.height / Math.max(1, implicitHeight))
+                                anchors.centerIn: parent
+                                width: implicitWidth * cover
+                                height: implicitHeight * cover
+                                wallpaper: card.wallpaper
+                                sourceSize: wallpapersContent.previewSourceSize
+                                fillMode: Image.Stretch
+                                cache: false
+                                opacity: status === Image.Ready ? 1 : 0
+                                scale: 1.02
+                                Smooth on opacity { enabled: Config.animationsEnabled && wallpapersContent.reveal >= 1; duration: 220 }
+                            }
                         }
                     }
                     Rectangle
@@ -303,7 +332,7 @@ Item
                     {
                         anchors { right: parent.right; top: parent.top; margins: 12 }
                         width: 28; height: 28; radius: 9
-                        visible: card.modelData === wallpapersContent.currentWallpaper
+                        visible: card.wallpaper === wallpapersContent.currentWallpaper
                         color: Qt.rgba(0, 0, 0, 0.5)
                         ShellIcon { anchors.centerIn: parent; icon: wallpapersContent.lightIcon(Icon.check); size: 14 }
                     }
@@ -311,7 +340,7 @@ Item
                     {
                         anchors { left: parent.left; bottom: parent.bottom; margins: 12 }
                         width: 28; height: 28; radius: 9
-                        visible: ServiceAppearance.isVideo(card.modelData)
+                        visible: ServiceAppearance.isVideo(card.wallpaper)
                         color: Qt.rgba(0, 0, 0, 0.5)
                         ShellIcon { anchors.centerIn: parent; icon: wallpapersContent.lightIcon(Icon.mediaPlay); size: 14 }
                         Accessible.name: Tr.tr("wallpapers.video")
@@ -327,7 +356,7 @@ Item
                     onClicked:
                     {
                         wallpapersContent.forceActiveFocus(Qt.MouseFocusReason);
-                        card.selected ? wallpapersContent.apply(card.index) : wallpapersContent.select(card.index);
+                        card.selected ? wallpapersContent.apply(card.wallpaperIndex) : wallpapersContent.select(card.wallpaperIndex);
                     }
                 }
             }

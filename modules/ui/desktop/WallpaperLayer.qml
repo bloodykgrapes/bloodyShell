@@ -14,6 +14,7 @@ Item
         || (Config.desktopBlur === Enums.BlurWindowPresented && ServiceCompositor.workspaceHasWindowsOnOutput(outputName))
     readonly property bool videoActive: ServiceAppearance.videoPath !== "" && ServiceAppearance.videoComponent !== null
         && ServiceAppearance.videoComponent.status === Component.Ready
+    readonly property size blurTextureSize: Qt.size(Math.ceil((width + 64) / 2), Math.ceil((height + 64) / 2))
     property real blurProgress: blurRequested && !changing && (videoActive || image.status === Image.Ready) ? 1 : 0
     property string imagePath: ""
     property bool changing: ServiceAppearance.wallpaperBusy
@@ -53,10 +54,11 @@ Item
         anchors.margins: -32 * wallpaper.blurProgress
         opacity: wallpaper.videoActive ? 1 : wallpaper.blurProgress
         layer.enabled: wallpaper.blurProgress > 0
+        layer.textureSize: wallpaper.blurTextureSize
         layer.effect: MultiEffect
         {
             blurEnabled: true
-            blurMax: 32
+            blurMax: 16
             blur: wallpaper.blurProgress
             autoPaddingEnabled: false
         }
@@ -70,7 +72,7 @@ Item
             source: !wallpaper.videoActive && (wallpaper.blurRequested || wallpaper.blurProgress > 0)
                 && wallpaper.imagePath !== "" && !ServiceAppearance.isVideo(wallpaper.imagePath)
                 ? ServiceAppearance.fileUrl(wallpaper.imagePath) : ""
-            sourceSize: Qt.size(Math.ceil(wallpaper.width + 64), Math.ceil(wallpaper.height + 64))
+            sourceSize: wallpaper.blurTextureSize
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             cache: false

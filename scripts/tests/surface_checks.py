@@ -55,7 +55,8 @@ else:
     (base / "modules/ui/overlay/altTab/AltTabKeyboard.qml").write_text("import QtQuick\nItem { property var targetWindow }")
     media = base / "modules/services/ServiceMedia.qml"
     media.write_text(media.read_text().replace("readonly property var players: Mpris.players.values", "property var players: []"))
-    source = (base / "modules/ui/overlay/Overlay.qml").read_text().replace("PanelWindow\n{", "Item\n{\n    property Item contentItem: parent", 1)
+    source = (base / "modules/ui/overlay/Overlay.qml").read_text().replace(
+        "PanelWindow\n{", "Item\n{\n    property Item contentItem: parent\n    property bool backingWindowVisible: visible", 1)
     source = source.replace("    screen: Quickshell", "    property var screen: Quickshell")
     source = source.replace("    mask: authenticating", "    property var mask: authenticating")
     source = re.sub(r"^    (?:WlrLayershell\.|BackgroundEffect\.|exclusionMode:|exclusiveZone:).*\n", "", source, flags=re.M)

@@ -13,6 +13,7 @@ Controls.Popup
     required property Item host
     property Item panelContent: null
     readonly property bool suspended: OverlayState.popupsSuspended
+    readonly property bool revealPanel: Config.animationsFluid || ShellMaterial.backdrop
     property real reveal: 0
     property bool presenting: false
     property bool keyboardNavigation: false
@@ -37,8 +38,8 @@ Controls.Popup
     height: Math.min(preferredHeight > 0 ? preferredHeight : implicitHeight, Math.max(0, parent.height - 32))
     x: (parent.width - width) / 2
     y: (parent.height - height) / 2
-    opacity: suspended ? 0 : panelContent ? Motion.panelOpacity(reveal, Config.animationsFluid) : 1
-    scale: panelContent && !Config.animationsFluid ? 0.98 + 0.02 * reveal : 1
+    opacity: suspended ? 0 : panelContent ? Motion.panelOpacity(reveal, revealPanel) : 1
+    scale: panelContent && !revealPanel ? 0.98 + 0.02 * reveal : 1
 
     function syncModalState() { OverlayState.setPopupActive(popup, presenting && !suspended); }
     onPresentingChanged: syncModalState()
@@ -85,7 +86,7 @@ Controls.Popup
     contentItem: OverlayUI.OverlayPanel
     {
         objectName: "settingsPopupSurface"
-        reveal: Config.animationsFluid ? popup.reveal : 1
+        reveal: popup.revealPanel ? popup.reveal : 1
         surfaceColor: Theme.popupColorBackground
         useSurfaceMaterial: !ShellMaterial.blur
         radius: Theme.popupRadius

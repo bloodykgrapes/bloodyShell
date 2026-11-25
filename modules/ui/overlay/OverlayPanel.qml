@@ -10,7 +10,7 @@ Item
 
     required property real reveal
     property bool fluid: Config.animationsFluid
-    property bool revealSurface: fluid
+    property bool revealSurface: fluid || (decorated && useSurfaceMaterial && (ShellMaterial.blur || ShellMaterial.backdrop))
     property bool decorated: true
     property bool shadow: decorated
     property bool useSurfaceMaterial: true
@@ -61,7 +61,8 @@ Item
             radius: viewport.radius
             baseColor: panel.surfaceColor
             cutout: panel.surfaceCutout
-            materialEnabled: panel.useSurfaceMaterial && panel.reveal > 0.01
+            materialEnabled: panel.useSurfaceMaterial
+            transitionMaterial: true
             border.width: Math.min(panel.borderWidth, width / 2, height / 2)
             border.color: panel.borderColor
         }

@@ -365,7 +365,9 @@ ShellRoot {
                         if (mode === 0) check(card.amount === 1 && card.revealWidth === card.width && card.revealHeight === card.height, "Disabled animations still animate");
                         else check(card.amount > 0 && card.amount < 1 && card.revealWidth < card.width && card.revealHeight < card.height, "Context menu does not expand in both dimensions");
                         const fill = card.surface.materialSurface;
-                        check(card.opacity === 1 && fill.blurActive && fill.blurMask.item === fill
+                        const bounds = fill.mapToItem(window.contentItem, 0, 0, fill.width, fill.height);
+                        check(card.opacity === 1 && fill.blurActive && fill.blurMask.x === Math.round(bounds.x)
+                            && fill.blurMask.y === Math.round(bounds.y) && fill.blurMask.width > 0 && fill.blurMask.height > 0
                             && fill.width === card.revealWidth && fill.height === card.revealHeight, "Menu blur does not match the growing surface");
                         const left = card.mapToItem(window.contentItem,0,0), right = card.mapToItem(window.contentItem,card.width,card.height);
                         check(left.x >= 8 && left.y >= 8 && right.x <= window.width-8 && right.y <= window.height-8, "Animation moves the menu beyond a screen edge");
@@ -424,7 +426,40 @@ ShellRoot {
                     closed();
                     check(ShellMaterial.regionsFor(window).length === 0, "Settings left a blur region behind");
                 }
-                console.log("DESKTOP_MENU_PASSED reveal, pointer origin, keyboard and outside input, rapid reopen, menu and Settings sidebar blur");
+
+                Config.set("themeAnimations", 0);
+                const staticMenu = openAt(Qt.point(80,120));
+                const staticCard = findChild(staticMenu, "desktopMenuCard");
+                const mask = staticCard.surface.materialSurface.blurMask;
+                const originalWidth = mask.width;
+                const originalX = mask.x;
+                OverlayState.origin = Qt.point(280,120);
+                check(mask.width === originalWidth && mask.x === originalX + 200,
+                    "Moving only a menu ancestor left the blur mask at its previous position");
+                until(()=>!overlay.refreshBlurOnFrame, "Blur refresh did not run after the backing window started rendering");
+                OverlayState.close(); closed();
+
+                OverlayState.show("launcher");
+                let panel = findChild(overlay.testPage.item, "centeredOverlayPanel");
+                let fill = panel.blurSurface;
+                check(fill && ShellMaterial.regionsFor(window).includes(fill.blurMask) && fill.color.a === 1,
+                    "First launcher frame exposed the background before its blur mask was active");
+                until(()=>fill.color.a < 1, "Launcher did not switch from its first-frame tint to blur");
+                OverlayState.close(); closed();
+
+                Config.set("themeAnimations", 1);
+                Config.set("wallpaperCurrent", String(Qt.resolvedUrl("fixture.png")).slice(7));
+                Config.set("shellSurface", Enums.SurfaceBackdrop);
+                const warmTexture = findChild(overlay, "shellWallpaperTexture");
+                until(()=>warmTexture?.status === Image.Ready, "Overlay did not warm the Backdrop sample");
+                OverlayState.show("launcher");
+                panel = findChild(overlay.testPage.item, "centeredOverlayPanel");
+                until(()=>panel.reveal > 0, "Backdrop launcher did not start opening");
+                check(panel.opacity === 1 && panel.partiallyRevealed,
+                    "Backdrop launcher exposed the background with a transparent surface fade");
+                OverlayState.close(); closed();
+
+                console.log("DESKTOP_MENU_PASSED geometry, input, rapid reopen, blur cleanup, and stable first frames");
                 Qt.quit();
             }
         }

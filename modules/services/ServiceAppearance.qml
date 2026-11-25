@@ -252,9 +252,10 @@ Singleton
         Config.set("wallpaperCurrent", data.path);
     }
 
-    ScreenImageCache
+    LockWallpaperPreview
     {
-        id: wallpaperCaches
+        id: lockPreview
+        visible: false
         source: serviceAppearance.fileUrl(serviceAppearance.wallpaperImage)
     }
 
