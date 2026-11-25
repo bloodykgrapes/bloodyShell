@@ -11,8 +11,8 @@ Item
     id: settingsContent
 
     property bool paintBackground: true
-    property bool navigationMaterialEnabled: true
-    readonly property alias navigationSurface: sidebar
+    property Item navigationSurfaceHost: null
+    readonly property alias navigationSurface: sidebar.surface
     readonly property var tabs: Registry.settings
     readonly property int current: Math.max(0, Math.min(tabs.length - 1, OverlayState.settingsPage))
 
@@ -42,7 +42,7 @@ Item
         sourceComponent: SurfaceCutout
         {
             color: Theme.settingsColorBackground
-            cutout: sidebar
+            cutout: settingsContent.navigationSurface
         }
     }
 
@@ -56,8 +56,7 @@ Item
         y: 8
         width: Math.min(settingsContent.width < 900 ? Theme.settingsSidebar - 16 : Theme.settingsSidebar, Math.max(172, settingsContent.width * 0.3))
         height: Math.max(0, parent.height - 16)
-        radius: Theme.settingsRadius - 8
-        materialEnabled: settingsContent.navigationMaterialEnabled
+        surfaceHost: settingsContent.navigationSurfaceHost
 
         tabs: settingsContent.tabs
         groups: Registry.settingsGroups

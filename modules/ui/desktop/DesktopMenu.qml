@@ -3,7 +3,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 
-import "../../animations"
 import "../../common"
 import "../../core"
 import "../overlay"
@@ -17,20 +16,12 @@ OverlayView
     readonly property real originX: OverlayState.origin.x
     readonly property real originY: OverlayState.origin.y
     property int selected: -1
-    property real progress: 0
-    readonly property real shown: Config.animationsEnabled ? progress : open ? 1 : 0
 
-    Ease on progress
-    {
-        duration: desktopMenu.open ? Theme.animationDurationControl : Theme.animationDurationClose
-        curve: desktopMenu.open ? Theme.easingEmphasized : Theme.easingAccelerate
-    }
     onOpenChanged: if (ready) updateMenu()
     onReadyChanged: if (ready) updateMenu()
 
     function updateMenu()
     {
-        progress = open ? 1 : 0;
         if (!open) return;
         selected = -1;
         Qt.callLater(() => { if (desktopMenu.open) content.forceActiveFocus(); });
@@ -78,7 +69,7 @@ OverlayView
             height: entries.implicitHeight + 16
             radius: Theme.radiusLarge
             color: Theme.colorSolid
-            progress: desktopMenu.shown
+            progress: Config.animationsEnabled ? desktopMenu.reveal : desktopMenu.open ? 1 : 0
             origin: Qt.point((desktopMenu.originX - x) / Math.max(1, width), (desktopMenu.originY - y) / Math.max(1, height))
 
             MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }

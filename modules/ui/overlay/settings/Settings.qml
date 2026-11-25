@@ -18,6 +18,7 @@ OverlayView
         width: Math.max(0, Math.min(Theme.settingsWidth, parent.width - 64))
         height: Math.max(0, Math.min(Theme.settingsHeight, parent.height - 64))
         reveal: settings.reveal
+        revealSurface: true
         surfaceCutout: content.navigationSurface
         useSurfaceMaterial: false
 
@@ -28,7 +29,7 @@ OverlayView
             id: content
             anchors.fill: parent
             paintBackground: false
-            navigationMaterialEnabled: !panel.partiallyRevealed && panel.reveal >= 0.96
+            navigationSurfaceHost: panel.surfaceLayer
         }
     }
 }

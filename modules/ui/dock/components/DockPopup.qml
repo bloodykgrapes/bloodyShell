@@ -38,7 +38,7 @@ Item
     Glide on panelW { enabled: Config.animationsEnabled && dockPopup.morph }
     Glide on panelH { enabled: Config.animationsEnabled && dockPopup.morph }
 
-    readonly property bool morph: sheet.opacity > 0.5
+    readonly property bool morph: sheet.amount > 0.5
 
     width:  horizontal ? panelW : panelW + gap
     height: horizontal ? panelH + gap : panelH
@@ -72,10 +72,13 @@ Item
         enabled: Config.animationsEnabled && dockPopup.morph && !dockPopup.horizontal
     }
 
-    visible: sheet.opacity > 0.01
+    visible: open || sheet.amount > 0
+    enabled: open
 
     HoverHandler { id: hover }
     readonly property bool hovered: hover.hovered
+
+    EdgeReveal { id: reveal; opened: dockPopup.open }
 
     MenuReveal
     {
@@ -90,13 +93,7 @@ Item
         origin: dockPopup.horizontal ? Qt.point(0.5, dockPopup.side === Enums.EdgeTop ? 0 : 1)
             : Qt.point(dockPopup.side === Enums.EdgeLeft ? 0 : 1, 0.5)
 
-        property real reveal: dockPopup.open ? 1 : 0
-        progress: Config.animationsEnabled ? reveal : dockPopup.open ? 1 : 0
-        Ease on reveal
-        {
-            duration: dockPopup.open ? Theme.animationDurationControl : Theme.animationDurationClose
-            curve: dockPopup.open ? Theme.easingEmphasized : Theme.easingAccelerate
-        }
+        progress: Config.animationsEnabled ? reveal.progress : dockPopup.open ? 1 : 0
 
         MouseArea { anchors.fill: parent }
 

@@ -5,7 +5,7 @@ import QtQuick
 import "../../../../common"
 import "../../../../core"
 
-ShellSurface
+Item
 {
     id: group
 
@@ -13,10 +13,11 @@ ShellSurface
     required property var groups
     required property int current
     property bool settled: false
+    property Item surfaceHost: null
+    readonly property alias surface: paint
 
     signal selected(int index)
 
-    baseColor: Theme.settingsColorSidebar
     Component.onCompleted: revealTimer.restart()
 
     function revealTab()
@@ -45,6 +46,25 @@ ShellSurface
         {
             if (group.revealTab()) group.settled = true;
         }
+    }
+
+    ShellSurface
+    {
+        id: paint
+        objectName: "settingsSidebarSurface"
+        parent: group.surfaceHost ?? group
+        z: group.surfaceHost ? 0 : -1
+
+        // Paint just the exposed sidebar so the compositor and scrim use the same shape.
+        readonly property rect bounds: group.surfaceHost ? ShellMaterial.boundsIn(group, group.surfaceHost)
+            : Qt.rect(0, 0, group.width, group.height)
+        x: Math.max(0, bounds.x)
+        y: Math.max(0, bounds.y)
+        width: Math.max(0, Math.min(parent.width, bounds.x + bounds.width) - x)
+        height: Math.max(0, Math.min(parent.height, bounds.y + bounds.height) - y)
+        visible: group.visible
+        radius: Math.min(Theme.settingsRadius - 8, width / 2, height / 2)
+        baseColor: Theme.settingsColorSidebar
     }
 
     Flickable
@@ -78,7 +98,7 @@ ShellSurface
             width: tabColumn.width
             height: entry ? entry.tabHeight : Theme.settingsTabHeight
             visible: entry !== null
-            color: Qt.tint(group.baseColor, Theme.accentShell ? Theme.accentAlpha(0.22) : Theme.inkAlpha(0.1))
+            color: Qt.tint(Theme.settingsColorSidebar, Theme.accentShell ? Theme.accentAlpha(0.22) : Theme.inkAlpha(0.1))
             scale: entry ? entry.tabScale : 1
             animate: group.settled
         }

@@ -8,12 +8,13 @@ Item
     id: surface
 
     property color color: "#000000"
+    property real radius: 0
     property Item cutout: null
     readonly property bool hasCutout: !!cutout && cutout.visible && cutout.width > 0 && cutout.height > 0
     readonly property rect opening: hasCutout ? ShellMaterial.boundsIn(cutout, surface) : Qt.rect(0, 0, 0, 0)
     readonly property real cornerScale: hasCutout ? Math.min(opening.width / cutout.width, opening.height / cutout.height) : 0
 
-    Rectangle { anchors.fill: parent; color: surface.color; visible: !surface.hasCutout }
+    Rectangle { anchors.fill: parent; color: surface.color; radius: surface.radius; visible: !surface.hasCutout }
 
     Shape
     {
@@ -27,7 +28,7 @@ Item
             fillColor: surface.color
             fillRule: ShapePath.OddEvenFill
 
-            PathRectangle { width: surface.width; height: surface.height }
+            PathRectangle { width: surface.width; height: surface.height; radius: surface.radius }
             PathRectangle
             {
                 x: surface.opening.x

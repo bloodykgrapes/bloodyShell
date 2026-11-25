@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import "../animations/OverlayMotion.js" as Motion
 import "../core"
 
 Item
@@ -19,13 +20,18 @@ Item
     readonly property real amount: Math.max(0, Math.min(1, progress))
     readonly property real anchorX: Math.max(0, Math.min(1, origin.x))
     readonly property real anchorY: Math.max(0, Math.min(1, origin.y))
-    readonly property real revealWidth: width * (1 - (Config.animationsFluid ? 0.35 : 0.18) * (1 - amount))
-    readonly property real revealHeight: height * (1 - (Config.animationsFluid ? 0.65 : 0.40) * (1 - amount))
+    readonly property real revealWidth: width * amount
+    readonly property real revealHeight: height * amount
     readonly property alias surface: panel
 
-    opacity: amount
-
-    SurfaceShadow { surface: panel; cornerRadius: menuReveal.radius; frosted: panel.materialSurface.frosted }
+    SurfaceShadow
+    {
+        surface: panel
+        cornerRadius: panel.radius
+        frosted: panel.materialSurface.frosted
+        cached: menuReveal.amount === 1
+        opacity: menuReveal.amount
+    }
 
     RoundedShellSurface
     {
@@ -35,11 +41,12 @@ Item
         y: (menuReveal.height - height) * menuReveal.anchorY
         width: menuReveal.revealWidth
         height: menuReveal.revealHeight
+        visible: width > 1 && height > 1
         baseColor: menuReveal.color
-        radius: menuReveal.radius
-        border.width: menuReveal.borderWidth
+        radius: Math.min(menuReveal.radius, width / 2, height / 2)
+        border.width: Math.min(menuReveal.borderWidth, width / 2, height / 2)
         border.color: menuReveal.borderColor
-        materialEnabled: menuReveal.useSurfaceMaterial && menuReveal.amount > 0.01
+        materialEnabled: menuReveal.useSurfaceMaterial
 
         Item
         {
@@ -49,6 +56,7 @@ Item
             y: -panel.y
             width: menuReveal.width
             height: menuReveal.height
+            opacity: Motion.phase(menuReveal.amount, 0.12, 0.68)
         }
     }
 }

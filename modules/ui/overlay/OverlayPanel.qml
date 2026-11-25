@@ -10,6 +10,7 @@ Item
 
     required property real reveal
     property bool fluid: Config.animationsFluid
+    property bool revealSurface: fluid
     property bool decorated: true
     property bool shadow: decorated
     property bool useSurfaceMaterial: true
@@ -21,13 +22,14 @@ Item
 
     default property alias content: body.data
     readonly property alias surface: viewport
+    readonly property Item surfaceLayer: paint.surfaceLayer
     readonly property Item blurSurface: paint.materialSurface.blurActive ? paint.materialSurface : null
     readonly property alias contentItem: body
     readonly property real extent: Motion.extent(reveal, width, height)
-    readonly property bool partiallyRevealed: fluid && (viewport.width < width || viewport.height < height)
+    readonly property bool partiallyRevealed: revealSurface && (viewport.width < width || viewport.height < height)
 
     objectName: "centeredOverlayPanel"
-    opacity: Motion.panelOpacity(reveal, fluid)
+    opacity: Motion.panelOpacity(reveal, revealSurface)
     layer.enabled: decorated && opacity > 0 && opacity < 1
     layer.smooth: true
 
@@ -44,8 +46,8 @@ Item
     {
         id: viewport
 
-        width: panel.fluid ? Math.min(panel.width, panel.extent) : panel.width
-        height: panel.fluid ? Math.min(panel.height, panel.extent) : panel.height
+        width: panel.revealSurface ? Math.min(panel.width, panel.extent) : panel.width
+        height: panel.revealSurface ? Math.min(panel.height, panel.extent) : panel.height
         x: (panel.width - width) / 2
         y: (panel.height - height) / 2
         readonly property real radius: Math.min(panel.radius, width / 2, height / 2)
@@ -74,7 +76,7 @@ Item
             height: panel.height
             x: -viewport.x
             y: -viewport.y
-            opacity: panel.fluid && panel.decorated ? Motion.contentOpacity(panel.reveal) : 1
+            opacity: !panel.revealSurface || !panel.decorated ? 1 : panel.fluid ? Motion.contentOpacity(panel.reveal) : panel.reveal
             layer.enabled: opacity > 0 && opacity < 1
             layer.smooth: true
         }

@@ -1224,6 +1224,8 @@ ShellRoot {
                 until(()=>Config.initialized && window.frame && window.frame.bar && window.frame.dock,"Frame did not initialize",2000);
                 const frame=window.frame, check=window.check;
                 const send=event=>window.send(event), tile=(...args)=>window.tile(...args), fullscreen=on=>window.fullscreen(on), find=(...args)=>window.find(...args);
+                ServiceCompositor.backend.runningVersion = "niri 26.04";
+                Config.set("shellSurface", Enums.SurfaceBlur);
                 Config.set("barHideAuto",false); Config.set("dockHideAuto",false);
                 Config.set("barHideSmart",true); Config.set("dockHideSmart",true);
                 ServiceCompositor.backend.testOutputs=[outputA,outputB];
@@ -1355,10 +1357,17 @@ ShellRoot {
                         check(dockMenu && dockMenu.width>0 && dockMenu.height>0,"Dock context menu has no surface");
                         if(mode===0) check(dockMenu.revealWidth===dockMenu.width && dockMenu.revealHeight===dockMenu.height,"Disabled dock menu animation retained a partial size");
                         else check(dockMenu.amount>0 && dockMenu.amount<1 && dockMenu.revealWidth<dockMenu.width && dockMenu.revealHeight<dockMenu.height,"Dock context menu does not expand in both dimensions");
+                        const fill=dockMenu.surface.materialSurface;
+                        check(dockMenu.opacity===1 && fill.blurActive && fill.width===dockMenu.revealWidth && fill.height===dockMenu.revealHeight,
+                            "Dock menu blur does not match the growing surface");
                         const dockSide=Config.dockSide;
                         check(dockMenu.anchorX===(dockSide===Enums.EdgeLeft?0:dockSide===Enums.EdgeRight?1:0.5) && dockMenu.anchorY===(dockSide===Enums.EdgeTop?0:dockSide===Enums.EdgeBottom?1:0.5),"Dock menu expands away from the wrong edge");
+                        until(()=>dockMenu.amount===1,"Dock context menu did not finish opening");
                         fullscreen(true); wait(40);
                         check(!frame.bar.revealWanted && !frame.dock.revealWanted && !frame.dock.keyboardWanted,"Entering fullscreen retained the dock menu");
+                        if(mode>0) check(fill.blurActive && fill.width<dockMenu.width && fill.height<dockMenu.height,
+                            "Dock menu blur does not match the shrinking surface");
+                        until(()=>!fill.blurActive,"Closing the dock menu retained its blur region");
                         Config.set("barHideAuto",false); Config.set("dockHideAuto",false);
                         fullscreen(false); wait(30);
                         check(frame.bar.revealWanted && frame.dock.revealWanted && !frame.bar.autoHide && !frame.dock.autoHide,"Fullscreen exit changed configured panel behavior");

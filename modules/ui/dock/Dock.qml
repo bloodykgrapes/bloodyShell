@@ -219,7 +219,7 @@ Item
 
         x: popup.x
         y: popup.y
-        width: popup.visible ? popup.width : 0
-        height: popup.visible ? popup.height : 0
+        width: popup.open ? popup.width : 0
+        height: popup.open ? popup.height : 0
     }
 }

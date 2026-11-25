@@ -331,6 +331,7 @@ import QtQuick.Window
 import QtTest
 import Quickshell
 import "modules/core"
+import "modules/services"
 import "modules/ui/overlay"
 
 ShellRoot {
@@ -352,51 +353,78 @@ ShellRoot {
             function closed() { until(()=>!overlay.testPage.item && !OverlayState.active, "Menu did not finish closing"); }
             function exercise() {
                 window.requestActivate();
+                ServiceCompositor.backend.runningVersion = "niri 26.04";
+                Config.set("shellSurface", Enums.SurfaceBlur);
+                check(ShellMaterial.blur, "Blur fixture did not enable compositor blur");
                 for (const mode of [0,1,2]) {
                     Config.set("themeAnimations",mode);
                     for (const point of [Qt.point(20,20),Qt.point(780,20),Qt.point(20,580),Qt.point(780,580)]) {
                         const menu = openAt(point), card = findChild(menu,"desktopMenuCard");
                         wait(25);
                         check(card && menu.selected === -1, "Opening retained the previous selection");
-                        if (mode === 0) check(card.opacity === 1 && card.revealWidth === card.width && card.revealHeight === card.height, "Disabled animations still animate");
-                        else check(card.opacity > 0 && card.opacity < 1 && card.revealWidth < card.width && card.revealHeight < card.height, "Context menu does not expand in both dimensions");
+                        if (mode === 0) check(card.amount === 1 && card.revealWidth === card.width && card.revealHeight === card.height, "Disabled animations still animate");
+                        else check(card.amount > 0 && card.amount < 1 && card.revealWidth < card.width && card.revealHeight < card.height, "Context menu does not expand in both dimensions");
+                        const fill = card.surface.materialSurface;
+                        check(card.opacity === 1 && fill.blurActive && fill.blurMask.item === fill
+                            && fill.width === card.revealWidth && fill.height === card.revealHeight, "Menu blur does not match the growing surface");
                         const left = card.mapToItem(window.contentItem,0,0), right = card.mapToItem(window.contentItem,card.width,card.height);
                         check(left.x >= 8 && left.y >= 8 && right.x <= window.width-8 && right.y <= window.height-8, "Animation moves the menu beyond a screen edge");
                         check(card.anchorX === Math.max(0,Math.min(1,(point.x-card.x)/card.width)) && card.anchorY === Math.max(0,Math.min(1,(point.y-card.y)/card.height)), "Menu expands from the wrong origin");
                         const anchor = card.mapToItem(window.contentItem, card.width*card.anchorX, card.height*card.anchorY);
                         const shownAnchor = card.surface.mapToItem(window.contentItem, card.revealWidth*card.anchorX, card.revealHeight*card.anchorY);
                         check(Math.abs(anchor.x-shownAnchor.x)<0.01 && Math.abs(anchor.y-shownAnchor.y)<0.01,"Expansion moves its pointer anchor");
-                        wait(Theme.animationDurationControl+40);
-                        check(card.opacity === 1 && card.revealWidth === card.width && card.revealHeight === card.height, "Entrance did not settle");
+                        until(()=>card.amount === 1, "Entrance did not settle");
                         keyClick(Qt.Key_Down); check(menu.selected === 0, "Menu did not receive keyboard focus");
                         keyClick(Qt.Key_Escape);
                         if (mode !== 0) {
                             wait(25);
-                            check(card.opacity > 0 && card.opacity < 1 && card.revealWidth < card.width && card.revealHeight < card.height, "Context menu does not shrink on close");
+                            check(card.opacity === 1 && card.amount > 0 && card.amount < 1 && fill.blurActive
+                                && fill.width < card.width && fill.height < card.height, "Menu blur does not match the shrinking surface");
                         }
                         closed();
+                        check(ShellMaterial.regionsFor(window).length === 0, "Closed menu retained its blur region");
                     }
                     const menu = openAt(Qt.point(300,200));
-                    wait(Theme.animationDurationControl+40);
+                    until(()=>menu.reveal === 1, "Menu did not open before interruption");
                     keyClick(Qt.Key_Down); keyClick(Qt.Key_Down);
                     OverlayState.close();
                     if (mode !== 0) wait(30);
                     const reopened = openAt(Qt.point(600,400));
                     check(reopened.selected === -1, "Reopening did not reset keyboard selection");
-                    wait(Theme.animationDurationControl+40);
                     const card = findChild(reopened,"desktopMenuCard");
-                    check(card.opacity === 1, "Interrupted exit did not reopen");
+                    until(()=>card.amount === 1, "Interrupted exit did not reopen");
                     mouseClick(window.contentItem,2,2,Qt.RightButton,Qt.NoModifier,0);
                     closed();
                 }
                 Config.set("themeAnimations",2);
                 const menu = openAt(Qt.point(300,200)); wait(25);
                 Config.set("themeAnimations",0);
-                check(findChild(menu,"desktopMenuCard").opacity === 1, "Disabling animations leaves a partial fade");
+                check(findChild(menu,"desktopMenuCard").amount === 1, "Disabling animations leaves a partial reveal");
                 keyClick(Qt.Key_Down); keyClick(Qt.Key_Down); keyClick(Qt.Key_Return);
                 until(()=>overlay.testPage.item && overlay.testPage.item.name === "settings", "Keyboard action did not open settings");
                 OverlayState.close(); closed();
-                console.log("DESKTOP_MENU_PASSED entrance/exit, all screen corners, pointer origin, keyboard focus/actions, interrupted close, outside click and every animation mode");
+
+                for (const mode of [1,2]) {
+                    Config.set("themeAnimations", mode);
+                    OverlayState.show("settings");
+                    const settings = overlay.testPage.item;
+                    const panel = findChild(settings, "centeredOverlayPanel");
+                    const sidebar = findChild(settings, "settingsSidebar");
+                    const fill = findChild(panel.surfaceLayer, "settingsSidebarSurface");
+                    until(()=>fill.blurActive, "Settings sidebar did not acquire blur");
+                    check(panel.partiallyRevealed && fill.width < sidebar.width && fill.opacity === 1,
+                        "Settings sidebar waits until the overlay has opened to show its surface");
+                    check(settings.scrimCutout === fill && ShellMaterial.regionsFor(window).includes(fill.blurMask),
+                        "Settings sidebar tint, scrim opening and blur use different surfaces");
+                    until(()=>settings.reveal === 1, "Settings did not finish opening");
+                    check(fill.width === sidebar.width && fill.height === sidebar.height,
+                        "Sidebar surface did not reach its full size");
+                    OverlayState.close();
+                    until(()=>fill.width < sidebar.width && fill.blurActive, "Settings sidebar blur did not shrink on close");
+                    closed();
+                    check(ShellMaterial.regionsFor(window).length === 0, "Settings left a blur region behind");
+                }
+                console.log("DESKTOP_MENU_PASSED reveal, pointer origin, keyboard and outside input, rapid reopen, menu and Settings sidebar blur");
                 Qt.quit();
             }
         }
