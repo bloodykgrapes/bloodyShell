@@ -1,7 +1,6 @@
 """niri configuration edits and bundled config imports."""
 
 from pathlib import Path
-import fcntl
 import json
 import os
 import re
@@ -16,26 +15,32 @@ INFO = {"id":"niri", "name":"niri", "resource":"dots/niri", "config":"niri", "co
 
 # Transactional edits to bloodyShell's niri fragments.
 
-NIRI_MANAGED = ("00-environment.kdl", "01-layout.kdl", "02-window.kdl", "03-layer.kdl", "04-binds.kdl")
-NIRI_USER = ("05-user.kdl", "06-user-input.kdl", "07-user-output.kdl")
+NIRI_MANAGED = ("01-environment.kdl", "02-animations.kdl", "03-layer.kdl", "04-layout.kdl",
+                "05-window.kdl", "06-input.kdl", "07-binds.kdl")
+SETTINGS_FILE = "08-settings.kdl"
+USER_FILE = "09-user.kdl"
+NIRI_USER = (SETTINGS_FILE, USER_FILE)
 INFO["files"] = ("config.kdl", *("bloodyShell/" + name for name in (*NIRI_MANAGED, *NIRI_USER)))
 
 
-def niri_write(name, content):
-    if name not in NIRI_USER:
-        raise ValueError("Shell settings may only write user niri fragments: " + name)
-    config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "niri"
-    directory = config / "bloodyShell"
-    if not directory.is_dir():
+# Lock the parent directory, which stays in place while an import replaces the config.
+configuration_lock = FILES["directory_lock"]
+
+
+def niri_write(directory, edit):
+    config = directory.parent
+    if not config.parent.is_dir():
         raise ValueError("The bloodyShell niri configuration is not installed")
-    # Lock the directory itself so edits and validation stay serialized without a lock file.
-    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+    name = SETTINGS_FILE
+    with configuration_lock(config.parent):
+        if not directory.is_dir():
+            raise ValueError("The bloodyShell niri configuration is not installed")
         target, main_config = directory / name, config / "config.kdl"
         originals = {path: FILES["read_file"](path) for path in (target, main_config)}
-        if callable(content):
-            content = content(originals[target][0].decode("utf-8") if originals[target][0] is not None else "")
+        loader = (originals[main_config][0] or b"").decode("utf-8")
+        if re.search(r'^\s*include\s+"bloodyShell/(?:06-user-input|07-user-output)\.kdl"', loader, re.M):
+            raise ValueError("Import the current compositor configuration from Settings → Updates before changing niri settings")
+        content = edit((originals[target][0] or b"").decode("utf-8"))
         accepted = False
         try:
             FILES["atomic_write"](target.resolve(), (content.rstrip("\n") + "\n").encode(), originals[target][1])
@@ -55,8 +60,7 @@ def niri_write(name, content):
                         path.resolve().unlink(missing_ok=True)
                     else:
                         FILES["atomic_write"](path.resolve(), original[0], original[1])
-    finally:
-        os.close(descriptor)
+        return content
 
 
 def kdl_mask(text, strings=True):
@@ -110,30 +114,37 @@ def kdl_mask(text, strings=True):
 
 
 MOUSE_DEFAULTS = dict(speed=0.0, profile="adaptive", naturalScroll=False, leftHanded=False,
-                      scrollHorizontal=1.0, scrollVertical=1.0, middleEmulation=False)
+                      scrollHorizontal=1.0, scrollVertical=1.0, middleEmulation=False,
+                      scrollMethod="", scrollButton=-1, scrollButtonLock=False)
 MOUSE_NODES = {"speed": "accel-speed", "profile": "accel-profile", "naturalScroll": "natural-scroll",
                "leftHanded": "left-handed", "middleEmulation": "middle-emulation",
-               "scrollHorizontal": "scroll-factor", "scrollVertical": "scroll-factor"}
+               "scrollHorizontal": "scroll-factor", "scrollVertical": "scroll-factor",
+               "scrollMethod": "scroll-method", "scrollButton": "scroll-button", "scrollButtonLock": "scroll-button-lock"}
 
 
-def kdl_block(text, name, parent=None):
+def kdl_blocks(text, name, parent=None, argument=""):
     mask = kdl_mask(text)
+    search = kdl_mask(text, strings=False) if argument else mask
     start, end = (parent[1] + 1, parent[2] - 1) if parent else (0, len(text))
-    for match in re.finditer(r"\b" + re.escape(name) + r"\s*\{", mask[start:end]):
-        offset = start + match.start()
+    pattern = r"(?:^|(?<=[;\n{}]))[ \t]*(" + re.escape(name) + r")" + argument + r"\s*\{"
+    for match in re.finditer(pattern, search[start:end]):
+        offset, opening = start + match.start(1), start + match.end() - 1
         prefix = mask[start:offset]
         if prefix.count("{") != prefix.count("}") or prefix.rstrip().endswith("/-"):
             continue
-        opening = start + match.end() - 1
+        if mask[offset:offset + len(name)] != name or mask[opening] != "{":
+            continue
         depth, close = 1, opening + 1
         while close < end and depth:
-            if mask[close] == "{": depth += 1
-            elif mask[close] == "}": depth -= 1
+            depth += (mask[close] == "{") - (mask[close] == "}")
             close += 1
         if depth:
             raise ValueError("Unclosed " + name + " configuration")
-        return offset, opening, close
-    return None
+        yield (offset, opening, close), match.groups()[1:]
+
+
+def kdl_block(text, name, parent=None):
+    return next((span for span, _ in kdl_blocks(text, name, parent)), None)
 
 
 def mouse_nodes(text):
@@ -155,14 +166,17 @@ def mouse_nodes(text):
     return outer, block, nodes
 
 
-def mouse_settings(text):
+def mouse_settings(text, defaults=""):
     values = dict(MOUSE_DEFAULTS)
-    _, _, nodes = mouse_nodes(text)
+    _, block, nodes = mouse_nodes(text)
+    if block is None and defaults:
+        _, _, nodes = mouse_nodes(defaults)
     for name, _, _, value in nodes:
         if name == "accel-speed": values["speed"] = float(value)
-        elif name == "accel-profile":
+        elif name in ("accel-profile", "scroll-method"):
             raw = re.fullmatch(r'(?:r)?(#+)"(.*)"\1', value)
-            values["profile"] = raw.group(2) if raw else json.loads(value)
+            values["profile" if name == "accel-profile" else "scrollMethod"] = raw.group(2) if raw else json.loads(value)
+        elif name == "scroll-button": values["scrollButton"] = int(value, 0)
         elif name == "scroll-factor":
             number = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
             base = re.match(r"^(" + number + r")(?:\s|$)", value)
@@ -172,22 +186,32 @@ def mouse_settings(text):
                 if match: values[key] = float(match.group(1))
         else:
             key = next((key for key, node in MOUSE_NODES.items() if node == name), None)
-            if key in ("naturalScroll", "leftHanded", "middleEmulation"): values[key] = True
+            if key in ("naturalScroll", "leftHanded", "middleEmulation", "scrollButtonLock"): values[key] = True
     return values
 
 
-def mouse_config(text, changes):
+def mouse_config(text, changes, defaults=""):
     import math
     if not isinstance(changes, dict) or not changes or any(key not in MOUSE_NODES for key in changes):
         raise ValueError("Unknown mouse setting")
     for key, value in changes.items():
         if key == "profile": valid = value in ("flat", "adaptive")
+        elif key == "scrollMethod": valid = value in ("", "no-scroll", "on-button-down", "two-finger", "edge")
+        elif key == "scrollButton": valid = type(value) is int and -1 <= value <= 0xffff
         elif isinstance(MOUSE_DEFAULTS[key], bool): valid = isinstance(value, bool)
         else:
             limit = 1 if key == "speed" else 10
             valid = type(value) in (int, float) and math.isfinite(value) and -limit <= value <= limit
         if not valid: raise ValueError("Invalid mouse setting: " + key)
     outer, block, nodes = mouse_nodes(text)
+    if block is None and defaults:
+        # A new mouse block replaces the bundled block as a whole.
+        _, bundled, _ = mouse_nodes(defaults)
+        if bundled:
+            inherited = "\n    " + defaults[bundled[0]:bundled[2]] + "\n"
+            text = (text[:outer[2] - 1] + inherited + text[outer[2] - 1:] if outer
+                    else text.rstrip() + "\n\ninput {" + inherited + "}\n")
+            outer, block, nodes = mouse_nodes(text)
     values = mouse_settings(text) | changes
     selected = {MOUSE_NODES[key] for key in changes}
     lines = []
@@ -198,6 +222,8 @@ def mouse_config(text, changes):
             key = next(key for key, node in MOUSE_NODES.items() if node == name)
             if isinstance(values[key], bool):
                 if values[key]: lines.append(name)
+            elif key in ("scrollMethod", "scrollButton") and values[key] == MOUSE_DEFAULTS[key]:
+                continue
             else: lines.append(name + " " + json.dumps(values[key]))
     if block:
         rendered = {line.split()[0]: line for line in lines}
@@ -268,30 +294,57 @@ def keyboard_config(text, content):
     return text.rstrip() + "\n\ninput {\n" + block + "}\n"
 
 
+def output_blocks(text):
+    argument = r'\s+(?:"((?:\\.|[^"\\])*)"|r?(#+)"(.*?)"\3)'
+    for (start, _, end), (quoted, _, raw) in kdl_blocks(text, "output", argument=argument):
+        name = json.loads('"' + quoted + '"') if quoted is not None else raw
+        yield name, start, end
+
+
+def outputs_config(text, content):
+    updates = {}
+    last = 0
+    for name, start, end in output_blocks(content):
+        if content[last:start].strip() or name in updates:
+            raise ValueError("Invalid display configuration")
+        updates[name] = content[start:end]
+        last = end
+    if content[last:].strip():
+        raise ValueError("Invalid display configuration")
+    for name, start, end in reversed(list(output_blocks(text))):
+        if name in updates:
+            text = text[:start] + updates.pop(name) + text[end:]
+    return "\n\n".join(part for part in (text.rstrip(), *updates.values()) if part)
+
+
 def configuration_main():
     def terminate(signum, frame):
         raise SystemExit(128 + signum)
     signal.signal(signal.SIGTERM, terminate)
     directory = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "niri/bloodyShell"
-    input_file = directory / "06-user-input.kdl"
+    input_file = directory / SETTINGS_FILE
     if sys.argv[1:] == ["mouse-read"] or len(sys.argv) == 3 and sys.argv[1] == "mouse":
         available = directory.is_dir() and (directory.parent / "config.kdl").is_file() and shutil.which("niri") is not None
-        text = input_file.read_text() if input_file.exists() else ""
+        default_file = directory / "06-input.kdl"
         if sys.argv[1] == "mouse":
             if not available: raise ValueError("Mouse settings are unavailable: niri configuration is not installed")
-            niri_write(input_file.name, lambda current: mouse_config(current, json.loads(sys.argv[2])))
-            text = input_file.read_text()
-        print(json.dumps(dict(available=available, mouse=mouse_settings(text))))
+            def edit(current):
+                defaults = default_file.read_text() if default_file.is_file() else ""
+                return mouse_config(current, json.loads(sys.argv[2]), defaults)
+            values = mouse_settings(niri_write(directory, edit))
+        else:
+            current = input_file.read_text() if input_file.is_file() else ""
+            defaults = default_file.read_text() if default_file.is_file() else ""
+            values = mouse_settings(current, defaults)
+        print(json.dumps(dict(available=available, mouse=values)))
     elif len(sys.argv) == 3 and sys.argv[1] == "keyboard":
-        niri_write(input_file.name, lambda current: keyboard_config(current, sys.argv[2]))
-    elif len(sys.argv) == 4 and sys.argv[1] == "write":
-        niri_write(*sys.argv[2:])
+        niri_write(directory, lambda current: keyboard_config(current, sys.argv[2]))
+    elif len(sys.argv) == 3 and sys.argv[1] == "outputs":
+        niri_write(directory, lambda current: outputs_config(current, sys.argv[2]))
     elif len(sys.argv) == 4 and sys.argv[1] == "cursor":
-        directory = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "niri/bloodyShell"
-        path = directory / "06-user-input.kdl"
-        niri_write(path.name, lambda current: cursor_config(current, sys.argv[2], int(sys.argv[3])))
+        niri_write(directory, lambda current: cursor_config(current, sys.argv[2], int(sys.argv[3])))
     else:
-        raise ValueError("Usage: compositor config niri write USER_FILE CONTENT | cursor THEME SIZE | keyboard BLOCK | mouse-read | mouse JSON")
+        raise ValueError("Usage: compositor config niri outputs BLOCKS | cursor THEME SIZE | keyboard BLOCK | mouse-read | mouse JSON")
     return 0
 
 
@@ -315,10 +368,19 @@ def prepare(source, destination, staged):
     for name in user:
         target = fragment_dir / name
         if not target.exists() and not target.is_symlink():
-            shutil.copy2(source / "bloodyShell" / name, target)
+            old_names = ("06-user-input.kdl", "07-user-output.kdl") if name == SETTINGS_FILE else ("05-user.kdl",)
+            old_files = [destination / "bloodyShell" / old for old in old_names]
+            old_contents = [path.read_text() for path in old_files if path.is_file()]
+            if old_contents:
+                FILES["atomic_write"](target, ("\n\n".join(text.rstrip() for text in old_contents) + "\n").encode(), 0o600)
+            else:
+                shutil.copy2(source / "bloodyShell" / name, target)
     loader = staged / "config.kdl"
     loader.unlink(missing_ok=True)
-    loader.write_text("".join('include "bloodyShell/' + name + '"\n' for name in (*managed, *user)))
+    template = source / "config.kdl"
+    if not template.is_file() or template.is_symlink():
+        raise ValueError("Missing niri configuration loader")
+    shutil.copy2(template, loader)
     if shutil.which("niri"):
         result = subprocess.run(["niri", "validate", "-c", str(loader)], capture_output=True, text=True, timeout=10)
         if result.returncode:

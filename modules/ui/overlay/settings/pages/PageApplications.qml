@@ -1,5 +1,6 @@
 import QtQuick
 
+import "../../../../common"
 import "../../../../core"
 import "../../../../services"
 import "../components"
@@ -14,7 +15,6 @@ SettingsPage
 
     property string query: ""
     readonly property var apps: ServiceApplications.search(query.trim().toLocaleLowerCase())
-    onQueryChanged: resetScroll()
 
     onActiveChanged:
     {
@@ -27,14 +27,6 @@ SettingsPage
     }
     Component.onCompleted: ServiceApplications.setAutostartActive(pageApplications, active)
     Component.onDestruction: ServiceApplications.setAutostartActive(pageApplications, false)
-
-    header: SettingsInput
-    {
-        objectName: "applicationsSearch"
-        width: parent.width
-        placeholderText: Tr.tr("settings.applications.searchPlaceholder")
-        onTextEdited: value => pageApplications.query = value
-    }
 
     Parts.SettingsApplicationMenu
     {
@@ -50,68 +42,80 @@ SettingsPage
 
     SettingsAutostart { objectName: "autostartSection" }
     Parts.SettingsDefaultApplications { objectName: "defaultApplicationsSection" }
+    Parts.SettingsFileAssociations {}
 
-    SettingsGroup
+    SettingsRowGroup
     {
+        id: applicationsList
+        objectName: "applicationsList"
         title: Tr.tr("settings.applications.count").arg(pageApplications.apps.length)
 
-        Repeater
+        SettingsInput
         {
-            model: pageApplications.apps
+            objectName: "applicationsSearch"
+            icon: Icon.search
+            clearable: true
+            x: 3
+            width: Math.max(0, parent.width - 6)
+            placeholderText: Tr.tr("settings.applications.searchPlaceholder")
+            onTextEdited: value => pageApplications.query = value
+        }
+        Item { width: 1; height: 8 }
 
-            SettingsRow
+        Column
+        {
+            width: parent.width
+            spacing: 1
+
+            Repeater
             {
-                id: appRow
+                model: pageApplications.apps
 
-                required property var modelData
-
-                objectName: "applicationRow-" + modelData.id
-
-                icon: ServiceApplications.iconFor(modelData.id) || Icon.settingsApplications
-                label: modelData.name
-                description: modelData.id
-
-                TapHandler
+                SettingsRow
                 {
-                    parent: appRow
-                    acceptedButtons: Qt.RightButton
-                    onTapped: eventPoint => applicationMenu.openFor(appRow.modelData, appRow, eventPoint.position.x, eventPoint.position.y)
-                }
+                    id: appRow
 
-                Row
-                {
-                    spacing: 6
+                    required property var modelData
 
-                    SettingsButton
+                    objectName: "applicationRow-" + modelData.id
+
+                    icon: ServiceApplications.iconFor(modelData.id) || Icon.settingsApplications
+                    label: modelData.name
+                    description: modelData.id
+
+                    TapHandler
                     {
-                        id: menuButton
-                        objectName: "applicationMenu-" + appRow.modelData.id
-                        text: Tr.tr("settings.applications.actions")
-                        icon: Icon.chevronDown
-                        onClicked: applicationMenu.openFor(appRow.modelData, menuButton, 0, menuButton.height + 6)
-                        Keys.onPressed: event =>
-                        {
-                            if (event.key !== Qt.Key_Menu && !(event.key === Qt.Key_F10 && event.modifiers & Qt.ShiftModifier)) return;
-                            applicationMenu.openFor(appRow.modelData, menuButton, 0, menuButton.height + 6);
-                            event.accepted = true;
-                        }
+                        parent: appRow
+                        acceptedButtons: Qt.RightButton
+                        onTapped: eventPoint => applicationMenu.openFor(appRow.modelData, appRow, eventPoint.position.x, eventPoint.position.y)
                     }
-                    SettingsButton
+
+                    Row
                     {
-                        text: Tr.tr("settings.applications.launch")
-                        onClicked:
+                        spacing: 6
+
+                        Button
                         {
-                            ServiceApplications.launchEntry(appRow.modelData);
-                            OverlayState.hide("settings");
+                            id: menuButton
+                            objectName: "applicationMenu-" + appRow.modelData.id
+                            text: Tr.tr("settings.applications.actions")
+                            icon: Icon.chevronDown
+                            onClicked: applicationMenu.openFor(appRow.modelData, menuButton, 0, menuButton.height + 6)
+                            Keys.onPressed: event =>
+                            {
+                                if (event.key !== Qt.Key_Menu && !(event.key === Qt.Key_F10 && event.modifiers & Qt.ShiftModifier)) return;
+                                applicationMenu.openFor(appRow.modelData, menuButton, 0, menuButton.height + 6);
+                                event.accepted = true;
+                            }
                         }
                     }
                 }
             }
-        }
-        SettingsRow
-        {
-            visible: pageApplications.apps.length === 0
-            label: Tr.tr("settings.applications.noMatches")
+            SettingsRow
+            {
+                visible: pageApplications.apps.length === 0
+                label: Tr.tr("settings.applications.noMatches")
+            }
         }
     }
 }

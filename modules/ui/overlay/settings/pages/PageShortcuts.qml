@@ -71,7 +71,7 @@ SettingsPage
     {
         model: pageShortcuts.sections
 
-        SettingsGroup
+        SettingsRowGroup
         {
             id: section
             required property var modelData
@@ -170,10 +170,8 @@ SettingsPage
                     {
                         width: Math.min(keyName.implicitWidth + 16, Math.max(0, caps.width - (keyPart.index > 0 ? 14 : 0)))
                         height: keyName.implicitHeight + 10
-                        radius: 6
-                        color: Theme.colorField
-                        border.width: 1
-                        border.color: Theme.colorHairline
+                        radius: Theme.radiusSmall
+                        color: Theme.controlColorActive
 
                         ShellText
                         {

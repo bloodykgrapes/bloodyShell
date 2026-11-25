@@ -95,6 +95,7 @@ ShellRoot
     FileView { id: control; path: Paths.fixtureDir + "/control.json"; blockLoading: true; blockWrites: true }
     FileView { id: attemptLog; path: Paths.fixtureDir + "/attempts.jsonl"; blockLoading: true }
     FileView { id: checkLog; path: Paths.fixtureDir + "/checks.jsonl"; blockLoading: true }
+    FileView { id: recovery; path: Paths.stateDir + "/update-recovery.json"; blockWrites: true; printErrors: false }
     Component.onCompleted: { void ServiceUpdate.version; response({releases:releases}); }
     Timer
     {
@@ -188,7 +189,30 @@ ShellRoot
                 else if (tests.stage === 13 && Date.now() - tests.since > 180)
                 {
                     tests.check(!ServiceUpdate.installed && count === 4 && tests.checks() === tests.beforeChecks, "Development copy checked or installed an update");
-                    console.log("UPDATES_PASSED scheduling, auto opt-in, version readiness, stable/beta filtering, failures, retry and development protection");
+                    Config.updateAuto = false; Config.updateCheck = 0;
+                    Paths.shellDir = Paths.installDir;
+                    recovery.setText(JSON.stringify({tag:"v5.0.0",version:"1.0.0",error:"Restored the previous version"}));
+                    tests.next();
+                }
+                else if (tests.stage === 14 && ServiceUpdate.recovery && ServiceUpdate.recovery.tag === "v5.0.0")
+                {
+                    tests.check(ServiceUpdate.installFailed && ServiceUpdate.error === "Restored the previous version", "Rollback result was not restored in the Updates page");
+                    tests.response({releases:[{tag_name:"v5.0.0",draft:false,prerelease:false}]});
+                    ServiceUpdate.check(); tests.next();
+                }
+                else if (tests.stage === 15 && !ServiceUpdate.busy && ServiceUpdate.versionLatest === "5.0.0")
+                {
+                    Config.updateAuto = true; ServiceUpdate.autoUpdate(); tests.next();
+                }
+                else if (tests.stage === 16 && Date.now() - tests.since > 180)
+                {
+                    tests.check(count === 4, "Rolled-back release entered an automatic update/recovery loop");
+                    ServiceUpdate.update(); tests.next();
+                }
+                else if (tests.stage === 17 && count === 5 && ServiceUpdate.installFailed && !ServiceUpdate.busy)
+                {
+                    tests.check(tests.attempts()[4].args[2] === "v5.0.0", "Manual retry of a rolled-back release was blocked");
+                    console.log("UPDATES_PASSED scheduling, readiness, filtering, recovery results, automatic retry protection and manual retry");
                     Qt.quit();
                 }
             }
@@ -207,7 +231,7 @@ ShellRoot
         print(output)
         assert result.returncode == 0 and "UPDATES_PASSED" in output, "Automatic update regression failed"
         assert not re.search(r"UPDATES_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|is not a type", output), "Update service QML error"
-        assert len((base / "attempts.jsonl").read_text().splitlines()) == 4
+        assert len((base / "attempts.jsonl").read_text().splitlines()) == 5
     print("Automatic update checks passed with fake release responses and an isolated installer; no shell files were replaced.")
 
 

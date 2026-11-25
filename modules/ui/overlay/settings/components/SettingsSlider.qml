@@ -40,7 +40,7 @@ Common.InteractiveControl
     property real preferredWidth: 240
     implicitWidth: Math.round(preferredWidth)
     width: Theme.controlWidth(settingsSlider, implicitWidth)
-    height: Theme.settingsControlHeight
+    height: Theme.controlHeight
     opacity: enabled ? 1 : 0.4
     activeFocusOnTab: enabled
     Keys.onRightPressed: adjust(value + step)
@@ -64,12 +64,12 @@ Common.InteractiveControl
     {
         id: track
 
-        readonly property real inset: Math.min(9, width / 2)
+        readonly property real inset: Math.min(13, width / 2)
         readonly property real travel: Math.max(0, width - inset * 2)
         readonly property real position: inset + travel * settingsSlider.fraction
 
         anchors { left: parent.left; right: readout.left; rightMargin: 12; verticalCenter: parent.verticalCenter }
-        height: 8
+        height: 6
 
         Rectangle
         {
@@ -90,9 +90,9 @@ Common.InteractiveControl
         {
             x: track.position - width / 2
             anchors.verticalCenter: parent.verticalCenter
-            width: 32
-            height: width
-            radius: width / 2
+            width: 36
+            height: 26
+            radius: 13
             color: Theme.colorAccent
             opacity: area.pressed ? 0.18 : settingsSlider.hovered || settingsSlider.visualFocus ? 0.1 : 0
             scale: area.pressed || settingsSlider.hovered || settingsSlider.visualFocus ? 1 : 0.7
@@ -103,13 +103,29 @@ Common.InteractiveControl
 
         Rectangle
         {
+            x: thumb.x - 1
+            y: thumb.y + 1
+            width: thumb.width + 2
+            height: thumb.height + 1
+            radius: thumb.radius + 1
+            color: "#24000000"
+            scale: thumb.scale
+        }
+
+        Rectangle
+        {
+            id: thumb
             x: track.position - width / 2
             anchors.verticalCenter: parent.verticalCenter
-            width: 18
-            height: width
-            radius: width / 2
-            color: Theme.colorAccent
-            scale: area.pressed ? 0.9 : settingsSlider.hovered ? 1.1 : 1
+            width: 24
+            height: 16
+            radius: 8
+            gradient: Gradient
+            {
+                GradientStop { position: 0; color: "#ffffff" }
+                GradientStop { position: 1; color: "#ededf0" }
+            }
+            scale: area.pressed ? 1.08 : settingsSlider.hovered ? 1.04 : 1
 
             Smooth on scale {}
         }
@@ -128,6 +144,7 @@ Common.InteractiveControl
         {
             anchors.centerIn: parent
             label: settingsSlider.valueText
+            size: Theme.controlTextSize
             color: area.pressed || settingsSlider.visualFocus ? Theme.text1 : Theme.text2
             font.family: Theme.fontMono
 

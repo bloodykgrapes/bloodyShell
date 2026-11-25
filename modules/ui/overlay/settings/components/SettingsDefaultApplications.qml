@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 
+import "../../../../common"
 import "../../../../core"
 import "../../../../services"
 
@@ -26,7 +27,7 @@ SettingsDisclosure
             label: modelData.label
             valueText: modelData.shortcut
 
-            SettingsCombo
+            SettingsDropdown
             {
                 objectName: "defaultApplication-" + appRow.modelData.role
                 preferredWidth: 300
@@ -44,7 +45,7 @@ SettingsDisclosure
         visible: ServiceApplications.defaultsError !== ""
         label: Tr.tr("common.actionFailed")
         description: ServiceApplications.defaultsError
-        SettingsButton
+        Button
         {
             objectName: "refreshDefaultApplications"
             text: Tr.tr("common.refresh")

@@ -52,6 +52,7 @@ Common.InteractiveControl
 
     Rectangle
     {
+        objectName: "widgetSurface"
         anchors.fill: parent
         radius: widgetButton.radius
         color: widgetButton.backgroundColor
@@ -66,31 +67,28 @@ Common.InteractiveControl
         anchors.centerIn: parent
         spacing: widgetButton.hasIcon && widgetButton.hasText ? widgetButton.spacing : 0
 
-        Image
+        ShellIcon
         {
             visible: widgetButton.hasIcon
             anchors.verticalCenter: parent.verticalCenter
 
             layer.enabled: widgetButton.monochrome
+            layer.textureSize: sourceSize
+            layer.smooth: true
+            layer.mipmap: true
             layer.effect: Monochrome
             {
                 tint: widgetButton.lit ? Theme.text1 : widgetButton.color
                 Tint on tint { }
             }
 
-            source: widgetButton.icon
+            icon: widgetButton.icon
             opacity: widgetButton.lit ? 1 : 0.85
 
             Smooth on opacity {}
 
             width: widgetButton.hasIcon ? widgetButton.iconSize : 0
             height: widgetButton.iconSize
-            sourceSize: Qt.size(Math.round(widgetButton.iconSize * 1.1), Math.round(widgetButton.iconSize * 1.1))
-            mipmap: true
-
-            smooth: true
-            asynchronous: true
-            fillMode: Image.PreserveAspectFit
         }
 
         Text

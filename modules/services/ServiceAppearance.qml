@@ -47,7 +47,9 @@ Singleton
         flush.restart();
     }
 
-    readonly property string colorSchemeWanted: Config.themeStyle === Enums.ThemeLight ? "prefer-light" : "prefer-dark"
+    readonly property int effectiveThemeStyle: Config.themeStyle !== Enums.ThemeAuto ? Config.themeStyle
+        : Config.wallpaperCurrent && wallpaperThemeSample.light ? Enums.ThemeLight : Enums.ThemeDark
+    readonly property string colorSchemeWanted: effectiveThemeStyle === Enums.ThemeLight ? "prefer-light" : "prefer-dark"
     function syncColorScheme() { if (!schemeSyncFailed && Config.initialized && loaded && colorScheme !== colorSchemeWanted) setColorScheme(colorSchemeWanted) }
     onColorSchemeWantedChanged: { schemeSyncFailed = false; syncColorScheme(); }
 
@@ -195,10 +197,50 @@ Singleton
     }
 
     property string wallpaperError: ""
+    property int wallpaperRevision: 0
     property var wallpaperSnapshot: ({path: "", preview: ""})
     property var pendingWallpaperSnapshot: null
     readonly property string wallpaperImage: isVideo(Config.wallpaperCurrent)
         ? (wallpaperSnapshot.path === Config.wallpaperCurrent ? wallpaperSnapshot.preview : "") : Config.wallpaperCurrent
+    readonly property string wallpaperThemeRequest: Config.initialized && Config.themeStyle === Enums.ThemeAuto && wallpaperImage
+        ? JSON.stringify([wallpaperImage, wallpaperRevision]) : ""
+    property var wallpaperThemeSample: ({key: "", light: false})
+
+    onWallpaperThemeRequestChanged: if (wallpaperThemeRequest) brightnessTimer.restart()
+
+    Timer
+    {
+        id: brightnessTimer
+        interval: 80
+        onTriggered:
+        {
+            const key = serviceAppearance.wallpaperThemeRequest;
+            if (!key || brightnessProbe.busy || serviceAppearance.wallpaperThemeSample.key === key) return;
+            brightnessProbe.key = key;
+            brightnessProbe.run(Paths.commandFor("colors", ["brightness", serviceAppearance.wallpaperImage]));
+        }
+    }
+    CommandProcess
+    {
+        id: brightnessProbe
+        property string key: ""
+        stdout: StdioCollector { id: brightnessResult }
+        onCompleted: code =>
+        {
+            if (key !== serviceAppearance.wallpaperThemeRequest)
+            {
+                if (serviceAppearance.wallpaperThemeRequest) brightnessTimer.restart();
+                return;
+            }
+            let light = false;
+            if (code === 0)
+            {
+                try { light = JSON.parse(brightnessResult.text)?.light === true; }
+                catch (_) {}
+            }
+            serviceAppearance.wallpaperThemeSample = {key, light};
+        }
+    }
 
     function rememberWallpaper(path, preview)
     {
@@ -254,6 +296,7 @@ Singleton
     }
     function finishWallpaper(data)
     {
+        if (Config.wallpaperCurrent === data.path) wallpaperRevision++;
         commitWallpaper(data);
         clearPendingWallpaper();
         wallpaperApplied();
@@ -306,7 +349,6 @@ Singleton
                     {
                         const data = JSON.parse(wallpaperResult.text);
                         serviceAppearance.commitWallpaper(data);
-                        serviceAppearance.analyzeWallpaper(data.preview);
                     }
                     catch (error) { }
                 }
@@ -316,7 +358,6 @@ Singleton
             try
             {
                 const data = JSON.parse(wallpaperResult.text);
-                serviceAppearance.analyzeWallpaper(data.preview);
                 if (data.video)
                 {
                     if (serviceAppearance.readyVideoPath === data.path)
@@ -356,15 +397,12 @@ Singleton
                     return;
                 }
                 serviceAppearance.commitWallpaper(data);
-                serviceAppearance.analyzeWallpaper(data.preview);
                 if (data.video && serviceAppearance.prepareVideo()) serviceAppearance.videoPath = data.path;
             }
             catch (error) { serviceAppearance.wallpaperError = String(error); }
         }
     }
 
-    property string wallpaperAccent: ""
-    readonly property string accent: wallpaperAccent !== "" ? wallpaperAccent : "#8ecbff"
 
     property bool wallpaperInitialized: false
     function initializeWallpaper()
@@ -386,71 +424,5 @@ Singleton
     {
         target: Config
         function onInitializedChanged() { serviceAppearance.initializeWallpaper() }
-    }
-
-    function analyzeWallpaper(path)
-    {
-        if (!path) return;
-        sampler.running = false;
-        sampler.command = Paths.commandFor("wallpaper", ["colors", String(path).replace(/^file:\/\//, "")]);
-        sampler.running = true;
-    }
-
-    function hsl(r, g, b)
-    {
-        r /= 255; g /= 255; b /= 255;
-        const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
-        if (max === min) return [0, 0, l];
-        const d = max - min;
-        const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-        const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
-        return [h * 60, s, l];
-    }
-
-    function pickAccent(values)
-    {
-        const bins = new Array(36).fill(0), sumX = new Array(36).fill(0), sumY = new Array(36).fill(0), sumS = new Array(36).fill(0);
-        for (let i = 0; i + 2 < values.length; i += 3)
-        {
-            const [h, s, l] = hsl(values[i], values[i + 1], values[i + 2]);
-            if (l < 0.12 || l > 0.92 || s < 0.18) continue;
-            const w = s * (1 - Math.abs(l - 0.5));
-            const bin = Math.floor(h / 10) % 36;
-            bins[bin] += w;
-            sumX[bin] += Math.cos(h * Math.PI / 180) * w;
-            sumY[bin] += Math.sin(h * Math.PI / 180) * w;
-            sumS[bin] += s * w;
-        }
-
-        let best = -1, bestWeight = 0;
-        for (let b = 0; b < 36; b++)
-        {
-            const weight = bins[b] + 0.5 * (bins[(b + 35) % 36] + bins[(b + 1) % 36]);
-            if (weight > bestWeight) { bestWeight = weight; best = b; }
-        }
-        if (best < 0 || bestWeight < 0.5) return Qt.hsla(0, 0, 0.82, 1).toString();
-
-        let x = 0, y = 0, sat = 0, wsum = 0;
-        for (const b of [(best + 35) % 36, best, (best + 1) % 36]) { x += sumX[b]; y += sumY[b]; sat += sumS[b]; wsum += bins[b]; }
-        const hue = ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
-        const saturation = Math.max(0.55, Math.min(0.9, (sat / wsum) * 1.1));
-        return Qt.hsla(hue / 360, saturation, 0.78, 1).toString();
-    }
-
-    Process
-    {
-        id: sampler
-        stdout: StdioCollector
-        {
-            onStreamFinished:
-            {
-                try
-                {
-                    const values = JSON.parse(text);
-                    if (values.length >= 30) serviceAppearance.wallpaperAccent = serviceAppearance.pickAccent(values);
-                }
-                catch (error) { if (Config.debug) console.warn("Could not sample wallpaper colors"); }
-            }
-        }
     }
 }

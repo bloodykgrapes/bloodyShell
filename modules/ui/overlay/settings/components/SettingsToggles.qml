@@ -51,7 +51,7 @@ Item
                 readonly property bool on: settingsToggles.checked.indexOf(modelData.value) >= 0
 
                 width: Math.min(settingsToggles.optionWidths[index], settingsToggles.width)
-                height: Theme.settingsControlHeight
+                height: Theme.controlHeight
                 radius: height / 2
                 activeFocusOnTab: enabled
                 border.width: visualFocus ? 1 : 0

@@ -33,6 +33,7 @@ Widget
     readonly property bool compact: !notification && (vertical || limit < 120)
     readonly property real surfaceReveal: host ? host.islandReveal : 1
     readonly property real menuProgress: host ? host.islandMenuProgress : 0
+    readonly property real compactReveal: Math.max(0, 1 - menuProgress / 0.22)
     implicitWidth: recording ? 10 : vertical && !notification ? 32 : hit.implicitWidth
     implicitHeight: hit.implicitHeight
     active: menuOpen || presentation.kind !== ""
@@ -99,7 +100,8 @@ Widget
     {
         id: hit
         objectName: "islandCompactContent"
-        visible: !island.menuOpen
+        visible: island.compactReveal > 0
+        enabled: !island.menuOpen
         implicitWidth: island.recording ? 10 : island.notification
             ? island.vertical ? Math.min(340, Math.max(160, (QsWindow.window ? QsWindow.window.width : 400) - 64)) : island.limit
             : island.vertical ? 32 : Math.min(island.limit, Math.max(130, textProbe.advanceWidth + 76))
@@ -107,7 +109,7 @@ Widget
         hoverEnabled: true
         acceptedButtons: island.recording || island.shown.kind === "osd" || island.shown.kind === "recording" ? Qt.NoButton : Qt.LeftButton | Qt.MiddleButton
         cursorShape: acceptedButtons !== Qt.NoButton ? Qt.PointingHandCursor : Qt.ArrowCursor
-        opacity: island.contentOpacity * island.surfaceReveal * (1 - island.menuProgress)
+        opacity: island.contentOpacity * island.surfaceReveal * island.compactReveal
         transform: Translate
         {
             x: island.vertical ? island.contentShift * (island.side === Enums.EdgeLeft ? 1 : -1) : 0
@@ -152,7 +154,7 @@ Widget
             {
                 id: art
                 anchors.fill: parent
-                source: !island.menuOpen && island.shown.kind === "media" ? island.shown.art || "" : ""
+                source: island.shown.kind === "media" ? island.shown.art || "" : ""
                 sourceSize: Qt.size(64, 64)
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true

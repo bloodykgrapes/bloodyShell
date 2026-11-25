@@ -46,7 +46,7 @@ Item
         id: action
         anchors { right: parent.right; rightMargin: 4; verticalCenter: parent.verticalCenter }
         active: menuLabel.actionText !== ""
-        sourceComponent: ActionButton
+        sourceComponent: Button
         {
             height: 28
             text: menuLabel.actionText

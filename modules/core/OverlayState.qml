@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 
+import "../animations/OverlayMotion.js" as Motion
 import "../src/Clients.js" as Clients
 
 Singleton
@@ -10,6 +11,7 @@ Singleton
     id: overlayState
 
     readonly property var windows: Registry.windows
+    readonly property int closeDuration: Config.animationsFluid ? Motion.fluidCloseDuration : Theme.animationDurationClose
     property string current: ""
     property string mounted: ""
     property string stacked: ""
@@ -88,13 +90,13 @@ Singleton
     Timer
     {
         id: unmountTimer
-        interval: Config.animationsEnabled ? Theme.animationDurationClose + 50 : 0
+        interval: Config.animationsEnabled ? overlayState.closeDuration + 50 : 0
         onTriggered: if (!overlayState.active) { overlayState.stacked = ""; overlayState.mounted = ""; }
     }
     Timer
     {
         id: stackedUnmountTimer
-        interval: Config.animationsEnabled ? Theme.animationDurationClose + 50 : 0
+        interval: Config.animationsEnabled ? overlayState.closeDuration + 50 : 0
         onTriggered: if (overlayState.current !== overlayState.stacked) overlayState.stacked = ""
     }
 }

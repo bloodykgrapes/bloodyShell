@@ -202,6 +202,123 @@ ShellRoot {
     print("Unsupported compositor keeps empty state, hides unavailable capabilities, and performs no niri commands or config writes.")
 
 
+def niri_ipc_checks():
+    prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
+    with tempfile.TemporaryDirectory(prefix="bs-niri-ipc-") as temporary:
+        base = Path(temporary)
+        env = prepare(base)
+        env.update(NIRI_SOCKET=str(base / "niri.sock"), QS_DISABLE_CRASH_HANDLER="1")
+        env.pop("WAYLAND_DISPLAY", None)
+        fake = base / "bin/niri"
+        fake.write_text('#!/bin/sh\ntouch "$TEST_SCREENSHOT_BASE/unexpected-niri-command"\nexit 1\n')
+        fake.chmod(0o700)
+        (base / "shell.qml").write_text('''import QtQuick
+import Quickshell
+import Quickshell.Io
+import "modules/services"
+
+ShellRoot {
+    id: fixture
+    property int streams: 0
+    property var actions: []
+    readonly property var backend: ServiceCompositor.backend
+    function check(value, message) { if (!value) throw new Error(message); }
+    SocketServer {
+        id: server
+        path: Quickshell.env("NIRI_SOCKET")
+        active: true
+        handler: Socket {
+            id: peer
+            parser: SplitParser {
+                onRead: line => {
+                    const request = JSON.parse(line);
+                    let messages;
+                    if (request === "EventStream") {
+                        fixture.streams++;
+                        const id = fixture.streams;
+                        messages = [
+                            {Ok:"Handled"},
+                            {WorkspacesChanged:{workspaces:[
+                                {id:11,idx:1,output:"A",is_focused:true,is_active:true},
+                                {id:22,idx:1,output:"B",is_active:true}]}},
+                            {UnknownEvent:{id:id}},
+                            {WindowsChanged:{windows:[{id:id,title:"Window",workspace_id:11,is_focused:true}]}}
+                        ];
+                    } else if (request === "Outputs") {
+                        messages = [{Ok:{Outputs:{B:{name:"B"},A:{name:"A"}}}}];
+                    } else {
+                        const name = Object.keys(request.Action)[0], args = request.Action[name];
+                        fixture.actions.push({name:name,args:args});
+                        if (name === "CloseWindow") {
+                            Qt.callLater(() => server.active = false);
+                            return;
+                        }
+                        messages = [args.output === "missing" ? {Err:"Missing output"} : {Ok:"Handled"}];
+                    }
+                    peer.write(messages.map(value => JSON.stringify(value) + "\\n").join(""));
+                    peer.flush();
+                }
+            }
+        }
+    }
+    Timer {
+        interval: 30; repeat: true; running: true
+        property int step: 0
+        property int ticks: 0
+        onTriggered: {
+            try {
+                fixture.check(++ticks < 160, "Niri socket did not finish at step " + step);
+                const backend = fixture.backend;
+                if (!backend) return;
+                switch (step) {
+                    case 0:
+                        if (!backend.connected || backend.focusedWindowId !== 1) return;
+                        backend.refreshOutputs();
+                        ServiceCompositor.focusWorkspace("B", 1);
+                        ServiceCompositor.focusWorkspaceRelative("B", 1);
+                        ServiceCompositor.focusWorkspaceRelative("missing", 1);
+                        ServiceCompositor.focusWindow(1);
+                        break;
+                    case 1:
+                        if (!backend.outputsLoaded || fixture.actions.length < 5) return;
+                        const actions = fixture.actions;
+                        fixture.check(backend.outputs.map(output => output.name).join(",") === "A,B", "Output reply did not populate the model");
+                        fixture.check(actions.map(action => action.name).join(",") === "FocusWorkspace,FocusMonitor,FocusWorkspaceDown,FocusMonitor,FocusWindow",
+                            "Requests were out of order or an action continued after a failed monitor focus");
+                        fixture.check(actions[0].args.reference.Id === 22 && actions[1].args.output === "B"
+                            && actions[4].args.id === 1, "An action targeted the wrong workspace, monitor or window");
+                        ServiceCompositor.closeWindow(1);
+                        ServiceCompositor.focusWindow(1);
+                        break;
+                    case 2:
+                        if (backend.connected) return;
+                        fixture.check(!backend.windowList.length && !backend.workspacesList.count && !backend.outputsLoaded, "Disconnected compositor left a stale snapshot");
+                        server.active = true;
+                        break;
+                    case 3:
+                        if (!backend.connected || backend.focusedWindowId !== 2 || !backend.outputsLoaded) return;
+                        fixture.check(fixture.actions.length === 6 && fixture.actions[5].name === "CloseWindow",
+                            "An action was replayed after its connection dropped");
+                        console.log("NIRI_IPC_PASSED"); Qt.quit(); break;
+                }
+                step++;
+            } catch (error) { console.error("NIRI_IPC_FAILED", error); Qt.quit(); }
+        }
+    }
+}
+''')
+        try:
+            result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, text=True, capture_output=True, timeout=10)
+        except subprocess.TimeoutExpired as error:
+            raise AssertionError(((error.stdout or b"") + (error.stderr or b"")).decode(errors="replace")) from error
+        output = result.stdout + result.stderr
+        assert result.returncode == 0 and "NIRI_IPC_PASSED" in output, output
+        assert not re.search(r"NIRI_IPC_FAILED|ReferenceError|TypeError|Binding loop|Unable to assign", output), output
+        assert not (base / "unexpected-niri-command").exists(), "Niri IPC launched a subprocess"
+    print("Niri IPC passed event snapshots, output replies, ordered actions, disconnect cleanup and reconnection.")
+
+
 if __name__ == "__main__":
     checks()
     compositor_checks()
+    niri_ipc_checks()

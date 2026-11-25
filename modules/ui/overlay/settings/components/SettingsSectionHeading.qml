@@ -30,11 +30,11 @@ Item
     {
         id: label
 
-        x: heading.centered ? (heading.width - width) / 2 : Math.min(20, heading.width * 0.1) + heading.gap
+        x: heading.centered ? (heading.width - width) / 2 : Math.min(12, heading.width * 0.1) + heading.gap
         y: heading.topPadding
         width: Math.min(implicitWidth, Math.max(0, heading.width - (heading.centered ? 24 : 44) - heading.gap * 2))
         label: heading.title
-        size: heading.centered ? 10 : 14
+        size: heading.centered ? 9 : 12
         color: heading.centered ? Theme.text3 : Theme.text1
         font.weight: Font.DemiBold
         font.letterSpacing: heading.centered ? 0.8 : 0

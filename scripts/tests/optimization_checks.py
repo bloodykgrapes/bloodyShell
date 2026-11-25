@@ -21,7 +21,7 @@ def checks():
         def stub(folder, name, body):
             (base / f"modules/{folder}/{name}.qml").write_text("pragma Singleton\nimport QtQuick\nimport Quickshell\nSingleton {\n" + body + "\n}\n")
 
-        stub("core", "Config", 'property bool debug: false; property bool initialized: true; property bool dockMerge: true; property var dockPinned: []; property bool notificationsEnabled: true; property var notificationsBlockedApps: []; property bool notificationsRememberDnd: false; property bool notificationsDnd: false; property double notificationsDndUntil: 0; function set(key, value) { this[key] = value; }')
+        stub("core", "Config", 'property bool debug: false; property bool initialized: true; property bool dockMerge: true; property var dockPinned: []; property bool notificationsEnabled: true; property var notificationsBlockedApps: []; function set(key, value) { this[key] = value; }')
         stub("core", "OverlayState", 'property bool active: false; property bool inhibited: false; property string current: ""; function close() { active = false; current = ""; }')
         stub("core", "MenuState", 'function close() {}')
         stub("services", "ServiceLock", 'property bool locked: false')
@@ -62,8 +62,8 @@ def checks():
             (base / f"modules/services/{name}.qml").write_text(source)
         adapter = base / "modules/compositors/Niri.qml"
         source = adapter.read_text()
-        source = source[:source.index('    Process\n    {\n        id: stream')] + "}\n"
         source = source.replace("Quickshell.execDetached", "TestMetrics.execDetached")
+        source = source.replace("ipc.request([{ Action: { [name]: args } }]);", "TestMetrics.execDetached([name, args]);")
         adapter.write_text(source)
         sync = base / "modules/src/ModelSync.js"
         source = sync.read_text().replace("model.get(", "readRow(model, ")
@@ -257,8 +257,12 @@ ShellRoot
             ServiceCompositor.backend.windowRemove(179);
             check(!ServiceAltTab.history.includes(179), "Closed window stayed in Alt+Tab history");
             ServiceCompositor.backend.focusedOutput = "test-output";
+            if (optimized) ServiceCompositor.backend.workspacesApply([{output:"test-output",idx:2,id:42,is_focused:true}]);
             ServiceCompositor.focusWorkspace("test-output", 2);
-            if (optimized) check(TestMetrics.actions[TestMetrics.actions.length-1][0] === "niri", "Same-output workspace action still starts a shell");
+            if (optimized) {
+                const action=TestMetrics.actions[TestMetrics.actions.length-1];
+                check(action?.[0] === "FocusWorkspace" && action[1].reference.Id === 42, "Workspace action did not use the cached workspace ID");
+            }
             console.log("OPTIMIZATION_METRICS", JSON.stringify({dockMs:dockMs,dockSerializations:serialized,nativeModelReads:reads,historyWrites:historyWrites,searchMs:searchMs,searchScores:scored,desktopLookups:lookups,launchMatches:launchMatches,previousLaunchMatches:previousLaunchMatches,altMs:altMs,altIdReads:altReads,altHistoryWrites:altWrites}));
             console.log("OPTIMIZATIONS_PASSED dock roles/order/pinning, compositor snapshots, bounded application caches, notification cleanup/grouping, MRU switching, and direct workspace actions");
         }

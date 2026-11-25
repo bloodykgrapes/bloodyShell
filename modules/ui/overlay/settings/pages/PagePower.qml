@@ -16,7 +16,7 @@ SettingsPage
 
     Component.onCompleted: ServicePower.refreshDetails()
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("settings.power.powerMode")
 
@@ -45,7 +45,7 @@ SettingsPage
         }
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("settings.power.whenIdle")
 
@@ -54,7 +54,7 @@ SettingsPage
             label: Tr.tr("settings.power.lockAfter")
             description: Tr.tr("settings.power.lockHint")
 
-            SettingsCombo
+            SettingsDropdown
             {
                 preferredWidth: 220
                 options: [
@@ -75,7 +75,7 @@ SettingsPage
             label: Tr.tr("settings.power.displayOffAfter")
             description: Tr.tr("settings.power.displayWakeHint")
 
-            SettingsCombo
+            SettingsDropdown
             {
                 preferredWidth: 220
                 options: [
@@ -100,7 +100,7 @@ SettingsPage
                 ? Tr.tr("settings.power.sleepBeforeDisplay")
                 : Tr.tr("settings.power.sleepHint")
 
-            SettingsCombo
+            SettingsDropdown
             {
                 preferredWidth: 220
                 options: [
@@ -118,7 +118,7 @@ SettingsPage
         }
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("common.battery")
         visible: ServicePower.present
@@ -129,7 +129,7 @@ SettingsPage
         SettingsRow { label: Tr.tr("common.capacity"); valueText: ServicePower.infoCapacity }
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("settings.power.last24Hours")
         visible: ServicePower.present && ServicePower.history.length > 1
@@ -195,7 +195,7 @@ SettingsPage
                         y: chart.py(parent.modelData) - height / 2
                         label: Math.round(parent.modelData * 100) + "%"
                         size: 10
-                        color: Theme.text4
+                        color: Theme.text3
                     }
                 }
             }
@@ -295,13 +295,13 @@ SettingsPage
                     y: chart.height - chart.padBottom + 8
                     label: modelData.label
                     size: 10
-                    color: Theme.text4
+                    color: Theme.text3
                 }
             }
         }
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("settings.power.batteryHealth")
         visible: ServicePower.present && ServicePower.healthPercent >= 0

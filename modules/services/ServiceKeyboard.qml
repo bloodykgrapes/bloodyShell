@@ -13,6 +13,8 @@ Singleton
 
     readonly property string file: ServiceCompositor.configFiles.input || ""
     readonly property var helper: ServiceCompositor.configuration([])
+    property string userInput: ""
+    property string defaultInput: ""
 
     property var    layouts: []
     property string switchOption: ""
@@ -43,7 +45,7 @@ Singleton
     }
     function title(entry) { return entry.variant ? variantName(entry.layout, entry.variant) : layoutName(entry.layout) }
 
-    function refresh() { store.reload() }
+    function refresh() { defaults.reload(); store.reload() }
 
     function addLayout(layout, variant)
     {
@@ -92,10 +94,10 @@ Singleton
         }
     }
 
-    function parse(text)
+    function parse()
     {
-        if (!ServiceCompositor.supports("keyboard")) return;
-        const values = ServiceCompositor.backend.keyboardSettings(text);
+        if (!ServiceCompositor.supports("keyboard") || flush.running || writer.busy) return;
+        const values = ServiceCompositor.backend.keyboardSettings(userInput, defaultInput);
         for (const key of Object.keys(values)) serviceKeyboard[key] = values[key];
         loaded = true;
     }
@@ -109,8 +111,20 @@ Singleton
 
         watchChanges: ServiceCompositor.supports("keyboard")
         onFileChanged: reload()
-        onLoaded: if (!flush.running && !writer.busy) serviceKeyboard.parse(text())
-        onLoadFailed: if (!flush.running && !writer.busy) serviceKeyboard.parse("")
+        onLoaded: { serviceKeyboard.userInput = text(); serviceKeyboard.parse(); }
+        onLoadFailed: { serviceKeyboard.userInput = ""; serviceKeyboard.parse(); }
+    }
+
+    FileView
+    {
+        id: defaults
+
+        path: ServiceCompositor.configFiles.inputDefaults || ""
+        printErrors: false
+        watchChanges: ServiceCompositor.supports("keyboard")
+        onFileChanged: reload()
+        onLoaded: { serviceKeyboard.defaultInput = text(); serviceKeyboard.parse(); }
+        onLoadFailed: { serviceKeyboard.defaultInput = ""; serviceKeyboard.parse(); }
     }
 
     Process

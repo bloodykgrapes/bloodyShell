@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 def check_sources():
     hosts = [str(path.relative_to(ROOT)) for path in ROOT.glob("modules/**/*.qml")
              if re.search(r"\bPanelWindow\s*\{", path.read_text())]
-    assert sorted(hosts) == ["modules/ui/desktop/Desktop.qml", "modules/ui/keyboard/VirtualKeyboard.qml", "modules/ui/layout/Layout.qml", "modules/ui/overlay/Overlay.qml"], hosts
+    assert sorted(hosts) == ["modules/ui/desktop/Desktop.qml", "modules/ui/desktop/OverviewBackdrop.qml",
+                            "modules/ui/keyboard/VirtualKeyboard.qml", "modules/ui/layout/Layout.qml", "modules/ui/overlay/Overlay.qml"], hosts
 
 
 def run_fixture(base, scenario=None):
@@ -113,11 +114,17 @@ ShellRoot
     property var mediaWidget: null
     property var mediaOwner: null
     property real slideBefore: 0
+    property string frameBeforeSidebar: ""
+    function barShape()
+    {
+        const surface = frame.surface;
+        return JSON.stringify([surface.startBody, surface.endBody, surface.thickness, surface.cornerRadius, surface.bodyRadius, surface.smoothing]);
+    }
     function check(ok, message) { if (!ok) throw new Error(message) }
     function verifyMediaCenter()
     {
         const menu = loadedPage(frame.island, Qt.resolvedUrl("modules/ui/bar/menus/MenuMedia.qml"));
-        check(menu && menu.centerOnWidget, "Media menu does not request centered placement");
+        check(menu, "Media menu did not load");
         const center = menu.mapToItem(frame, menu.width / 2, menu.height / 2);
         const body = frame.island.bodyRect;
         check(Math.abs(center.x - body.x - body.width / 2) <= 1, "Media menu is off center after island width changed");
@@ -183,39 +190,34 @@ ShellRoot
     function menuEdges()
     {
         const names = ["Battery", "Bluetooth", "Clock", "Layout", "Media", "Network", "Tray", "Volume"];
-        for (const style of [Enums.MenuDefault, Enums.MenuFloating])
+        for (const edge of [Enums.EdgeBottom, Enums.EdgeRight, Enums.EdgeTop, Enums.EdgeLeft])
         {
-            Config.set("barMenu", style);
-            for (const edge of [Enums.EdgeBottom, Enums.EdgeRight, Enums.EdgeTop, Enums.EdgeLeft])
+            Config.set("barSide", edge);
+            events.wait(40);
+            const trigger = slot(frame.bar, "clock").widget;
+            for (const name of names)
             {
-                Config.set("barSide", edge);
+                const source = Qt.resolvedUrl("modules/ui/bar/menus/Menu" + name + ".qml");
+                MenuState.toggle(source, trigger);
                 events.wait(40);
-                const trigger = slot(frame.bar, "clock").widget;
-                for (const name of names)
+                const menu = loadedPage(frame.bar, source);
+                check(menu && menu.visible && menu.active && menu.presented && menu.width > 0 && menu.height > 0, "Menu is hidden on edge " + edge + ": " + name);
+                if (edge === Enums.EdgeLeft || edge === Enums.EdgeRight)
                 {
-                    const source = Qt.resolvedUrl("modules/ui/bar/menus/Menu" + name + ".qml");
-                    MenuState.toggle(source, trigger);
-                    events.wait(40);
-                    const menu = loadedPage(frame.bar, source);
-                    check(menu && menu.visible && menu.active && menu.presented && menu.width > 0 && menu.height > 0, "Menu is hidden on edge " + edge + ": " + name);
-                    if (edge === Enums.EdgeLeft || edge === Enums.EdgeRight)
-                    {
-                        const panel = MenuState.menuOwner.panel;
-                        check(Math.abs(panel.width - menu.width) < 0.01 && Math.abs(panel.height - menu.height) < 0.01, "Vertical menu background does not fit its content: " + name);
-                    }
-                    if (name !== "Layout") check(visibleMenuText(menu), "Menu content is clipped on edge " + edge + ": " + name);
-                    if (name === "Clock")
-                    {
-                        menu.offset = 1;
-                        const today = find(menu, "calendarToday");
-                        events.mouseClick(today, today.width / 2, today.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                        check(menu.offset === 0, "Menu content cannot receive clicks on edge " + edge);
-                    }
+                    const panel = MenuState.menuOwner.panel;
+                    check(Math.abs(panel.width - menu.width) < 0.01 && Math.abs(panel.height - menu.height) < 0.01, "Vertical menu background does not fit its content: " + name);
+                }
+                if (name !== "Layout") check(visibleMenuText(menu), "Menu content is clipped on edge " + edge + ": " + name);
+                if (name === "Clock")
+                {
+                    menu.offset = 1;
+                    const today = find(menu, "calendarToday");
+                    events.mouseClick(today, today.width / 2, today.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
+                    check(menu.offset === 0, "Menu content cannot receive clicks on edge " + edge);
                 }
             }
         }
         MenuState.close();
-        Config.set("barMenu", Enums.MenuDefault);
         Config.set("barSide", Enums.EdgeTop);
         events.wait(360);
     }
@@ -224,33 +226,33 @@ ShellRoot
         for (const mode of [Enums.AnimationsStandard, Enums.AnimationsFluid])
         {
             Config.set("themeAnimations", mode);
-            for (const style of [Enums.MenuDefault, Enums.MenuFloating])
+            for (const edge of [Enums.EdgeLeft, Enums.EdgeRight])
             {
-                Config.set("barMenu", style);
-                for (const edge of [Enums.EdgeLeft, Enums.EdgeRight])
+                Config.set("barSide", edge);
+                for (const side of ["left", "right"])
                 {
-                    Config.set("barSide", edge);
-                    for (const side of ["left", "right"])
-                    {
-                        const sidebar = side === "left" ? frame.leftSidebar : frame.rightSidebar;
-                        SidebarState.toggle(side, Quickshell.screens[0].name);
-                        events.wait(70);
-                        const panel = sidebar.panel;
-                        const inset = Theme.frameThickness + (style === Enums.MenuFloating ? 10 : 0);
-                        check(sidebar.progress > 0 && sidebar.progress < 1, "Vertical sidebar reveal snapped");
-                        check(panel.width === sidebar.panelWidth && panel.height > 0 && panel.height < sidebar.panelHeight, "Vertical sidebar did not reveal vertically");
-                        check(sidebar.scrollView.height === sidebar.panelHeight - sidebar.headerHeight - 8 && sidebar.contentBody.width === sidebar.panelWidth - 36, "Vertical sidebar content reflows during reveal");
-                        check(Math.abs((side === "left" ? panel.y : frame.height - panel.y - panel.height) - inset) < 0.01, "Vertical sidebar is not aligned to its top or bottom edge");
-                        const contentEdge = sidebar.scrollView.mapToItem(frame, 0, side === "left" ? 0 : sidebar.scrollView.height);
-                        check(Math.abs((side === "left" ? contentEdge.y : frame.height - contentEdge.y) - inset - 4) < 1, "Vertical sidebar content slides away from its reveal edge: " + contentEdge.y + " inset=" + inset + " side=" + side + " mode=" + mode);
-                        SidebarState.close();
-                        events.wait(340);
-                    }
+                    const sidebar = side === "left" ? frame.leftSidebar : frame.rightSidebar;
+                    SidebarState.toggle(side, Quickshell.screens[0].name);
+                    events.wait(70);
+                    const panel = sidebar.panel;
+                    const inset = Theme.frameThickness + Theme.panelGap;
+                    check(sidebar.progress > 0 && sidebar.progress < 1, "Vertical sidebar reveal snapped");
+                    check(panel.width > 0 && panel.width < sidebar.panelWidth && panel.height > 0 && panel.height < sidebar.panelHeight, "Sidebar did not reveal from its corner");
+                    check(sidebar.scrollView.height === sidebar.panelHeight - sidebar.headerHeight - 8 && sidebar.contentBody.width === sidebar.panelWidth - 36, "Vertical sidebar content reflows during reveal");
+                    check(Math.abs((side === "left" ? panel.y : frame.height - panel.y - panel.height) - inset) < 0.01, "Vertical sidebar is not aligned to its top or bottom edge");
+                    const contentEdge = sidebar.scrollView.mapToItem(frame, 0, side === "left" ? 0 : sidebar.scrollView.height);
+                    check(Math.abs((side === "left" ? contentEdge.y : frame.height - contentEdge.y) - inset - 4) < 1, "Vertical sidebar content slides away from its reveal edge: " + contentEdge.y + " inset=" + inset + " side=" + side + " mode=" + mode);
+                    SidebarState.close();
+                    check(!sidebar.inputRegion.item, "Closing sidebar still accepts input");
+                    events.wait(65);
+                    check(sidebar.progress > 0 && sidebar.progress < 1 && panel.width < sidebar.panelWidth && panel.height < sidebar.panelHeight,
+                        "Sidebar closed as a full-width or full-height strip");
+                    events.wait(170);
+                    check(!panel.visible, "Sidebar kept a visible surface after closing");
                 }
             }
         }
         Config.set("themeAnimations", Enums.AnimationsDisabled);
-        Config.set("barMenu", Enums.MenuDefault);
         Config.set("barSide", Enums.EdgeTop);
     }
     function geometry()
@@ -283,7 +285,7 @@ ShellRoot
             check(SidebarState.current === side, "Clicking an empty bar half did not open its sidebar");
             const sidebar = side === "left" ? frame.leftSidebar : frame.rightSidebar;
             const panel = sidebar.panel;
-            const gap = Theme.frameSmoothing;
+            const gap = Theme.panelGap;
             const vertical = Config.barSide === Enums.EdgeLeft || Config.barSide === Enums.EdgeRight;
             const right = vertical ? Config.barSide === Enums.EdgeRight : side === "right";
             const bottom = Config.barSide === Enums.EdgeBottom || (vertical && side === "right");
@@ -385,8 +387,8 @@ ShellRoot
             x: 500; y: 300; width: 220
             visible: false
             Toggle { id: toggleProbe; onToggled: value => checked = value }
-            ControlToggle { id: tileProbe; width: parent.width; height: implicitHeight; text: "Wi-Fi"; onToggled: value => checked = value }
-            ControlSlider
+            MenuToggle { id: tileProbe; width: parent.width; height: implicitHeight; text: "Wi-Fi"; onToggled: value => checked = value }
+            MenuSlider
             {
                 id: sliderProbe
                 property int muteClicks: 0
@@ -402,8 +404,6 @@ ShellRoot
         property int step: 0
         property bool checkedMenuEdges: false
         property int previewStep: 0
-        property int previewWait: 0
-        property real previewPhase: 0
         property real previewBarHeight: 0
         property int mediaChecks: 0
         property bool mediaRestored: false
@@ -531,16 +531,16 @@ ShellRoot
                         tests.ready("settings"); OverlayState.close(); Config.set("themeAnimations", 0); break;
                     case 20: SidebarState.toggle("left", Quickshell.screens[0].name); break;
                     case 21:
-                        tests.check(frame.leftSidebar.opened && frame.surface.leftBody.width > 0 && frame.keyboardWanted, "Left sidebar did not join the frame");
+                        tests.check(frame.leftSidebar.opened && frame.leftSidebar.panel.visible && frame.keyboardWanted, "Left sidebar did not open");
                         frame.leftSidebar.open("settings"); break;
                     case 22:
                         tests.ready("settings"); tests.check(!SidebarState.active, "Sidebar survived opening settings");
                         OverlayState.close(); SidebarState.toggle("right", Quickshell.screens[0].name); break;
                     case 23:
-                        tests.check(frame.rightSidebar.opened && frame.surface.rightBody.width > 0, "Right sidebar did not join the frame");
+                        tests.check(frame.rightSidebar.opened && frame.rightSidebar.panel.visible, "Right sidebar did not open");
                         SidebarState.toggle("right", "other-output"); break;
                     case 24:
-                        tests.check(!frame.sidebarHere && frame.surface.rightBody.width === 0, "Sidebar appeared on the wrong output");
+                        tests.check(!frame.sidebarHere && !frame.rightSidebar.panel.visible, "Sidebar appeared on the wrong output");
                         SidebarState.toggle("right", Quickshell.screens[0].name); break;
                     case 25: overlay.testAgent.isActive = true; break;
                     case 26:
@@ -594,7 +594,15 @@ ShellRoot
                         tests.check(body.x >= body.width * 0.025 / 2 && viewport.width - body.x - body.width >= body.width * 0.025 / 2, "Sidebar viewport clips hover scale");
                         const mediaCard = tests.find(frame.rightSidebar, "controlMedia");
                         const mediaLoader = tests.find(frame.rightSidebar, "controlMediaContent");
-                        tests.check(tests.find(frame.rightSidebar, "controlVolume").height === 36 && tests.find(frame.rightSidebar, "controlMicrophone").height === 36 && tests.find(frame.rightSidebar, "controlBrightness").height === 36, "Control center sliders are not compact");
+                        const volumeControl = tests.find(frame.rightSidebar, "controlVolume"), microphoneControl = tests.find(frame.rightSidebar, "controlMicrophone"), brightnessControl = tests.find(frame.rightSidebar, "controlBrightness");
+                        const wifiControl = tests.find(frame.rightSidebar, "controlWifi"), bluetoothControl = tests.find(frame.rightSidebar, "controlBluetooth");
+                        tests.check([wifiControl, bluetoothControl].every(control => control.height === 64 && control.subtitle === ""),
+                            "Connectivity toggles lost their Material tile layout");
+                        tests.check([volumeControl, microphoneControl, brightnessControl].every(control => control.cornerRadius === control.height / 2),
+                            "Control center sliders lost their pill shape");
+                        tests.check([volumeControl, microphoneControl, brightnessControl].every(control => control.height === 36), "Control center sliders must stay compact");
+                        tests.check(volumeControl.width === microphoneControl.width && brightnessControl.width === frame.rightSidebar.contentBody.width, "Audio controls must share a row while brightness stays full-width");
+                        tests.check(volumeControl.mapToItem(frame.rightSidebar,0,0).y === microphoneControl.mapToItem(frame.rightSidebar,0,0).y && volumeControl.mapToItem(frame.rightSidebar,0,0).x < microphoneControl.mapToItem(frame.rightSidebar,0,0).x, "Audio controls must be side by side");
                         if (mediaChecks === 0)
                         {
                             tests.check(!player.isPlaying && mediaCard.height > 0 && mediaLoader.item, "Paused media disappeared from the control center");
@@ -695,24 +703,26 @@ ShellRoot
                         OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "bar");
                         OverlayState.show("settings"); break;
                     case 43:
-                        const defaultMenu = tests.find(overlay.testPage.item, "menuStyle-" + Enums.MenuDefault);
-                        const floatingMenu = tests.find(overlay.testPage.item, "menuStyle-" + Enums.MenuFloating);
-                        tests.check(defaultMenu && floatingMenu && defaultMenu.kind === "menu" && floatingMenu.width <= 150, "Compact menu preview cards failed to load");
-                        tests.check(defaultMenu.label === Tr.tr("common.default"), "Default menu label was not renamed");
-                        floatingMenu.clicked(); OverlayState.close();
+                        tests.check(!tests.find(overlay.testPage.item, "menuStyle-0") && !tests.find(overlay.testPage.item, "menuStyle-1"),
+                            "Settings still offers an attached sidebar");
+                        OverlayState.close();
+                        tests.frameBeforeSidebar = tests.barShape();
                         SidebarState.toggle("left", Quickshell.screens[0].name); break;
                     case 44:
-                        tests.check(Config.barMenu === Enums.MenuFloating && frame.leftSidebar.floating, "Sidebar ignores the menu style");
-                        tests.check(frame.leftSidebar.panel.x > Theme.frameThickness && frame.surface.leftBody.width === 0, "Floating sidebar still participates in the frame shader");
-                        tests.check(frame.leftSidebar.panel.children.some(item => item.visible && item.color !== undefined && item.radius === Theme.barRadius), "Floating sidebar lost its separate background");
+                        tests.check(frame.leftSidebar.panel.x === Theme.frameThickness + Theme.panelGap, "Left sidebar has the wrong frame gap");
+                        tests.check(tests.barShape() === tests.frameBeforeSidebar, "Opening the sidebar changed the frame contour");
+                        const floatingSurface = tests.find(frame.leftSidebar, "floatingPanelFill");
+                        tests.check(floatingSurface && floatingSurface.visible && floatingSurface.color === frame.surface.fillColor
+                            && floatingSurface.border.width === frame.surface.borderWidth && floatingSurface.border.color === frame.surface.borderColor,
+                            "Sidebar does not share the frame material and outline");
                         SidebarState.toggle("right", Quickshell.screens[0].name); break;
                     case 45:
-                        tests.check(frame.rightSidebar.panel.x + frame.rightSidebar.panel.width < frame.width - Theme.frameThickness, "Right floating sidebar has no edge gap");
-                        tests.check(frame.surface.rightBody.width === 0, "Right floating sidebar still participates in the frame shader");
-                        Config.set("barMenu", Enums.MenuDefault); break;
+                        tests.check(frame.rightSidebar.panel.x + frame.rightSidebar.panel.width === frame.width - Theme.frameThickness - Theme.panelGap,
+                            "Right sidebar has the wrong frame gap");
+                        tests.check(tests.barShape() === tests.frameBeforeSidebar, "Switching sidebars changed the frame contour");
+                        break;
                     case 46:
-                        tests.check(!frame.rightSidebar.floating && frame.rightSidebar.opened, "Changing the menu style dismissed the sidebar");
-                        tests.check(frame.rightSidebar.panel.x + frame.rightSidebar.panel.width === frame.width - Theme.frameThickness && frame.surface.rightBody.width > 0, "Default sidebar no longer joins the frame");
+                        tests.check(frame.rightSidebar.opened, "Switching sidebars did not open the right sidebar");
                         ServiceCompositor.backend.lastWindowId = 1; ServiceCompositor.backend.focusedWindowId = null;
                         const clockAfterSidebar = tests.slot(frame.bar, "clock");
                         events.mouseClick(clockAfterSidebar, clockAfterSidebar.width / 2, clockAfterSidebar.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
@@ -733,7 +743,6 @@ ShellRoot
                         tests.check(SidebarState.current === "left" && !MenuState.menuActive, "Sidebar no longer replaces a menu on the first click");
                         events.mouseClick(frame, frame.width / 2, frame.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                         tests.check(!SidebarState.active, "Moving the dismiss area broke outside clicks");
-                        Config.set("barMenu", Enums.MenuFloating);
                         SidebarState.toggle("right", Quickshell.screens[0].name); break;
                     case 48:
                         const mediaFloating = tests.find(frame.island, "dynamicIsland");
@@ -753,7 +762,7 @@ ShellRoot
                         events.mouseClick(toggleProbe, toggleProbe.width / 2, toggleProbe.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                         tests.check(toggleProbe.checked, "Shared settings toggle does not emit changes");
                         events.mouseClick(tileProbe, tileProbe.width / 2, tileProbe.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                        tests.check(tileProbe.checked && String(tileProbe.children[0].color) === String(Theme.colorAccent), "Enabled control tile does not highlight its full background");
+                        tests.check(tileProbe.checked && String(tileProbe.children[0].color) === String(Theme.colorAccent), "Enabled control tile does not use the shared active surface");
                         const sliderPointer = tests.find(sliderProbe, "controlSliderPointer");
                         events.mousePress(sliderPointer, 80, 18, Qt.LeftButton, Qt.NoModifier, 0);
                         events.mouseMove(sliderPointer, sliderPointer.width, 18, 0);
@@ -816,6 +825,10 @@ ShellRoot
                         tests.check(frame.dock.container.color.a === 0, "Out Frame retained the dock fill");
                         const filledDock = tests.find(overlay.testPage.item, "frameStyle-dock-" + Enums.Filled);
                         tests.check(filledDock && filledDock.filled, "Filled dock preview is missing");
+                        const badges=tests.find(overlay.testPage.item,"dockNotificationBadges");
+                        tests.check(badges && tests.find(tests.find(overlay.testPage.item,"dockStyleOptions"),"dockNotificationBadges")===badges,"Notification badges are outside Dock style");
+                        badges.toggled(false);tests.check(!Config.dockBadges,"Dock notification badges did not disable");
+                        badges.toggled(true);tests.check(Config.dockBadges,"Dock notification badges did not enable");
                         filledDock.clicked();
                         OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "island"); break;
                     case 59:
@@ -883,14 +896,14 @@ ShellRoot
                     case 78:
                     case 79:
                         tests.check(frame.bar.islands && frame.dock.islands && !frame.bar.inFrame && !frame.dock.inFrame, "Islands style still joins the frame");
-                        tests.check(frame.surface.startBody.width === 0 && frame.surface.endBody.width === 0 && frame.surface.dockBody.width === 0, "Islands bodies are included in the frame shader");
-                        const capsules = tests.findAll(frame.bar, "barIslandSurface");
-                        tests.check(capsules.length === 2 && capsules.every(item => item.visible && item.width > 0 && item.height > 0 && item.color === Theme.frameColor), "Bar groups have no independent capsule backgrounds");
+                        const capsules = [frame.surface.startBody, frame.surface.endBody];
+                        tests.check(frame.surface.detachedBar && frame.surface.barSmoothing === 0 && frame.surface.dockBody.width === 0,
+                            "Islands bar joined the screen frame");
+                        tests.check(capsules.every(rect => rect.width > 0 && rect.height > 0), "Bar groups have no independent capsule backgrounds");
                         for (const capsule of capsules)
                         {
-                            const point = capsule.mapToItem(frame, 0, 0);
-                            const gap = Config.barSide === Enums.EdgeTop ? point.y : Config.barSide === Enums.EdgeBottom ? frame.height - point.y - capsule.height
-                                : Config.barSide === Enums.EdgeLeft ? point.x : frame.width - point.x - capsule.width;
+                            const gap = Config.barSide === Enums.EdgeTop ? capsule.y : Config.barSide === Enums.EdgeBottom ? frame.height - capsule.y - capsule.height
+                                : Config.barSide === Enums.EdgeLeft ? capsule.x : frame.width - capsule.x - capsule.width;
                             tests.check(Math.abs(gap - Theme.frameThickness - frame.bar.surfaceGap) < 0.01, "Islands bar has no clear frame gap");
                         }
                         tests.check(frame.dock.container.color === Theme.frameColor && frame.dock.edgeGap > frame.dock.barDepth, "Islands dock has no separate fill or gap");
@@ -904,7 +917,7 @@ ShellRoot
                         else Config.set("themeStyle", Enums.ThemeLight);
                         break;
                     case 80:
-                        tests.check(frame.dock.container.color === Theme.frameColor && tests.findAll(frame.bar, "barIslandSurface").every(item => item.color === Theme.frameColor), "Islands colors ignore the light theme");
+                        tests.check(frame.dock.container.color === Theme.frameColor && frame.surface.paintColor === Theme.frameColor, "Islands colors ignore the light theme");
                         Config.set("dockType", Enums.OutFrame);
                         OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "dock"); OverlayState.show("settings"); break;
                     case 81:
@@ -915,7 +928,7 @@ ShellRoot
                         tests.check(Config.dockType === Enums.Islands && Config.barType === Enums.Islands, "Islands dock card changed the wrong setting");
                         frame.bar.revealed = false; frame.dock.revealed = false; break;
                     case 83:
-                        tests.check(tests.findAll(frame.bar, "barIslandSurface").every(item => !item.visible), "Hidden bar left capsule backgrounds visible");
+                        tests.check([frame.surface.startBody, frame.surface.endBody].every(rect => rect.x >= frame.width), "Hidden bar left capsule backgrounds visible");
                         tests.check(frame.dock.container.x >= frame.width, "Hidden Islands dock left its background onscreen");
                         frame.bar.revealed = true; frame.dock.revealed = true;
                         OverlayState.settingsPage = 0; OverlayState.show("settings"); break;
@@ -970,71 +983,31 @@ ShellRoot
                             {
                                 const wallpaperPreview = tests.find(overlay.testPage.item, "currentWallpaperPreview");
                                 tests.check(wallpaperPreview && wallpaperPreview.wallpaper === Config.wallpaperCurrent && wallpaperPreview.height === 172, "Appearance lost its shared wallpaper preview");
+                                let row = wallpaperPreview.parent;
+                                while (row && row.controlAvailableWidth === undefined) row = row.parent;
+                                tests.check(row && row.stacked, "Wallpaper preview is outside a settings row");
+                            }
+                            if (Registry.settings[step - 116].id === "components")
+                            {
+                                const visualizer = tests.find(overlay.testPage.item, "visualizerOptions");
+                                tests.check(visualizer, "Visualizer foldout is missing");
+                                if (!visualizer.expanded) { visualizer.expanded = true; return; }
                                 const bars = tests.find(overlay.testPage.item, "equalizerStyle-" + Enums.EqualizerBars);
                                 const waves = tests.find(overlay.testPage.item, "equalizerStyle-" + Enums.EqualizerWaves);
                                 tests.check(bars && waves && waves.kind === "equalizer" && waves.width <= 150, "Equalizer style previews are missing");
-                                const preview = tests.find(waves, "equalizerStylePreview");
                                 if (previewStep === 0)
                                 {
-                                    tests.check(!Config.animationsEnabled, "Preview fixture must cover disabled shell animations");
                                     const page = tests.loadedPage(overlay.testPage.item, Registry.settings[step - 116].page);
-                                    tests.check(tests.find(page, "currentWallpaperRow") !== null, "Wallpaper preview is outside a settings row");
                                     page.contentY = Math.max(0, Math.min(page.contentHeight - page.height, waves.mapToItem(page.contentItem, 0, 0).y - 120));
+                                    previewBarHeight = tests.find(bars, "equalizerBar").height;
                                     events.mouseMove(waves, waves.width / 2, waves.height / 2, 0);
-                                    previewPhase = preview.phase; previewStep++; return;
-                                }
-                                if (previewStep === 1)
-                                {
-                                    if (preview.phase === previewPhase && previewWait++ < 4) return;
-                                    tests.check(waves.previewing && preview.phase !== previewPhase, "Waves hover preview did not animate with shell animations disabled");
-                                    events.mouseMove(window.contentItem, 2, 2, 0);
-                                    previewStep++; return;
-                                }
-                                if (previewStep === 2)
-                                {
-                                    tests.check(!waves.previewing, "Waves preview did not stop on hover leave");
-                                    previewPhase = preview.phase; previewStep++; return;
-                                }
-                                if (previewStep === 3)
-                                {
-                                    tests.check(preview.phase === previewPhase, "Unhovered Waves preview keeps animating");
-                                    window.requestActivate();
                                     waves.forceActiveFocus(Qt.TabFocusReason);
-                                    previewPhase = preview.phase;
                                     previewStep++; return;
                                 }
-                                if (previewStep === 4)
-                                {
-                                    tests.check(waves.previewing && preview.phase !== previewPhase, "Keyboard focus did not animate the equalizer preview");
-                                    waves.focus = false;
-                                    events.mouseMove(bars, bars.width / 2, bars.height / 2, 0);
-                                    previewBarHeight = tests.find(bars, "equalizerBar").height;
-                                    previewStep++; return;
-                                }
-                                if (previewStep === 5)
-                                {
-                                    tests.check(bars.previewing, "Bars hover preview did not start");
-                                    tests.check(Math.abs(tests.find(bars, "equalizerBar").height - previewBarHeight) > 0.05, "Bar heights remain frozen during hover");
-                                    events.mouseMove(window.contentItem, 2, 2, 0);
-                                    previewBarHeight = tests.find(bars, "equalizerBar").height;
-                                    previewPhase = tests.find(bars, "equalizerStylePreview").phase;
-                                    previewStep++; return;
-                                }
-                                if (previewStep === 6)
-                                {
-                                    tests.check(!bars.previewing && tests.find(bars, "equalizerBar").height === previewBarHeight, "Bars changed after hover ended");
-                                    const barsPreview = tests.find(bars, "equalizerStylePreview");
-                                    tests.check(barsPreview.phase === previewPhase, "Bars preview phase changed while idle");
-                                    events.mouseMove(bars, bars.width / 2, bars.height / 2, 0);
-                                    tests.check(barsPreview.phase >= previewPhase && barsPreview.phase - previewPhase < 0.2, "Hovering again reset the Bars preview phase");
-                                    previewStep++; return;
-                                }
-                                if (previewStep === 7)
-                                {
-                                    tests.check(tests.find(bars, "equalizerStylePreview").phase > previewPhase, "Bars did not resume from their saved phase");
-                                    tests.check(Math.abs(tests.find(bars, "equalizerBar").height - previewBarHeight) > 0.05, "Bars did not resume from their saved heights");
-                                    events.mouseMove(window.contentItem, 2, 2, 0);
-                                }
+                                tests.check(!waves.previewing && !bars.previewing, "Visualizer hover or focus starts a preview animation");
+                                tests.check(tests.find(bars, "equalizerBar").height === previewBarHeight, "Static visualizer preview changed height");
+                                waves.focus = false;
+                                events.mouseMove(window.contentItem, 2, 2, 0);
                                 waves.clicked();
                                 tests.check(Config.equalizerStyle === Enums.EqualizerWaves && waves.current, "Wave preview did not select the global style");
                                 tests.check(tests.find(frame, "islandEqualizer").style === Enums.EqualizerBars, "Global Waves selection overrode the island Bars style");
@@ -1114,12 +1087,93 @@ ShellRoot
     assert not re.search(r"SURFACES_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|is not a type|Failed to load configuration", result.stdout), "Surface QML error"
 
 
+def audio_dropdown_fixture(base):
+    audio = base / "modules/services/ServiceAudio.qml"
+    source = audio.read_text()
+    for name in ("sinks", "sources"):
+        source = re.sub(r"readonly property var " + name + r":[^\n]+", "property var " + name + ": []", source)
+    source = source.replace("readonly property var sink: Pipewire.defaultAudioSink", "property var sink: null")
+    source = source.replace("readonly property var source: Pipewire.defaultAudioSource", "property var source: null")
+    source = source.replace("if (node) Pipewire.preferredDefaultAudioSink = node", "if (node) sink = node")
+    source = source.replace("if (node) Pipewire.preferredDefaultAudioSource = node", "if (node) source = node")
+    audio.write_text(source)
+    (base / "shell.qml").write_text('''import QtQuick
+import QtQuick.Window
+import QtTest
+import Quickshell
+import "modules/core"
+import "modules/services"
+import "modules/ui/frame"
+import "modules/ui/bar/menus"
+ShellRoot {
+    id: tests
+    function check(ok,message) {if(!ok)throw new Error(message);}
+    function find(item,name) {if(item.objectName===name)return item;for(const child of item.children||[]){const found=find(child,name);if(found)return found;}return null;}
+    Window {
+        id:window;visible:true;width:640;height:720;color:Theme.colorSolid
+        Frame {
+            id:frame;anchors.fill:parent;screen:Quickshell.screens[0]
+            MenuVolume {id:menu;x:24;y:30;width:implicitWidth;height:implicitHeight}
+        }
+        TestCase {id:events;name:"AudioDropdowns";when:false;optional:true}
+    }
+    Timer {interval:250;running:Config.initialized;onTriggered:{try{
+        Config.set("barEnabled",false);Config.set("dockEnabled",false);Config.set("islandEnabled",false);
+        const outputA={id:1,description:"Speakers",audio:{volume:.45,muted:false}};
+        const outputB={id:2,description:"Headphones",audio:{volume:.55,muted:false}};
+        const outputC={id:3,description:"Headphones",audio:{volume:.65,muted:false}};
+        const inputA={id:10,description:"Microphone",audio:{volume:.5,muted:false}};
+        const inputB={id:11,description:"USB Microphone",audio:{volume:.75,muted:false}};
+        ServiceAudio.sinks=[outputA,outputA,outputB,outputC];ServiceAudio.sources=[inputA,inputA,inputB];
+        ServiceAudio.sink=outputA;ServiceAudio.source=inputA;events.wait(50);
+        const output=find(menu,"audioDevice-0"),input=find(menu,"audioDevice-2");
+        check(output&&input&&output.entries.length===3&&input.entries.length===2,"Device dropdowns contain duplicate IDs or merge distinct devices with the same name");
+        check(output.x===0&&output.width===menu.width-Theme.menuPadding*2,"Device selector must use the full menu content width");
+        ServiceAudio.sink=null;
+        check(output.enabled,"Device selection is disabled when the default device disappears");
+        output.toggle();events.wait(30);output.choose(2);events.wait(300);
+        check(ServiceAudio.sink.id===3,"Selecting a device did not recover a missing default output");
+        for(const mode of [0,1,2]) {
+            Config.set("themeAnimations",mode);menu.visible=true;ServiceAudio.sink=outputA;ServiceAudio.source=inputA;
+            const collapsed=menu.implicitHeight;
+            events.mouseClick(output,output.width/2,output.height/2,Qt.LeftButton);events.wait(80);
+            check(output.open&&!frame.popupHere&&!OverlayState.settingsPopup,"Device list opened outside the sound menu");
+            const panel=find(output,"inlineMenuDropdownPanel");
+            const background=find(output,"inlineMenuDropdownBackground"),trigger=find(output,"menuDropdownTrigger");
+            check(panel&&panel.height>0&&menu.implicitHeight>collapsed&&background.height===output.height
+                && panel.mapToItem(output,0,0).y===trigger.height&&trigger.text==="Speakers",
+                "Device choices did not unfold from the selected button on one surface");
+            const options=find(output,"inlineMenuDropdownOptions");
+            check(options&&options.count===2&&options.activeFocus&&options.currentIndex===0,"Expansion repeated the selected device or lost keyboard focus");
+            events.keyClick(Qt.Key_Down);
+            events.keyClick(Qt.Key_Up);
+            events.keyClick(Qt.Key_Return);
+            for(let attempt=0;menu.implicitHeight!==collapsed&&attempt<25;attempt++)events.wait(20);
+            check(ServiceAudio.sink.id===2&&!output.open&&menu.implicitHeight===collapsed,"Device selection picked a duplicate or kept the list expanded");
+            check(trigger.activeFocus&&trigger.text==="Headphones","Device selection did not return focus to the new value");
+            output.toggle();
+            input.toggle();events.wait(60);
+            check(input.open&&!output.open,"Output and input selectors expanded simultaneously");
+            input.choose(0);events.wait(300);
+            check(ServiceAudio.source.id===11,"Input selection changed the wrong device");
+            output.toggle();events.wait(60);menu.visible=false;events.wait(300);
+            check(!output.open&&!frame.popupHere&&!OverlayState.settingsPopup,"Hiding the sound menu retained a dropdown or input grab");
+        }
+        console.log("AUDIO_DROPDOWNS_PASSED unique IDs, full-width inline lists, keyboard focus, exclusive expansion, selection and cleanup");
+        console.log("SURFACES_PASSED");Qt.quit();
+    }catch(error){console.error("SURFACES_FAILED audio dropdown",error);Qt.quit();}}}
+}
+''')
+
+
 def fullscreen_fixture(base):
     island = base / "modules/services/ServiceIsland.qml"
     island.write_text(island.read_text().replace("primaryOutputFor(Quickshell.screens, Config.barScreens)", 'primaryOutputFor([{name:"A"},{name:"B"}], Config.barScreens)'))
     compositor = base / "modules/compositors/Niri.qml"
-    source = compositor.read_text().replace("id: niri", "id: niri\n    property var testOutputs: []", 1)
+    source = compositor.read_text().replace("id: niri", "id: niri\n    property var testOutputs: []\n    property var testActions: []", 1)
     source = source.replace("fullscreenScreens(Quickshell.screens)", "fullscreenScreens(testOutputs)")
+    source = re.sub(r"function action\(name, args = \{\}\) \{[^\n]+\}",
+                    "function action(name, args = {}) { testActions = testActions.concat([{name:name, id:args.id}]) }", source, count=1)
     compositor.write_text(source)
     (base / "shell.qml").write_text(r'''import QtQuick
 import QtQuick.Window
@@ -1310,6 +1364,30 @@ ShellRoot {
                         check(frame.bar.revealWanted && frame.dock.revealWanted && !frame.bar.autoHide && !frame.dock.autoHide,"Fullscreen exit changed configured panel behavior");
                     }
                 }
+                Config.set("themeAnimations",0);
+                send({WindowFocusChanged:{id:1}}); wait(30);
+                const dockRepeater=frame.dock.container.children.find(child=>child.itemAtIndex!==undefined);
+                const dockItem=Array.from({length:dockRepeater.count},(_,index)=>dockRepeater.itemAtIndex(index).item)
+                    .find(item=>item?.appId?.startsWith("surface-test") && item.windowCount>0);
+                check(dockItem,"Running application is missing from the dock");
+                frame.dock.menuOpen(dockItem); wait(40);
+                const row=find(frame.dock,"dockWindowRow"), closeButton=find(frame.dock,"dockWindowClose");
+                check(row && !row.filled && !row.selected && row.trailingIcon===Icon.check && row.height===36 && closeButton,
+                    "Dock window list did not use the plain context-menu row with a focus check");
+                const backend=ServiceCompositor.backend;
+                backend.testActions=[];
+                mouseClick(row,20,row.height/2,Qt.MiddleButton);
+                check(backend.testActions[0]?.name==="CloseWindow" && backend.testActions[0].id===1 && frame.dock.keyboardWanted,
+                    "Middle-click did not close the window while keeping the popup open");
+                mouseMove(row,20,row.height/2); wait(20);
+                check(closeButton.enabled,"Close action was not enabled on hover");
+                mouseClick(closeButton,closeButton.width/2,closeButton.height/2,Qt.LeftButton);
+                check(backend.testActions[1]?.name==="CloseWindow" && backend.testActions[1].id===1,
+                    "Clicking the close action did not close the window");
+                mouseClick(row,20,row.height/2,Qt.LeftButton);
+                check(backend.testActions[2]?.name==="FocusWindow" && backend.testActions[2].id===1 && !frame.dock.keyboardWanted,
+                    "Clicking the window row did not focus the window and dismiss the popup");
+
                 const fake=ServiceCompositor.windowLayouts;
                 fullscreen(false); check(ServiceCompositor.windowLayouts===fake,"Identical layout events allocate state");
                 send({WindowClosed:{id:2}}); check(!ServiceCompositor.fullscreenOnOutput("B") && ServiceCompositor.windowLayouts[2]===undefined,"Closing fullscreen window left stale output state");
@@ -1531,6 +1609,8 @@ def main():
     check_sources()
     with tempfile.TemporaryDirectory(prefix="bloodyshell-surfaces-") as temporary:
         run_fixture(Path(temporary))
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-audio-dropdown-") as temporary:
+        run_fixture(Path(temporary), audio_dropdown_fixture)
     with tempfile.TemporaryDirectory(prefix="bloodyshell-fullscreen-") as temporary:
         run_fixture(Path(temporary), fullscreen_fixture)
     with tempfile.TemporaryDirectory(prefix="bloodyshell-island-transitions-") as temporary:

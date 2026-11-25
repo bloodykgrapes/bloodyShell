@@ -145,13 +145,13 @@ Item
         }
     }
 
-    Rectangle
+    ShellSurface
     {
         anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom }
         width: Math.min(parent.width, information.implicitWidth + 32)
         height: 30
         radius: 15
-        color: Theme.colorSolid
+        baseColor: Theme.colorSolid
         Row
         {
             id: information

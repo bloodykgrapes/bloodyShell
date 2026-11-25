@@ -60,7 +60,7 @@ ShellRoot
                 x: 20; y: 20; width: 600
                 label: "A long translated label that must wrap before it reaches the controls"
                 description: "A description below the label."
-                SettingsButton { id: rowButton; width: 220; text: "Action"; onClicked: confirmation.open() }
+                Button { id: rowButton; width: 220; text: "Action"; onClicked: confirmation.open() }
             }
             SettingsRow
             {
@@ -69,7 +69,7 @@ ShellRoot
                 label: "A longer translated label"
                 valueText: "/a/very/long/path/that/must/not/reserve/its/full/implicit/width"
             }
-            SettingsCombo
+            SettingsDropdown
             {
                 id: combo
                 x: 20; y: 420; width: 240
@@ -79,9 +79,8 @@ ShellRoot
             }
             SettingsSlider { id: slider; x: 290; y: 420; value: 0.5; onMoved: value => slider.value = value }
             Toggle { id: toggle; x: 560; y: 420; onToggled: value => checked = value }
-            MenuItem { id: menu; x: 20; y: 360; width: 220; text: "Menu action"; property int clicks: 0; onClicked: clicks++ }
+            ButtonList { id: menu; x: 20; y: 360; width: 220; text: "Menu action"; property int clicks: 0; onClicked: clicks++ }
             ShellText { id: literal; x: 20; y: 330; label: "<b>A title & name</b>" }
-            SettingsGroup { id: group; x: 20; y: 180; width: 600; title: "Section"; SettingsRow { label: "Content" } }
             RevealSection { id: section; x: 20; y: 290; ShellText { label: "Animated section" } }
             SettingsDisclosure { id: disclosure; x: 380; y: 290; width: 240; title: "Details"; SettingsRow { label: "Content" } }
             SettingsToggles {
@@ -93,7 +92,7 @@ ShellRoot
                 id: valueControlRow; x: -5000; width: 320
                 label: "A dependency with an action"
                 valueText: "Installed"
-                SettingsButton { text: "Update application" }
+                Button { text: "Update application" }
             }
             Item { id: popups; anchors.fill: parent; z: 100 }
         }
@@ -148,20 +147,75 @@ ShellRoot
                     window.check(confirmation.keyboardNavigation && cancel.visualFocus, "Keyboard popup lost its initial focus highlight");
                     keyClick(Qt.Key_Escape); wait(Theme.animationDurationClose + 30);
                     window.check(rowButton.activeFocus && rowButton.visualFocus, "Keyboard popup did not restore visible keyboard focus");
-                    combo.forceActiveFocus(); keyClick(Qt.Key_Space); wait(30);
+                    combo.forceActiveFocus(); keyClick(Qt.Key_Space);
                     window.check(combo.open && OverlayState.settingsPopup, "Keyboard did not open dropdown");
-                    const list = window.find(popups, item => item.count === combo.options.length && item.currentIndex !== undefined);
+                    const list = window.find(popups, item => item.objectName === "settingsDropdownOptions");
                     window.check(list && list.activeFocus, "Dropdown did not receive keyboard focus");
-                    const panel = list.parent;
+                    const panel = window.find(popups, item => item.objectName === "settingsDropdownPanel");
+                    const header = window.find(panel, item => item.objectName === "settingsDropdownHeader");
+                    const field = combo.mapToItem(popups, 0, 0);
+                    const anchored = () => panel.x === field.x && panel.width === combo.width
+                        && Math.abs(panel.y + header.y - field.y) < 0.01
+                        && Math.abs(panel.y + panel.height - field.y - combo.height) < 0.01;
+                    if (Config.animationsEnabled) {
+                        for (let i = 0; panel.height === combo.height && i < 10; i++) wait(10);
+                        window.check(panel.height > combo.height && panel.shown < 1 && anchored(), "Dropdown detached while expanding");
+                    }
+                    for (let i = 0; panel.shown < 1 && i < 30; i++) wait(15);
+                    window.check(panel.shown === 1 && panel.y < field.y && anchored(), "Dropdown did not expand upward from the field");
                     window.check(panel.y >= 8 && panel.y + panel.height <= popups.height - 8, "Dropdown escaped the bottom screen edge");
-                    keyClick(Qt.Key_Down); keyClick(Qt.Key_Return); wait(20);
+                    const indicator = list.highlightItem;
+                    const selectedBackground = window.find(list.currentItem, item => item.objectName === "settingsDropdownSelectedBackground");
+                    const hover = window.find(list, item => item.objectName === "settingsDropdownHover");
+                    window.check(selectedBackground.visible && indicator.opacity === 0, "Dropdown does not show the selected option background");
+                    const secondOption = list.itemAtIndex(1), thirdOption = list.itemAtIndex(2);
+                    mouseMove(secondOption, secondOption.width / 2, secondOption.height / 2);
+                    wait(200);
+                    mouseMove(thirdOption, thirdOption.width / 2, thirdOption.height / 2);
+                    if (Config.animationsEnabled) {
+                        wait(35);
+                        window.check(hover.y > secondOption.y && hover.y < thirdOption.y, "Dropdown hover highlight did not glide");
+                        wait(180);
+                    }
+                    window.check(hover.y === thirdOption.y && list.currentIndex === 0 && selectedBackground.visible, "Hover moved the selected option background");
+                    keyClick(Qt.Key_Down);
+                    window.check(indicator.opacity === 1 && indicator.y === list.currentItem.y, "Dropdown highlight should follow the keyboard immediately");
+                    keyClick(Qt.Key_Return); wait(20);
                     window.check(combo.current === "Second" && !combo.open && combo.activeFocus && !OverlayState.settingsPopup, "Dropdown selection did not return focus");
+                    if (Config.animationsEnabled) {
+                        for (let i = 0; panel.shown === 1 && i < 10; i++) wait(10);
+                        window.check(panel.shown > 0 && panel.shown < 1 && anchored(), "Dropdown detached while collapsing");
+                    }
                     combo.current = "First";
                     keyClick(Qt.Key_Down); wait(20); keyClick(Qt.Key_Escape);
                     window.check(!combo.open && combo.activeFocus, "Escape did not restore dropdown focus");
                     combo.toggle(); wait(20); combo.enabled = false;
                     window.check(!combo.open && !OverlayState.settingsPopup, "Disabled dropdown retained its popup");
                     combo.enabled = true;
+
+                    const originalOptions = combo.options;
+                    combo.options = originalOptions.concat(["Second", {label:"Duplicate second", value:"Second"}]);
+                    wait(20);
+                    window.check(combo.entries.length === originalOptions.length, "Dropdown contains duplicate values");
+                    combo.toggle(); wait(20); combo.choose(1);
+                    window.check(combo.current === "Second" && !combo.open, "Deduplicated dropdown selected the wrong value");
+                    combo.options = originalOptions;
+                    combo.current = "First";
+
+                    combo.y = 88;
+                    for (let i = 0; panel.shown > 0 && i < 30; i++) wait(15);
+                    window.check(!panel.visible && panel.height === combo.height, "Dropdown did not collapse back to the field");
+                    combo.toggle();
+                    if (Config.animationsEnabled)
+                        window.check(panel.height === combo.height, "Dropdown did not start at the field height");
+                    for (let i = 0; panel.shown < 1 && i < 30; i++) wait(15);
+                    window.check(panel.visible && panel.y === combo.y && header.y === 0 && panel.height > combo.height, "Dropdown did not expand behind and below the field");
+                    window.check(Qt.colorEqual(panel.color, Theme.popupColorBackground), "Dropdown panel lost its popup color");
+                    mousePress(combo, combo.width / 2, combo.height / 2);
+                    window.check(combo.open && combo.pressed, "The open list blocks its field");
+                    mouseRelease(combo, combo.width / 2, combo.height / 2);
+                    window.check(!combo.open && combo.activeFocus, "Dropdown field did not toggle it closed");
+                    combo.y = 420;
 
                     slider.forceActiveFocus(); slider.value = 0.5;
                     keyClick(Qt.Key_Right); window.check(Math.abs(slider.value - 0.55) < 0.0001, "Keyboard slider step is wrong");
@@ -183,7 +237,6 @@ ShellRoot
                 section.shown = false;
                 disclosure.expanded = true;
                 toggle.checked = true;
-                group.enter(5);
                 slot.enter(Qt.resolvedUrl("modules/ui/overlay/settings/pages/PageShortcuts.qml"), 1);
                 wait(40);
                 slot.leave(1);
@@ -193,7 +246,7 @@ ShellRoot
                 bound.goal = 200;
                 wait(0);
                 window.check(bound.width === 200, "Animation-mode change removed the width binding");
-                window.check(section.opacity === 0 && group.opacity === 1 && group.rise === 0, "Sections stayed partially animated");
+                window.check(section.opacity === 0, "Section stayed partially animated");
                 window.check(window.find(disclosure, item => item.progress !== undefined && item.reveal !== undefined).reveal === 1, "Disclosure stayed partially expanded");
                 window.check(window.find(toggle, item => item.extension !== undefined).position === 1, "Switch thumb stayed between states");
                 window.check(String(slot.source) === "" && !slot.enabled, "Closed page retained interactive content");
@@ -278,6 +331,11 @@ ShellRoot {
         }
         for (const child of item.children || []) inspect(child, page);
     }
+    function find(item, name) {
+        if (item.objectName === name) return item;
+        for (const child of item.children || []) { const result = find(child, name); if (result) return result; }
+        return null;
+    }
     Window {
         id: window; visible: true; width: 1080; height: 720
         SettingsContent { id: settings; anchors.fill: parent }
@@ -299,6 +357,13 @@ ShellRoot {
                 const page = tests.loaded(settings, Registry.settings[tests.pageIndex].page);
                 if (!page) return;
                 tests.inspect(page, page);
+                const header = tests.find(page, "settingsPageHeader");
+                tests.check(header && header.height > 0 && header.width === page.width, "Page header is missing or has the wrong width");
+                const before = header.mapToItem(page, 0, 0).y;
+                page.contentY = Math.max(0, page.contentHeight - page.height);
+                tests.check(header.mapToItem(page, 0, 0).y === before && before === 0, "Page header moves with scrolling content");
+                page.resetScroll();
+                tests.check(page.contentY === 0, "Page scroll does not reset below the fixed header");
                 tests.pageIndex++;
                 if (tests.pageIndex === Registry.settings.length) {
                     tests.pageIndex = 0; tests.scenario++; tests.configure = true;
@@ -400,13 +465,13 @@ def display_checks():
         env = prepare(base)
         (base / "home").mkdir()
         (base / "config/niri/bloodyShell").mkdir(parents=True)
-        (base / "config/niri/config.kdl").write_text('include "bloodyShell/07-user-output.kdl"\n')
-        output_config = base / "config/niri/bloodyShell/07-user-output.kdl"
+        (base / "config/niri/config.kdl").write_text('include "bloodyShell/08-settings.kdl"\n')
+        output_config = base / "config/niri/bloodyShell/08-settings.kdl"
         output_config.write_text("")
         env.update(HOME=str(base / "home"), XDG_STATE_HOME=str(base / "state"))
         env.pop("WAYLAND_DISPLAY", None)
         adapter = base / "modules/compositors/Niri.qml"
-        adapter.write_text(adapter.read_text().replace("function refreshOutputs() { outputsReader.running = true; }", "function refreshOutputs() {}"))
+        adapter.write_text(re.sub(r"function refreshOutputs\(\)\n    \{.*?\n    \}", "function refreshOutputs() {}", adapter.read_text(), count=1, flags=re.S))
         (base / "shell.qml").write_text('''import QtQuick
 import QtQuick.Window
 import QtTest
@@ -834,6 +899,13 @@ ShellRoot {
                     const point = button.mapToItem(window.contentItem, button.width / 2, button.height / 2);
                     mousePress(window.contentItem, point.x, point.y, Qt.RightButton);
                     check(MenuState.trayContextItem === app && menu.contextOpen, "Physical right press did not open app actions");
+                    check(button.backgroundColor.a > 0.99, "Pressed tray tile replaces its solid surface with a translucent color");
+                    if (mode !== 0) {
+                        wait(40);
+                        const surface = find(button,"widgetSurface");
+                        check(surface && surface.color.a > 0.99, "Tray color fade exposes the backdrop");
+                        check(String(surface.color) !== String(button.backgroundColor), "Tray press color snaps instead of fading");
+                    }
                     wait(450);
                     check(menu.contextItem === app && find(menu, "trayContext").visible, "Held right button lost the context menu");
                     mouseRelease(window.contentItem, point.x, point.y, Qt.RightButton);
@@ -913,7 +985,7 @@ def config_validation_checks():
         for name in ("Config", "Paths", "Enums"):
             shutil.copyfile(ROOT / "modules/core" / (name + ".qml"), core / (name + ".qml"))
         (core / "qmldir").write_text("\n".join(f"singleton {name} 1.0 {name}.qml" for name in ("Config", "Paths", "Enums")))
-        settings.write_text(json.dumps(dict(themeScale=1.5, themeBorder=True, scrollSpeed=-10, barSide=99, dockPinned=[None, 42],
+        settings.write_text(json.dumps(dict(themeScale=1.5, themeBorder=True, scrollSpeed=-10, barSide=99, dockPinned=[None, 42], controlStyle=1,
                                            barType=1.5, barMenu=2, screenshotMode=1, updateCheck=5, equalizerStyle=2)))
         (base / "shell.qml").write_text('''import QtQuick
 import QtTest
@@ -951,7 +1023,8 @@ ShellRoot {
             function check(ok) { if (!ok) throw new Error("Invalid configuration was accepted"); }
             try {
                 check(Config.scrollSpeed === 2.5 && Config.barSide === 0 && Config.dockPinned.length === 0);
-                check(Config.barType === 0 && Config.barMenu === 0 && Config.screenshotMode === Enums.ScreenshotArea && Config.updateCheck === 4 && Config.equalizerStyle === 0);
+                check(Config.barType === 0 && Config.snapshot().barMenu === undefined && Config.screenshotMode === Enums.ScreenshotArea && Config.updateCheck === 4 && Config.equalizerStyle === 0);
+                check(!("controlStyle" in Config) && !("controlStyle" in Config.snapshot()));
                 check(!("themeScale" in Config) && !("themeBorder" in Config));
                 check(!("themeScale" in Config.snapshot()) && !("themeBorder" in Config.snapshot()));
                 check(!Config.valid("__proto__", {}) && !Config.valid("constructor", {}) && !Config.valid("defaults", {}));
@@ -977,7 +1050,8 @@ ShellRoot {
 ''')
         result = subprocess.run([shutil.which("qs"), "-p", str(base), "--no-color"], env=dict(env, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software"), text=True, capture_output=True, timeout=8)
         assert "CONFIG_VALIDATION_PASSED" in result.stdout + result.stderr, result.stdout + result.stderr
-        assert json.loads(settings.read_text())["scrollSpeed"] == 1.5, "The latest setting was not persisted"
+        saved = json.loads(settings.read_text())
+        assert saved["scrollSpeed"] == 1.5 and "controlStyle" not in saved, "The latest settings were not persisted"
 
 def calendar_checks():
     import runpy

@@ -13,7 +13,6 @@ Item
     property bool   hold: false
     property bool   current: false
     property bool   danger: false
-    property int    order: 0
     signal hovered()
     signal triggered()
 
@@ -42,22 +41,6 @@ Item
     }
     NumberAnimation { id: fill; target: powerTile; property: "progress"; to: 1; easing.type: Easing.InOutQuad; onFinished: if (powerTile.progress >= 1) powerTile.triggered() }
     NumberAnimation { id: drain; target: powerTile; property: "progress"; to: 0; duration: 220; easing.type: Easing.OutCubic }
-
-    property real rise: 0
-    transform: Translate { y: powerTile.rise }
-    Component.onCompleted: if (Config.animationsFluid) entrance.start()
-    SequentialAnimation
-    {
-        id: entrance
-        PropertyAction { target: powerTile; property: "opacity"; value: 0 }
-        PropertyAction { target: powerTile; property: "rise"; value: 18 }
-        PauseAnimation { duration: 40 + powerTile.order * 35 }
-        ParallelAnimation
-        {
-            NumberAnimation { target: powerTile; property: "opacity"; to: 1; duration: 300; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized }
-            NumberAnimation { target: powerTile; property: "rise"; to: 0; duration: 420; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized }
-        }
-    }
 
     Rectangle
     {

@@ -142,17 +142,11 @@ choose()
 }
 
 
-os_field() { [[ -f /etc/os-release ]] && sed -n "s/^$1=//p" /etc/os-release | head -n1 | tr -d '"' || true; }
-
 distro_family()
 {
-    case " $(os_field ID) $(os_field ID_LIKE) " in
-        *" arch "*)                 echo arch ;;
-        *" fedora "*|*" rhel "*)    echo fedora ;;
-        *" debian "*|*" ubuntu "*)  echo debian ;;
-        *)                          echo "" ;;
-    esac
+    python3 "$PACKAGE/scripts/bloodyShell" internal dependencies family
 }
+
 
 dependency_packages()
 {
@@ -233,13 +227,9 @@ install_packages()
 install_native_support()
 {
     if command -v c++ > /dev/null && command -v wayland-scanner > /dev/null && command -v pkg-config > /dev/null && pkg-config --exists Qt6Quick wayland-client xkbcommon; then return 0; fi
-    local family="$1" packages=()
-    case "$family" in
-        arch) packages=(gcc pkgconf qt6-base qt6-declarative wayland libxkbcommon) ;;
-        fedora) packages=(gcc-c++ pkgconf-pkg-config qt6-qtbase-devel qt6-qtdeclarative-devel wayland-devel libxkbcommon-devel) ;;
-        debian) packages=(g++ pkg-config qt6-base-dev qt6-base-dev-tools qt6-declarative-dev libwayland-dev libwayland-bin libxkbcommon-dev) ;;
-        *) warn "Install C++, Qt 6 Quick, Wayland, and xkbcommon development tools for native keyboard support"; return 0 ;;
-    esac
+    local family="$1" names packages=()
+    names=$(python3 "$PACKAGE/scripts/bloodyShell" internal dependencies native-packages "$family") || return 1
+    mapfile -t packages <<< "$names"
     if interactive && ask "Install development tools for Alt+Tab and the on-screen keyboard? (needs sudo)" y; then
         install_packages "$family" "${packages[@]}" || warn "Native keyboard support could not be prepared"
     else
@@ -271,6 +261,73 @@ discard_sddm_backups()
     done
 }
 
+check_greeter_theme()
+{
+    local file
+    for file in Main.qml Widgets.qml Theme.qml metadata.desktop theme.conf niri.kdl; do
+        [[ -s "$1/dots/sddm/$file" ]] || { warn "Missing login-screen file: $file"; return 1; }
+    done
+}
+
+prepare_greeter_theme()
+{
+    local resource="$1" theme="$2"
+    mkdir -p "$theme/keyboard" &&
+        cp -a "$resource/dots/sddm/." "$theme/" &&
+        ln -s "$GREETER_STATE/theme.conf" "$theme/theme.conf.user" &&
+        cp -a "$PACKAGE/modules/common/keyboard/." "$theme/keyboard/" &&
+        python3 "$PACKAGE/scripts/bloodyShell" internal build-virtual-keyboard "$theme/native" > /dev/null &&
+        printf '\nkeyboardSource=keyboard/Keyboard.qml\n' >> "$theme/theme.conf"
+}
+
+refresh_greeter()
+(
+    [[ -d "$SDDM_THEME" && ! -L "$SDDM_THEME" ]] || return 0
+    local -a elevate=(sudo)
+    if ! interactive; then elevate+=(-n); fi
+    "${elevate[@]}" -v || return 75
+    check_greeter_theme "$PACKAGE" && niri validate -c "$PACKAGE/dots/sddm/niri.kdl" || return 1
+
+    local stage swap="" committed=false
+    stage="$(mktemp -d)" || return 1
+    finish_theme_refresh()
+    {
+        local result=$?
+        trap - EXIT INT TERM HUP
+        if [[ -n "$swap" ]]; then
+            if ! $committed && [[ -d "$swap/previous" ]]; then
+                if ! { "${elevate[@]}" rm -rf -- "$SDDM_THEME" &&
+                       "${elevate[@]}" mv -T -- "$swap/previous" "$SDDM_THEME"; }; then
+                    warn "Restore the previous login screen from $swap/previous"
+                    rm -rf -- "$stage"
+                    exit 1
+                fi
+            fi
+            "${elevate[@]}" rm -rf -- "$swap" || true
+        fi
+        rm -rf -- "$stage"
+        exit "$result"
+    }
+    trap finish_theme_refresh EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
+    prepare_greeter_theme "$PACKAGE" "$stage/theme" || { warn "Could not prepare the login-screen theme"; return 1; }
+    swap="$("${elevate[@]}" mktemp -d "$(dirname "$SDDM_THEME")/.bloodyShell-theme.XXXXXX")" || return 1
+    "${elevate[@]}" chmod 0711 "$swap" || return 1
+    "${elevate[@]}" cp -a -- "$stage/theme" "$swap/theme" || return 1
+    if [[ -e "$SDDM_THEME/theme.conf.user" || -L "$SDDM_THEME/theme.conf.user" ]]; then
+        "${elevate[@]}" rm -f -- "$swap/theme/theme.conf.user" &&
+            "${elevate[@]}" cp -a -- "$SDDM_THEME/theme.conf.user" "$swap/theme/theme.conf.user" || return 1
+    fi
+    "${elevate[@]}" chown -R root:root "$swap/theme" &&
+        "${elevate[@]}" chmod -R a+rX,go-w "$swap/theme" &&
+        "${elevate[@]}" mv -T -- "$SDDM_THEME" "$swap/previous" &&
+        "${elevate[@]}" mv -T -- "$swap/theme" "$SDDM_THEME" || return 1
+    committed=true
+    ok "SDDM login screen refreshed"
+)
+
 apply_greeter()
 (
     local resource="${BLOODYSHELL_RESOURCE_DIR:-$PACKAGE}"
@@ -279,10 +336,8 @@ apply_greeter()
         return
     fi
     if ! interactive && ! sudo -n true 2> /dev/null; then warn "Needs sudo in a terminal: login screen skipped"; return 0; fi
-    local file line sddm_dependency=""
-    for file in Main.qml Widgets.qml Theme.qml metadata.desktop theme.conf niri.kdl; do
-        [[ -s "$resource/dots/sddm/$file" ]] || { warn "Missing login-screen file: $file"; return 1; }
-    done
+    local line sddm_dependency=""
+    check_greeter_theme "$resource" || return 1
     local family; family="$(distro_family)"
     local missing=() dependencies=() niri_dependency=""
     local catalog
@@ -327,15 +382,10 @@ apply_greeter()
     trap 'exit 130' INT
     trap 'exit 143' TERM
     niri_bin="$(command -v niri)"
-    if ! mkdir "$stage/theme" || ! cp -a "$resource/dots/sddm/." "$stage/theme/" || ! ln -s "$GREETER_STATE/theme.conf" "$stage/theme/theme.conf.user"; then
-        rm -rf "$stage"; return 1
-    fi
     install_native_support "$family"
-    if ! mkdir -p "$stage/theme/keyboard" || ! cp -a "$PACKAGE/modules/common/keyboard/." "$stage/theme/keyboard/" ||
-       ! python3 "$PACKAGE/scripts/bloodyShell" internal build-virtual-keyboard "$stage/theme/native" > /dev/null; then
+    if ! prepare_greeter_theme "$resource" "$stage/theme"; then
         warn "Could not prepare the login-screen keyboard"; rm -rf "$stage"; return 1
     fi
-    printf '\nkeyboardSource=keyboard/Keyboard.qml\n' >> "$stage/theme/theme.conf"
     local config_stage="$stage/sddm.conf"
     {
         printf '[General]\nDisplayServer=wayland\n\n[Theme]\nCurrent=%s\n\n[Wayland]\n' "$NAME"
@@ -376,7 +426,7 @@ apply_greeter()
         sudo chown -R root:root "$SDDM_THEME" &&
         sudo chmod -R a+rX,go-w "$SDDM_THEME" &&
         sudo install -d -m 2755 -o "$USER" -g sddm "$GREETER_STATE" &&
-        python3 "$PACKAGE/scripts/bloodyShell" internal greeter-settings "$CONFIG_HOME/$NAME/settings.json" "$GREETER_STATE" &&
+        python3 "$PACKAGE/scripts/bloodyShell" internal greeter-settings "$CONFIG_HOME/$NAME/settings.json" "$GREETER_STATE" --initialize-wallpaper &&
         sudo install -m 644 "$config_stage" "$SDDM_CONF" &&
         { [[ -z "$system_backup" ]] || sudo tee "$SDDM_SYSTEM_CONF" < "$stage/system.conf" > /dev/null; };
     }; then

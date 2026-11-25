@@ -28,12 +28,22 @@ ShellRoot
         void ServiceCompositor.windowList;
     }
 
+    Variants { model: Config.initialized && ServiceCompositor.supports("overviewBackdrop") ? Quickshell.screens : []; OverviewBackdrop { } }
     Variants { model: Config.initialized ? Quickshell.screens : []; Desktop { } }
     Variants { model: Config.initialized ? Quickshell.screens : []; Layout { } }
 
     Overlay { }
     HelperStartup { }
     VirtualKeyboard { }
+
+    IpcHandler
+    {
+        target: "health"
+        function status(): string
+        {
+            return JSON.stringify({ready: Config.initialized && ServiceUpdate.versionReady, version: ServiceUpdate.version});
+        }
+    }
 
     IpcHandler
     {

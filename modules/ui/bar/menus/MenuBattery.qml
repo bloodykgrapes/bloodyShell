@@ -32,8 +32,8 @@ Menu
             visible: ServicePower.present
             width: parent.width
             height: Math.max(104, summary.implicitHeight + 24)
-            radius: Theme.radiusLarge
-            color: Theme.colorCurrent
+            radius: Theme.menuControlRadius
+            color: Theme.menuControlBackground
 
             Accessible.role: Accessible.StaticText
             Accessible.name: ServicePower.percent + "%, " + ServicePower.status + (menuBattery.estimate !== "" ? ", " + menuBattery.estimate : "")
@@ -158,7 +158,7 @@ Menu
         {
             model: ServicePowerProfiles.options
 
-            MenuRow
+            ButtonList
             {
                 required property var modelData
 
@@ -181,8 +181,9 @@ Menu
         order: 3
 
         MenuSeparator {}
-        MenuItem
+        ButtonList
         {
+            filled: true
             icon: Icon.settingsPower
             text: Tr.tr("menu.battery.settings")
             onClicked:

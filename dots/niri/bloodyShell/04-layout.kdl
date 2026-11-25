@@ -1,0 +1,43 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// 04 ─ Layout
+// ─────────────────────────────────────────────────────────────────────────────
+// Docs: https://niri-wm.github.io/niri/Configuration:-Layout
+//
+// Workspace spacing, column sizes, window decorations and animations.
+// ─────────────────────────────────────────────────────────────────────────────
+
+layout {
+    background-color "transparent"
+    
+    gaps 10
+
+    center-focused-column "never"
+
+    default-column-width { proportion 0.5; }
+    preset-column-widths {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+
+    // default-column-height { }
+    // preset-column-heights { }
+
+    focus-ring {
+        width 2
+
+        active-color   "#efefef"
+        inactive-color "#505050"
+    }
+}
+
+overview {
+    zoom 0.75
+}
+
+blur {
+    passes 3
+    offset 3.3
+    noise 0.02
+    saturation 1.3
+}

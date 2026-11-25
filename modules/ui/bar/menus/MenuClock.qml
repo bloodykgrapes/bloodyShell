@@ -65,8 +65,8 @@ Menu
         {
             width: parent.width
             height: Math.max(96, summary.implicitHeight + 28)
-            radius: 18
-            color: Theme.colorCurrent
+            radius: Theme.menuControlRadius
+            color: Theme.menuControlBackground
             Tint on color {}
 
             Rectangle
@@ -123,8 +123,8 @@ Menu
         {
             width: parent.width
             height: monthContent.implicitHeight + 24
-            radius: 18
-            color: Theme.colorField
+            radius: Theme.menuControlRadius
+            color: Theme.menuControlBackground
             Tint on color {}
 
             Column
@@ -139,7 +139,7 @@ Menu
                     width: parent.width
                     height: 32
                     spacing: 8
-                    ActionButton
+                    Button
                     {
                         objectName: "calendarPrevious"
                         anchors.verticalCenter: parent.verticalCenter
@@ -158,7 +158,7 @@ Menu
                         color: Theme.text1
                         font.weight: Font.Medium
                     }
-                    ActionButton
+                    Button
                     {
                         objectName: "calendarNext"
                         anchors.verticalCenter: parent.verticalCenter
@@ -232,7 +232,7 @@ Menu
                         x: Config.animationsFluid ? deck.direction * 16 * (1 - deck.progress) : 0
                     }
                 }
-                ActionButton
+                Button
                 {
                     objectName: "calendarToday"
                     anchors.horizontalCenter: parent.horizontalCenter
@@ -293,7 +293,7 @@ Menu
                     label: String(day.modelData.day)
                     size: 11
                     color: day.modelData.today ? (Theme.lightForeground(dayFill.color) ? "#ffffff" : "#000000")
-                        : day.modelData.inMonth ? Theme.text1 : Theme.text4
+                        : day.modelData.inMonth ? Theme.text1 : Theme.text3
                     font.weight: day.modelData.today ? Font.DemiBold : Font.Normal
                     Tint on color {}
                 }

@@ -34,7 +34,7 @@ Item
     readonly property rect bodyRect:
     {
         const full = zone.islandRect;
-        if (menuHere) return full;
+        if (menuHere || zone.progress > 0) return full;
         if (expansionProgress < 0.001 || full.width <= 0 || full.height <= 0) return Qt.rect(0, 0, 0, 0);
         if (!recordingOnly && captureProgress <= 0.001) return full;
         const amount = expansionProgress;
@@ -44,13 +44,15 @@ Item
         const centerY = mark.y + mark.height / 2 + (full.y + full.height / 2 - mark.y - mark.height / 2) * amount;
         return Qt.rect(centerX - width / 2, centerY - height / 2, width, height);
     }
-    readonly property rect panelRect: zone.blob
+    readonly property rect panelRect: zone.attachedMenuRect
+    property real widgetThickness: zone.contentThickness > 0 ? Math.max(Theme.barThickness, zone.contentThickness + (zone.isHorizontal ? 12 : 6)) : 0
+    Glide on widgetThickness {}
 
     Region
     {
         id: inputMask
         Region { item: island.expanded ? body : null }
-        Region { item: zone.panel }
+        Region { item: zone.panel.enabled && zone.panel.visible ? zone.panel : null }
     }
     Item
     {
@@ -64,7 +66,8 @@ Item
         anchors.fill: body
         radius: Theme.barRadius
         color: Theme.frameColor
-        visible: island.expansionProgress > 0.001 && zone.thickness > Theme.barThickness + 0.5
+        visible: Config.shellSurface === Enums.SurfaceSolid && !island.menuHere && zone.progress === 0
+            && island.expansionProgress > 0.001 && zone.thickness > Theme.barThickness + 0.5
     }
     BarZone
     {
@@ -73,16 +76,11 @@ Item
         side: island.side
         align: "center"
         widgets: ["island"]
-        docked: false
         adaptive: true
-        thickness: visibleMenu ? 0 : contentThickness > 0 ? Math.max(Theme.barThickness, contentThickness + (isHorizontal ? 12 : 6)) : 0
-        Glide on thickness { enabled: zone.animated }
+        attachedMenu: true
+        thickness: island.widgetThickness * (1 - progress)
         islandDepth: Theme.frameThickness
         cornerInset: Theme.frameThickness
-        edgeMin: Theme.frameThickness + 12
-        edgeMax: total - edgeMin
-        snapMin: edgeMin
-        snapMax: edgeMax
         revealed: true
     }
 

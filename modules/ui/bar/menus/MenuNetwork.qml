@@ -80,7 +80,7 @@ Menu
         order: 0
         spacing: 8
 
-        ControlToggle
+        MenuToggle
         {
             objectName: "networkRadio"
             width: parent.width
@@ -97,7 +97,7 @@ Menu
             onToggled: value => ServiceNetwork.setWifiEnabled(value)
         }
 
-        MenuRow
+        ButtonList
         {
             readonly property var network: ServiceNetwork.wired ? ServiceNetwork.wired.network : null
             visible: ServiceNetwork.hasWired
@@ -120,7 +120,7 @@ Menu
         order: 1
         visible: activeConnection.active !== null
 
-        MenuRow
+        ButtonList
         {
             id: activeConnection
 
@@ -138,8 +138,8 @@ Menu
             busy: active !== null && active.stateChanging
             onClicked: if (active) menuNetwork.activate(active.name)
 
-            MenuRowAction { icon: Icon.linkOff; label: Tr.tr("common.disconnect"); enabled: !activeConnection.busy; onClicked: ServiceNetwork.disconnectNetwork(ServiceNetwork.ssid) }
-            MenuRowAction { icon: Icon.trash; label: Tr.tr("common.forget"); danger: true; enabled: !activeConnection.busy; onClicked: ServiceNetwork.forgetNetwork(ServiceNetwork.ssid) }
+            Button { compact: true; icon: Icon.linkOff; text: Tr.tr("common.disconnect"); enabled: !activeConnection.busy; onClicked: ServiceNetwork.disconnectNetwork(ServiceNetwork.ssid) }
+            Button { compact: true; icon: Icon.trash; text: Tr.tr("common.forget"); danger: true; enabled: !activeConnection.busy; onClicked: ServiceNetwork.forgetNetwork(ServiceNetwork.ssid) }
         }
     }
 
@@ -217,7 +217,7 @@ Menu
 
             maxHeight: (menuNetwork.passwordFor !== "" ? 3 : 5) * 48
 
-            delegate: MenuRow
+            delegate: ButtonList
             {
                 id: networkRow
 
@@ -239,11 +239,12 @@ Menu
 
                 onClicked: menuNetwork.activate(networkRow.name)
 
-                MenuRowAction
+                Button
                 {
+                    compact: true
                     visible: networkRow.known
                     icon: Icon.trash
-                    label: Tr.tr("common.forget")
+                    text: Tr.tr("common.forget")
                     danger: true
                     onClicked: ServiceNetwork.forgetNetwork(networkRow.name)
                 }

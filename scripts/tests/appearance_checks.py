@@ -23,6 +23,8 @@ def checks():
         env.pop("WAYLAND_DISPLAY", None)
         for directory in ("home", "data", "wallpapers"):
             (base / directory).mkdir(parents=True)
+        subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi", "-i", "color=0xfff5d8:s=64x64",
+                        "-frames:v", "1", "-threads", "1", str(base / "bright.png")], check=True)
         (base / "config/bloodyShell/settings.json").write_text(json.dumps(dict(helperSeen=True, themeAnimations=0,
             wallpaperDirectory=str(base / "wallpapers"), themeStyle=0, shellLanguage="en")))
         tools = r'''#!/usr/bin/env python3
@@ -89,8 +91,10 @@ else: raise AssertionError(name)
         (base / "shell.qml").write_text('''import QtQuick
 import QtQuick.Window
 import Quickshell
+import "modules/common"
 import "modules/core"
 import "modules/services"
+import "modules/ui/frame"
 import "modules/ui/overlay/settings/pages"
 ShellRoot {
     id: tests
@@ -105,17 +109,41 @@ ShellRoot {
         if (item.label === "GTK theme" || item.label === "Qt theme" || item.label === "Тема GTK" || item.label === "Тема Qt") return true;
         return (item.children || []).some(child => hasThemeSelector(child));
     }
-    Window { id: window; visible: true; width: 820; height: 740; PageAppearance { id: page; anchors.fill: parent } }
+    function checkMaterialContrast() {
+        const ink = Theme.luminance(Theme.text3) + 0.05;
+        for (const base of [Theme.frameColor, Theme.colorSolid, Theme.settingsColorBackground, Theme.settingsColorSidebar]) {
+            for (const opacity of [ShellMaterial.fill(base, true).a, 1 - ShellMaterial.wallpaperStrength(base)]) {
+                for (const background of [0, 1]) {
+                    const behind = background * (1 - opacity);
+                    const luminance = Theme.luminance(Qt.rgba(
+                        base.r * opacity + behind, base.g * opacity + behind, base.b * opacity + behind, 1)) + 0.05;
+                    check(Math.max(ink, luminance) / Math.min(ink, luminance) >= 4.5, "Muted text lost contrast over a material");
+                }
+            }
+        }
+    }
+    function checkFrostedTint() {
+        check(ShellMaterial.blur && sample.color.a < 0.74 && frame.paintColor.a < 0.72, "Blur tint hides too much of the background");
+        checkMaterialContrast();
+    }
+    Window {
+        id: window; visible: true; width: 820; height: 740
+        FrameSurface { id: frame; anchors.fill: parent; materialEnabled: true }
+        ShellSurface { id: sample; x: 24; y: 50; width: 120; height: 80; radius: 16 }
+        PageAppearance { id: page; anchors.fill: parent }
+    }
     Timer {
         interval: 80; running: true; repeat: true
         onTriggered: {
             if (!Config.initialized || !ServiceAppearance.loaded || ServiceAppearance.busy) return;
             try {
                 if (tests.phase === 0) {
+                    tests.checkMaterialContrast();
                     tests.check(!tests.hasThemeSelector(page), "Removed theme selectors remain visible");
                     tests.check(ServiceAppearance.gtkTheme === undefined && ServiceAppearance.qtTheme === undefined, "Removed theme parameters remain available");
                     tests.check(Config.syncSystemAppearance === undefined, "Removed color scheme toggle remains available");
                     tests.check(!tests.find(page, "portalSettings") && !tests.find(page, "installedPortals") && !tests.find(page, "refreshPortals"), "Portal settings remain visible");
+                    tests.check(!tests.find(page, "controlStyleSelector"), "Removed control style picker remains visible");
                     const transitions = tests.find(page, "wallpaperTransitionSelector");
                     tests.check(transitions.options.length === 14, "Wallpaper selector does not offer every awww transition");
                     for (const option of transitions.options) {
@@ -123,6 +151,18 @@ ShellRoot {
                         tests.check(Config.wallpaperTransition === option.value, "Wallpaper transition cannot be selected: " + option.value);
                     }
                     Config.set("wallpaperTransition", "grow");
+                    const surface = tests.find(page, "shellSurfaceSelector");
+                    tests.check(surface.options.length === 3 && Config.shellSurface === Enums.SurfaceSolid
+                        && sample.color.a === 1 && !sample.blurActive, "Solid is not the default shell surface");
+                    for (const option of surface.options) {
+                        const card = tests.find(surface, "surfaceStyle-" + option.value);
+                        tests.check(card?.surfaceStyle && tests.find(card, "shellSurfacePreview"), "Missing shell surface preview card");
+                    }
+                    ServiceCompositor.backend.runningVersion = "niri 26.04";
+                    tests.find(surface, "surfaceStyle-" + Enums.SurfaceBlur).clicked();
+                    tests.checkFrostedTint();
+                    Config.set("wallpaperCurrent", Quickshell.env("TEST_APPEARANCE_BASE") + "/fixture.png");
+                    tests.find(surface, "surfaceStyle-" + Enums.SurfaceBackdrop).clicked();
                     tests.check(ServiceAppearance.colorScheme === "prefer-light", "System scheme did not follow the light shell theme");
                     tests.check(ServiceAppearance.iconTheme === "FixtureIcons" && ServiceAppearance.fontFamily === "Noto Sans", "Remaining appearance settings did not load");
                     Config.set("shellLanguage", "ru");
@@ -130,9 +170,44 @@ ShellRoot {
                     Config.set("themeStyle", Enums.ThemeDark);
                     tests.phase++;
                 } else if (tests.phase === 1) {
+                    tests.checkMaterialContrast();
+                    const texture = tests.find(sample, "shellWallpaperTexture");
+                    if (!texture || texture.status !== Image.Ready || frame.wallpaperStrength <= 0) return;
+                    tests.check(sample.color.a === 1 && !sample.blurActive, "Backdrop did not stay opaque");
+                    ServiceCompositor.backend.runningVersion = "niri 25.11";
+                    tests.find(page, "surfaceStyle-" + Enums.SurfaceBlur).clicked();
+                    tests.check(ShellMaterial.backdrop && sample.color.a === 1, "Older Niri did not fall back to Backdrop");
+                    ServiceCompositor.backend.runningVersion = "niri 26.04";
+                    tests.check(ShellMaterial.blur && sample.color.a < 1 && frame.paintColor.a < 1
+                        && ShellMaterial.regionsFor(sample.surfaceWindow).includes(sample.blurMask), "Frosted Blur did not register the surface region");
+                    tests.checkFrostedTint();
+                    sample.visible = false;
+                    tests.check(!ShellMaterial.regionsFor(frame.Window.window).includes(sample.blurMask), "Hidden surface left a blur region behind");
+                    tests.find(page, "surfaceStyle-" + Enums.SurfaceSolid).clicked();
+                    tests.check(sample.color.a === 1 && frame.paintColor.a === 1 && ShellMaterial.blurClients.length === 0, "Returning to Solid left blur enabled");
                     tests.check(!tests.hasThemeSelector(page), "Removed translated theme selectors remain visible");
                     tests.check(ServiceAppearance.colorScheme === "prefer-dark", "System scheme did not follow the dark shell theme");
-                    console.log("APPEARANCE_PASSED removed theme controls and parameters, preserved styles, automatic scheme, wallpaper transitions, and translations"); Qt.quit();
+                    const auto = tests.find(page, "themeStyle-" + Enums.ThemeAuto);
+                    tests.check(auto?.label === "Авто", "Missing localized Auto theme card");
+                    const light = tests.find(auto, "autoLightHalf");
+                    const dark = tests.find(auto, "autoDarkHalf");
+                    tests.check(light && dark && Math.abs(light.width - dark.width) <= 1 && light.x + light.width === dark.x
+                        && light.children[0].lightMode && !dark.children[0].lightMode, "Auto preview is not evenly split between Light and Dark");
+                    Config.set("wallpaperCurrent", Quickshell.env("TEST_APPEARANCE_BASE") + "/bright.png");
+                    auto.clicked();
+                    tests.check(auto.current, "Auto was not selected");
+                    tests.phase++;
+                } else {
+                    if (ServiceAppearance.wallpaperThemeSample.key !== ServiceAppearance.wallpaperThemeRequest) return;
+                    const isBright = tests.phase === 2;
+                    tests.check(Config.themeStyle === Enums.ThemeAuto && Theme.light === isBright, "Auto did not follow wallpaper brightness");
+                    tests.check(ServiceAppearance.colorScheme === (isBright ? "prefer-light" : "prefer-dark"), "System scheme did not follow Auto");
+                    if (isBright) {
+                        Config.set("wallpaperCurrent", Quickshell.env("TEST_APPEARANCE_BASE") + "/fixture.png");
+                        tests.phase++;
+                    } else {
+                        console.log("APPEARANCE_PASSED surface preview cards, automatic wallpaper theme, scheme synchronization, wallpaper transitions, and translations"); Qt.quit();
+                    }
                 }
             } catch (error) { console.error("APPEARANCE_FAILED", error); Qt.quit(); }
         }
@@ -151,6 +226,8 @@ ShellRoot {
         assert portal_config.read_text() == portal_template
         calls = [json.loads(line) for line in (base / "gtk-calls").read_text().splitlines()]
         assert calls == [["set", "org.gnome.desktop.interface", "color-scheme", "prefer-light"],
+                         ["set", "org.gnome.desktop.interface", "color-scheme", "prefer-dark"],
+                         ["set", "org.gnome.desktop.interface", "color-scheme", "prefer-light"],
                          ["set", "org.gnome.desktop.interface", "color-scheme", "prefer-dark"]], calls
         (base / "gtk-calls").unlink()
         settings = base / "config/bloodyShell/settings.json"
@@ -669,7 +746,11 @@ ShellRoot {
                 check(OverlayState.current==="wallpapers" && ServiceAppearance.wallpaperError!=="" && findChild(picker,"wallpaperNext").enabled,"Failed apply dismisses the picker or prevents retry");
                 picker.apply(3); ServiceAppearance.finish(true);
                 check(!OverlayState.active && Config.wallpaperCurrent===picker.selectedPath,"Successful apply does not close the picker or save the choice");
-                picker.scanFolder(); Config.set("wallpaperDirectory",String(Qt.resolvedUrl("other")).slice(7));
+                const snapshot=ServiceWallpapers.catalog, selection=picker.selectedPath;
+                ServiceWallpapers.refresh(true);
+                until(()=>!ServiceWallpapers.loading,"Wallpaper refresh did not finish");
+                check(ServiceWallpapers.catalog===snapshot && picker.selectedPath===selection,"Unchanged refresh replaced the cached list or selection");
+                ServiceWallpapers.refresh(true); Config.set("wallpaperDirectory",String(Qt.resolvedUrl("other")).slice(7));
                 until(()=>!picker.loading && picker.images.length===2,"Folder change during refresh returns a stale catalog");
                 check(picker.images.every(path=>path.includes("/other/")),"Stale wallpaper paths were accepted");
                 Config.set("wallpaperDirectory",String(Qt.resolvedUrl("denied")).slice(7));

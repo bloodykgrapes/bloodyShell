@@ -11,6 +11,9 @@ Item
     property int side: Config.barSide
     property bool   active: false
     property string menu: ""
+    property real revealOpacity: 1
+    required property real maximumWidth
+    required property real maximumHeight
 
     readonly property bool horizontal: barMenu.side === Enums.EdgeTop || barMenu.side === Enums.EdgeBottom
     property real origin: 0
@@ -18,9 +21,9 @@ Item
 
     function alongPos(size) { return Math.round(center - size / 2) - origin }
 
-    readonly property real contentHeight: front.item ? front.item.implicitHeight : 0
-    readonly property real contentWidth: front.item ? front.item.implicitWidth : 0
-    readonly property bool centerOnWidget: front.item && front.item.centerOnWidget === true
+    readonly property real contentHeight: front.height
+    readonly property real contentWidth: front.width
+    readonly property bool contentAnimatesHeight: front.item && front.item.contentAnimatesHeight === true
 
     property bool   useB: false
     property string url: ""
@@ -30,7 +33,10 @@ Item
     MenuSlot
     {
         id: slotA
-        side: barMenu.side
+        selected: barMenu.front === slotA
+        revealOpacity: barMenu.revealOpacity
+        maximumWidth: barMenu.maximumWidth
+        maximumHeight: barMenu.maximumHeight
         x: barMenu.horizontal ? barMenu.alongPos(width) : barMenu.side === Enums.EdgeRight ? barMenu.width - width : 0
         y: barMenu.horizontal ? (barMenu.side === Enums.EdgeBottom ? barMenu.height - height : 0) : barMenu.alongPos(height)
         enabled: barMenu.front === slotA && barMenu.active
@@ -40,7 +46,10 @@ Item
     MenuSlot
     {
         id: slotB
-        side: barMenu.side
+        selected: barMenu.front === slotB
+        revealOpacity: barMenu.revealOpacity
+        maximumWidth: barMenu.maximumWidth
+        maximumHeight: barMenu.maximumHeight
         x: barMenu.horizontal ? barMenu.alongPos(width) : barMenu.side === Enums.EdgeRight ? barMenu.width - width : 0
         y: barMenu.horizontal ? (barMenu.side === Enums.EdgeBottom ? barMenu.height - height : 0) : barMenu.alongPos(height)
         enabled: barMenu.front === slotB && barMenu.active

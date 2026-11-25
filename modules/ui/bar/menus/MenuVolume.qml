@@ -13,6 +13,14 @@ Menu
 
     implicitWidth: 320
     spacing: 8
+    contentAnimatesHeight: true
+    property Item openDeviceList: null
+
+    function expandDevices(dropdown)
+    {
+        if (openDeviceList && openDeviceList !== dropdown) openDeviceList.open = false;
+        openDeviceList = dropdown;
+    }
 
     ListModel { id: apps }
     function syncApps() { ModelSync.sync(apps, ServiceAudio.streams.map(n => ({ nodeId: n.id })), "nodeId") }
@@ -23,13 +31,13 @@ Menu
     {
         order: 0
         caption: Tr.tr("common.output")
+        sliderLabel: Tr.tr("common.volume")
         icon: Icon.volume
         value: ServiceAudio.pendingVolume >= 0 ? ServiceAudio.pendingVolume : ServiceAudio.volume
         muted: ServiceAudio.muted
         available: ServiceAudio.hasSink
         nodes: ServiceAudio.sinks
         current: ServiceAudio.sink
-        fallbackIcon: Icon.speaker
         onMoved: value => ServiceAudio.setVolume(value)
         onIconClicked: ServiceAudio.toggleMute()
         onChosen: node => ServiceAudio.setSink(node)
@@ -51,7 +59,7 @@ Menu
             maxHeight: 3 * 48
             spacing: 4
 
-            delegate: ControlSlider
+            delegate: MenuSlider
             {
                 id: appRow
 
@@ -61,7 +69,7 @@ Menu
 
                 objectName: "applicationVolume-" + nodeId
                 width: ListView.view ? ListView.view.rowWidth : 300
-                height: 44
+                height: 40
                 appIcon: ServiceAudio.streamIcon(node)
                 icon: Icon.volume
                 text: ServiceAudio.streamName(node)
@@ -79,13 +87,13 @@ Menu
     {
         order: 2
         caption: Tr.tr("common.input")
+        sliderLabel: Tr.tr("sidebar.microphone")
         icon: ServiceAudio.micMuted ? Icon.microphoneOff : Icon.microphone
         value: ServiceAudio.pendingMicVolume >= 0 ? ServiceAudio.pendingMicVolume : ServiceAudio.micVolume
         muted: ServiceAudio.micMuted
         available: ServiceAudio.hasSource
         nodes: ServiceAudio.sources
         current: ServiceAudio.source
-        fallbackIcon: Icon.microphone
         onMoved: value => ServiceAudio.setMicVolume(value)
         onIconClicked: ServiceAudio.toggleMicMute()
         onChosen: node => ServiceAudio.setSource(node)
@@ -104,8 +112,8 @@ Menu
         id: section
 
         property string caption: ""
+        property string sliderLabel: ""
         property string icon: ""
-        property string fallbackIcon: ""
         property real value: 0
         property bool muted: false
         property bool available: true
@@ -119,12 +127,12 @@ Menu
         spacing: 4
 
         MenuLabel { heading: true; text: section.caption }
-        ControlSlider
+        MenuSlider
         {
             objectName: section.order === 0 ? "outputVolume" : "inputVolume"
             width: parent.width
-            height: 44
-            text: ServiceAudio.shortName(section.current) || section.caption
+            height: 40
+            text: section.sliderLabel
             icon: section.icon
             value: section.value
             muted: section.muted
@@ -132,28 +140,18 @@ Menu
             onMoved: value => section.moved(value)
             onIconClicked: section.iconClicked()
         }
-        MenuList
+        MenuDropdown
         {
-            model: section.nodes.length > 1 ? section.nodes : []
-            opening: menuVolume.opening
-            maxHeight: 3 * 48
-            spacing: 4
-
-            delegate: MenuRow
-            {
-                required property var modelData
-
-                filled: true
-                selected: section.current !== null && modelData.id === section.current.id
-                icon: ServiceAudio.isHeadphones(modelData) ? Icon.headphones : section.fallbackIcon
-                text: ServiceAudio.shortName(modelData)
-                subtitle: ServiceAudio.describe(modelData) !== text ? ServiceAudio.describe(modelData) : ""
-                onClicked: if (!selected) section.chosen(modelData)
-
-                Accessible.role: Accessible.RadioButton
-                Accessible.checkable: true
-                Accessible.checked: selected
-            }
+            id: devices
+            objectName: "audioDevice-" + section.order
+            width: parent.width
+            presented: menuVolume.presented
+            visible: entries.length > 0
+            enabled: entries.length > 0
+            options: section.nodes.map(node => ({label: ServiceAudio.describe(node), value: node.id}))
+            current: section.current ? section.current.id : -1
+            onOpenChanged: if (open) menuVolume.expandDevices(devices)
+            onSelected: value => section.chosen(section.nodes.find(node => String(node.id) === String(value)) || null)
         }
     }
 }

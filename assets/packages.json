@@ -1,0 +1,473 @@
+{
+  "version": 1,
+  "distributions": ["arch", "fedora", "debian"],
+  "dependencies": [
+    {
+      "tool": "qs",
+      "name": "quickshell",
+      "required": true,
+      "description": "Framework",
+      "packages": {
+        "arch": ["quickshell"],
+        "fedora": ["copr:errornointernet/quickshell", "quickshell"],
+        "debian": []
+      }
+    },
+    {
+      "tool": "niri",
+      "name": "niri",
+      "required": true,
+      "description": "Compositor",
+      "packages": {
+        "arch": ["niri"],
+        "fedora": ["niri"],
+        "debian": ["niri"]
+      }
+    },
+    {
+      "tool": "awww",
+      "name": "awww",
+      "required": true,
+      "description": "Wallpaper daemon",
+      "packages": {
+        "arch": ["awww"],
+        "fedora": [],
+        "debian": []
+      }
+    },
+    {
+      "tool": "matugen",
+      "name": "matugen",
+      "required": false,
+      "description": "Automatic wallpaper color schemes",
+      "packages": {
+        "arch": ["matugen"],
+        "fedora": [],
+        "debian": []
+      }
+    },
+    {
+      "tool": "grim",
+      "name": "grim",
+      "required": true,
+      "description": "Screenshot tool",
+      "packages": {
+        "arch": ["grim"],
+        "fedora": ["grim"],
+        "debian": ["grim"]
+      }
+    },
+    {
+      "tool": "wl-copy",
+      "name": "wl-clipboard",
+      "required": true,
+      "description": "Screenshot clipboard",
+      "packages": {
+        "arch": ["wl-clipboard"],
+        "fedora": ["wl-clipboard"],
+        "debian": ["wl-clipboard"]
+      }
+    },
+    {
+      "tool": "curl",
+      "name": "curl",
+      "required": true,
+      "description": "Downloads and updates",
+      "packages": {
+        "arch": ["curl"],
+        "fedora": ["curl"],
+        "debian": ["curl"]
+      }
+    },
+    {
+      "tool": "nmcli",
+      "name": "NetworkManager",
+      "required": true,
+      "description": "Network and Wi-Fi",
+      "packages": {
+        "arch": ["networkmanager", "python-gobject", "libnm"],
+        "fedora": ["NetworkManager", "python3-gobject", "NetworkManager-libnm"],
+        "debian": ["network-manager", "python3-gi", "gir1.2-nm-1.0"]
+      }
+    },
+    {
+      "tool": "wpctl",
+      "name": "PipeWire / WirePlumber",
+      "required": true,
+      "description": "Audio",
+      "packages": {
+        "arch": ["pipewire", "wireplumber"],
+        "fedora": ["pipewire", "wireplumber"],
+        "debian": ["pipewire", "wireplumber"]
+      }
+    },
+    {
+      "tool": "upower",
+      "name": "UPower",
+      "required": true,
+      "description": "Battery information",
+      "packages": {
+        "arch": ["upower"],
+        "fedora": ["upower"],
+        "debian": ["upower"]
+      }
+    },
+    {
+      "tool": "findmnt",
+      "name": "util-linux",
+      "required": true,
+      "description": "Storage and process utilities",
+      "packages": {
+        "arch": ["util-linux"],
+        "fedora": ["util-linux"],
+        "debian": ["util-linux"]
+      },
+      "commands": ["findmnt", "lsblk", "setpriv"]
+    },
+    {
+      "tool": "udisksctl",
+      "name": "udisksctl",
+      "required": false,
+      "description": "Mount disks for the current session.",
+      "packages": {
+        "arch": ["udisks2"],
+        "fedora": ["udisks2"],
+        "debian": ["udisks2"]
+      }
+    },
+    {
+      "tool": "pkexec",
+      "name": "pkexec",
+      "required": false,
+      "description": "Administrator authorization.",
+      "packages": {
+        "arch": ["polkit"],
+        "fedora": ["polkit"],
+        "debian": ["pkexec"]
+      }
+    },
+    {
+      "tool": "python3",
+      "name": "Python",
+      "required": true,
+      "description": "Shell helpers",
+      "packages": {
+        "arch": ["python"],
+        "fedora": ["python3"],
+        "debian": ["python3"]
+      }
+    },
+    {
+      "tool": "gsettings",
+      "name": "GLib",
+      "required": true,
+      "description": "Application appearance",
+      "packages": {
+        "arch": ["glib2"],
+        "fedora": ["glib2"],
+        "debian": ["libglib2.0-bin"]
+      },
+      "commands": ["gsettings", "gdbus"]
+    },
+    {
+      "tool": "brightnessctl",
+      "name": "brightnessctl",
+      "required": false,
+      "description": "Screen brightness control.",
+      "packages": {
+        "arch": ["brightnessctl"],
+        "fedora": ["brightnessctl"],
+        "debian": ["brightnessctl"]
+      }
+    },
+    {
+      "tool": "bluetoothd",
+      "name": "BlueZ",
+      "required": false,
+      "description": "Bluetooth device support.",
+      "packages": {
+        "arch": ["bluez"],
+        "fedora": ["bluez"],
+        "debian": ["bluez"]
+      }
+    },
+    {
+      "tool": "wlsunset",
+      "name": "wlsunset",
+      "required": false,
+      "description": "Warmer screen colors at night.",
+      "packages": {
+        "arch": ["wlsunset"],
+        "fedora": ["wlsunset"],
+        "debian": ["wlsunset"]
+      }
+    },
+    {
+      "tool": "ffmpeg",
+      "name": "FFmpeg",
+      "required": true,
+      "description": "Image and video processing",
+      "packages": {
+        "arch": ["ffmpeg"],
+        "fedora": ["ffmpeg-free"],
+        "debian": ["ffmpeg"]
+      }
+    },
+    {
+      "tool": "lpstat",
+      "name": "lpstat",
+      "required": false,
+      "description": "Printer management.",
+      "packages": {
+        "arch": ["cups", "system-config-printer"],
+        "fedora": ["cups", "system-config-printer"],
+        "debian": ["cups", "system-config-printer"]
+      }
+    },
+    {
+      "tool": "notify-send",
+      "name": "notify-send",
+      "required": false,
+      "description": "Update notifications.",
+      "packages": {
+        "arch": ["libnotify"],
+        "fedora": ["libnotify"],
+        "debian": ["libnotify-bin"]
+      }
+    },
+    {
+      "tool": "cava",
+      "name": "cava",
+      "required": false,
+      "description": "Audio visualizer.",
+      "packages": {
+        "arch": ["cava"],
+        "fedora": ["cava"],
+        "debian": ["cava"]
+      }
+    },
+    {
+      "tool": "easyeffects",
+      "name": "easyeffects",
+      "required": false,
+      "description": "Sound effects and audio presets.",
+      "packages": {
+        "arch": ["easyeffects"],
+        "fedora": ["easyeffects"],
+        "debian": ["easyeffects"]
+      }
+    },
+    {
+      "tool": "plymouth",
+      "name": "plymouth",
+      "required": false,
+      "description": "Boot splash themes.",
+      "packages": {
+        "arch": ["plymouth"],
+        "fedora": ["plymouth", "plymouth-scripts"],
+        "debian": ["plymouth", "plymouth-themes"]
+      }
+    },
+    {
+      "tool": "playerctl",
+      "name": "playerctl",
+      "required": false,
+      "description": "Media keyboard shortcuts.",
+      "packages": {
+        "arch": ["playerctl"],
+        "fedora": ["playerctl"],
+        "debian": ["playerctl"]
+      }
+    },
+    {
+      "tool": "nautilus",
+      "name": "nautilus",
+      "required": false,
+      "description": "File manager.",
+      "packages": {
+        "arch": ["nautilus"],
+        "fedora": ["nautilus"],
+        "debian": ["nautilus"]
+      }
+    },
+    {
+      "tool": "kitty",
+      "name": "kitty",
+      "required": false,
+      "description": "Terminal.",
+      "packages": {
+        "arch": ["kitty"],
+        "fedora": ["kitty"],
+        "debian": ["kitty"]
+      }
+    },
+    {
+      "tool": "fastfetch",
+      "name": "fastfetch",
+      "required": false,
+      "description": "System information.",
+      "packages": {
+        "arch": ["fastfetch"],
+        "fedora": ["fastfetch"],
+        "debian": ["fastfetch"]
+      }
+    },
+    {
+      "tool": "gum",
+      "name": "gum",
+      "required": false,
+      "description": "Keyboard menus for package setup.",
+      "packages": {
+        "arch": ["gum"],
+        "fedora": ["gum"],
+        "debian": ["gum"]
+      }
+    },
+    {
+      "tool": "sddm",
+      "name": "sddm",
+      "required": false,
+      "description": "Login screen.",
+      "packages": {
+        "arch": ["sddm", "qt6-declarative", "qt6-svg"],
+        "fedora": ["sddm", "qt6-qtdeclarative", "qt6-qtsvg"],
+        "debian": ["sddm", "qml6-module-qtquick-controls", "qml6-module-qtquick-effects", "qml6-module-qtquick-shapes"]
+      }
+    },
+    {
+      "tool": "qt6-multimedia",
+      "name": "qt6-multimedia",
+      "required": false,
+      "description": "Video wallpaper playback.",
+      "packages": {
+        "arch": ["qt6-multimedia", "qt6-multimedia-ffmpeg"],
+        "fedora": ["qt6-qtmultimedia"],
+        "debian": ["qml6-module-qtmultimedia"]
+      }
+    },
+    {
+      "tool": "systemctl",
+      "name": "systemd",
+      "required": true,
+      "description": "Session, power, time and device monitoring",
+      "commands": ["systemctl", "timedatectl", "localectl", "busctl", "systemd-inhibit", "udevadm"],
+      "packages": {
+        "arch": ["systemd"],
+        "fedora": ["systemd", "systemd-udev"],
+        "debian": ["systemd", "udev"]
+      }
+    }
+  ],
+  "installer": {
+    "options": [
+      {
+        "id": "input",
+        "label": "Input tools",
+        "section": "Packages",
+        "description": "Build support for Alt+Tab and the on-screen keyboard.",
+        "packages": {
+          "arch": ["gcc", "pkgconf", "qt6-base", "qt6-declarative", "wayland", "libxkbcommon"],
+          "fedora": ["gcc-c++", "pkgconf-pkg-config", "qt6-qtbase-devel", "qt6-qtdeclarative-devel", "wayland-devel", "libxkbcommon-devel"],
+          "debian": ["g++", "pkg-config", "qt6-base-dev", "qt6-base-dev-tools", "qt6-declarative-dev", "libwayland-dev", "libwayland-bin", "libxkbcommon-dev"]
+        },
+        "default": true
+      },
+      {
+        "id": "audio",
+        "label": "Audio tools",
+        "section": "Packages",
+        "description": "Media playback controls and keyboard shortcuts.",
+        "tools": ["playerctl"],
+        "default": true
+      },
+      {
+        "id": "brightness",
+        "label": "Brightness tools",
+        "section": "Packages",
+        "description": "Display brightness controls.",
+        "tools": ["brightnessctl"],
+        "default": false
+      },
+      {
+        "id": "printer",
+        "label": "Printer tools",
+        "section": "Packages",
+        "description": "Printer discovery and graphical printer management.",
+        "tools": ["lpstat"],
+        "default": false
+      },
+      {
+        "id": "cava",
+        "label": "cava",
+        "section": "Tools",
+        "description": "Audio visualizer.",
+        "tools": ["cava"],
+        "default": true,
+        "summary": "audio visualizer"
+      },
+      {
+        "id": "easyeffects",
+        "label": "easyeffects",
+        "section": "Tools",
+        "description": "Audio input and output effects.",
+        "tools": ["easyeffects"],
+        "default": false,
+        "summary": "audio input and output effects"
+      },
+      {
+        "id": "wlsunset",
+        "label": "wlsunset",
+        "section": "Tools",
+        "description": "Night light and warmer screen colors.",
+        "tools": ["wlsunset"],
+        "default": true,
+        "summary": "night light"
+      },
+      {
+        "id": "fish",
+        "label": "Fish shell",
+        "summary": "Set Fish as your login shell",
+        "section": "Appearance",
+        "description": "Installs Fish and sets it as your login shell for the next login.",
+        "packages": {
+          "arch": ["fish", "util-linux"],
+          "fedora": ["fish", "util-linux-user"],
+          "debian": ["fish", "passwd"]
+        },
+        "default": true
+      },
+      {
+        "id": "themes",
+        "label": "Fonts and Themes",
+        "section": "Appearance",
+        "description": "Noto fonts, JetBrains Mono, Adwaita GTK, MacTahoe icons and Matugen where packaged.",
+        "tools": ["matugen"],
+        "packages": {
+          "arch": ["noto-fonts", "noto-fonts-emoji", "ttf-jetbrains-mono", "adwaita-icon-theme", "gnome-themes-extra", "gtk3", "fontconfig", "git"],
+          "fedora": ["google-noto-sans-fonts", "google-noto-color-emoji-fonts", "jetbrains-mono-fonts", "adwaita-icon-theme", "gnome-themes-extra", "gtk3", "fontconfig", "git"],
+          "debian": ["fonts-noto-core", "fonts-noto-color-emoji", "fonts-jetbrains-mono", "adwaita-icon-theme", "gnome-themes-extra", "libgtk-3-bin", "fontconfig", "git"]
+        },
+        "default": true,
+        "summary": "Noto Fonts, Adwaita GTK, MacTahoe icons"
+      },
+      {
+        "id": "login",
+        "label": "Login screen",
+        "summary": "SDDM theme",
+        "section": "Appearance",
+        "description": "Installs the SDDM theme and enables SDDM at next boot. Includes Input tools.",
+        "tools": ["sddm"],
+        "requires": ["input"],
+        "default": true
+      },
+      {
+        "id": "wallpapers",
+        "label": "Wallpapers",
+        "summary": "Wallpaper collection",
+        "section": "Appearance",
+        "description": "Downloads the optional wallpaper collection.",
+        "default": true
+      }
+    ]
+  }
+}

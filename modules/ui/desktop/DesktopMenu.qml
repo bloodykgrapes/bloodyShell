@@ -91,14 +91,14 @@ OverlayView
                 width: parent.width - 16
                 enabled: desktopMenu.open
 
-                MenuRow
+                ButtonList
                 {
                     icon: Icon.wallpapers
                     text: Tr.tr("common.wallpapers")
                     selected: desktopMenu.selected === 0
                     onClicked: desktopMenu.activate(0)
                 }
-                MenuRow
+                ButtonList
                 {
                     icon: Icon.settings
                     text: Tr.tr("common.settings")
@@ -106,7 +106,7 @@ OverlayView
                     onClicked: desktopMenu.activate(1)
                 }
                 MenuSeparator { }
-                MenuRow
+                ButtonList
                 {
                     icon: Icon.reload
                     text: Tr.tr("common.reloadShell")

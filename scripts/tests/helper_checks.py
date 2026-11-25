@@ -16,10 +16,11 @@ def run_checks():
     helpers = runpy.run_path(str(ROOT / "scripts/tests/run.py"))
     with tempfile.TemporaryDirectory(prefix="bloodyShell-helper-") as temporary:
         base = Path(temporary)
-        for folder in ("core", "services", "ui/overlay/helper", "runtime", "cache"):
+        for folder in ("animations", "core", "services", "ui/overlay/helper", "runtime", "cache"):
             (base / folder).mkdir(parents=True, mode=0o700)
         for name in ("Config", "Enums", "Paths", "OverlayState"):
             shutil.copyfile(ROOT / f"modules/core/{name}.qml", base / f"core/{name}.qml")
+        shutil.copyfile(ROOT / "modules/animations/OverlayMotion.js", base / "animations/OverlayMotion.js")
         (base / "src").mkdir()
         shutil.copyfile(ROOT / "modules/src/Clients.js", base / "src/Clients.js")
         shutil.copyfile(ROOT / "modules/ui/overlay/helper/HelperStartup.qml", base / "ui/overlay/helper/HelperStartup.qml")
@@ -97,8 +98,8 @@ def ui_checks():
         env.pop("WAYLAND_DISPLAY", None)
         (base / "home").mkdir()
         (base / "config/niri/bloodyShell").mkdir(parents=True)
-        (base / "config/niri/config.kdl").write_text('include "bloodyShell/06-user-input.kdl"\n')
-        input_file = base / "config/niri/bloodyShell/06-user-input.kdl"
+        (base / "config/niri/config.kdl").write_text('include "bloodyShell/08-settings.kdl"\n')
+        input_file = base / "config/niri/bloodyShell/08-settings.kdl"
         input_file.write_text('''// Personal input settings
 input {
     keyboard { xkb { layout "us"; options "compose:menu"; }; }
@@ -106,11 +107,7 @@ input {
     touchpad { tap; }
 }
 ''')
-        (base / "config/niri/bloodyShell/07-user-output.kdl").write_text("")
-        niri = base / "bin/niri"
-        niri.write_text("#!/usr/bin/env python3\nimport json,sys\nif sys.argv[1:] == ['msg','-j','outputs']:\n    print(json.dumps({'A':dict(name='A',make='Test',model='Display',modes=[dict(width=1920,height=1080,refresh_rate=60000,is_preferred=True),dict(width=1280,height=720,refresh_rate=60000,is_preferred=False)],current_mode=0,logical=dict(x=0,y=0,width=1920,height=1080,scale=1,transform='Normal'),vrr_supported=False,vrr_enabled=False)}))\n")
-        niri.chmod(0o700)
-        (base / "modules/services/ServiceAppearance.qml").write_text('pragma Singleton\nimport QtQuick\nimport Quickshell\nSingleton { property color accent: "#8ecbff" }\n')
+        (base / "modules/services/ServiceAppearance.qml").write_text('pragma Singleton\nimport QtQuick\nimport Quickshell\nSingleton { property color accent: "#8ecbff"; property int effectiveThemeStyle: 1 }\n')
         (base / "modules/services/ServiceRegion.qml").write_text('''pragma Singleton
 import QtQuick
 import Quickshell
@@ -175,13 +172,18 @@ ShellRoot {
             }
             function exercise() {
                 window.requestActivate();
+                ServiceCompositor.backend.outputs = [{name:"A", make:"Test", model:"Display", current_mode:0,
+                    modes:[{width:1920,height:1080,refresh_rate:60000,is_preferred:true},
+                           {width:1280,height:720,refresh_rate:60000,is_preferred:false}],
+                    logical:{x:0,y:0,width:1920,height:1080,scale:1,transform:"Normal"},vrr_supported:false,vrr_enabled:false}];
+                ServiceCompositor.backend.outputsLoaded = true;
                 check(helper.steps.length===6 && !find("helperBack").enabled,"Wizard steps or initial navigation are wrong");
                 check(!find("helperWelcome-1") && !find("helperInputLoader"),"Removed welcome cards or Input step remain");
                 helper.go(1);until(()=>find("helperTimezone"),"Time and language did not load");
                 const shellLanguage=find("helperShellLanguage");
                 wait(Theme.animationDurationControl+50);
                 click(shellLanguage);wait(100);
-                let panel=findChild(helper.popupLayer,"settingsComboPanel");
+                let panel=findChild(helper.popupLayer,"settingsDropdownPanel");
                 check(panel && panel.height>shellLanguage.height && panel.width>=shellLanguage.width,"Helper dropdown is squeezed into its field");
                 let popupPosition=panel.mapToItem(helper,0,0);
                 check(popupPosition.x>=0 && popupPosition.y>=0 && popupPosition.x+panel.width<=helper.width && popupPosition.y+panel.height<=helper.height,"Helper dropdown exceeds its popup layer");
@@ -210,7 +212,8 @@ ShellRoot {
                 helper.go(3);wait(50);
                 const theme=find("helperTheme");theme.forceActiveFocus();
                 keyClick(Qt.Key_Home);check(Config.themeStyle===Enums.ThemeLight&&helper.currentPage===3,"Theme key navigated the wizard");
-                keyClick(Qt.Key_End);check(Config.themeStyle===Enums.ThemeDark,"Dark theme did not save");
+                keyClick(Qt.Key_End);check(Config.themeStyle===Enums.ThemeAuto && theme.current===Enums.ThemeAuto,"Auto theme did not save or stay selected");
+                keyClick(Qt.Key_Left);check(Config.themeStyle===Enums.ThemeDark,"Dark theme did not save");
                 const accent=Config.themeAccent;click(find("helperAccent"));check(Config.themeAccent!==accent,"Automatic color did not save");
                 for(const mode of [0,1,2]) {find("helperAnimations").selected(mode);check(Config.themeAnimations===mode,"Animation segment did not save");}
                 Config.set("themeAnimations",0);helper.go(4);

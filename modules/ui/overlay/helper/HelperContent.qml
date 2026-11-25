@@ -35,7 +35,7 @@ Rectangle
     implicitHeight: 640
     radius: Theme.settingsRadius
     color: Theme.colorSolid
-    border.width: 1
+    border.width: Theme.panelBorderWidth
     border.color: Theme.colorPanelEdge
     focus: true
     Component.onCompleted: forceActiveFocus()
@@ -107,12 +107,13 @@ Rectangle
         {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
-            ShellIcon { anchors.verticalCenter: parent.verticalCenter; icon: Icon.settingsGeneral; size: 20 }
+            ShellIcon { anchors.verticalCenter: parent.verticalCenter; icon: Icon.setup; size: 20 }
             ShellText { anchors.verticalCenter: parent.verticalCenter; label: "bloodyShell"; size: 14; font.family: Theme.fontBrand; font.weight: Font.DemiBold; color: Theme.text1 }
             ShellText { anchors.verticalCenter: parent.verticalCenter; visible: helperContent.width > 500; label: Tr.tr("helper.setup"); size: 11; color: Theme.text3 }
         }
-        SettingsIconButton
+        Button
         {
+            iconOnly: true
             objectName: "helperClose"
             anchors { right: parent.right; verticalCenter: parent.verticalCenter }
             icon: Icon.close
@@ -229,9 +230,9 @@ Rectangle
         x: helperContent.inset
         y: parent.height - height - 24
         width: parent.width - helperContent.inset * 2
-        height: Theme.settingsControlHeight
+        height: Theme.controlHeight
 
-        SettingsButton
+        Button
         {
             id: back
             objectName: "helperBack"
@@ -253,7 +254,7 @@ Rectangle
             font.family: Theme.fontMono
         }
 
-        SettingsButton
+        Button
         {
             id: next
             objectName: "helperNext"

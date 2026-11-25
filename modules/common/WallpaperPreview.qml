@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import "." as Common
 import Quickshell.Widgets
 
@@ -9,8 +10,9 @@ Common.InteractiveControl
 {
     id: preview
 
-
     property string wallpaper: Config.wallpaperCurrent
+    property real cornerRadius: Theme.radiusLarge
+    property real hoverProgress: enabled && (hovered || visualFocus) ? 1 : 0
     signal clicked()
 
     implicitWidth: 344
@@ -18,6 +20,7 @@ Common.InteractiveControl
     activeFocusOnTab: true
     scale: area.pressed ? 0.98 : 1
     Spring on scale {}
+    Ease on hoverProgress { duration: 320 }
     Keys.onSpacePressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
     Keys.onReturnPressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
     Keys.onEnterPressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
@@ -25,7 +28,7 @@ Common.InteractiveControl
     ClippingRectangle
     {
         anchors.fill: parent
-        radius: Theme.radiusLarge
+        radius: preview.cornerRadius
         color: Theme.colorField
 
         ShellIcon
@@ -34,7 +37,7 @@ Common.InteractiveControl
             visible: picture.status !== Image.Ready
             icon: Icon.wallpapers
             size: 28
-            opacity: 0.4
+            opacity: 0.4 * (1 - preview.hoverProgress)
         }
         WallpaperImage
         {
@@ -47,37 +50,32 @@ Common.InteractiveControl
             asynchronous: true
             opacity: status === Image.Ready ? 1 : 0
             Smooth on opacity { duration: 300 }
-            scale: preview.hovered || preview.visualFocus ? 1.04 : 1
-            Ease on scale { duration: 500 }
-        }
-        Rectangle
-        {
-            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-            height: 60
-            gradient: Gradient
+            scale: 1 + 0.12 * preview.hoverProgress
+            layer.enabled: preview.hoverProgress > 0 && status === Image.Ready
+                && GraphicsInfo.api !== GraphicsInfo.Software
+            layer.effect: MultiEffect
             {
-                GradientStop { position: 0; color: "transparent" }
-                GradientStop { position: 1; color: Qt.rgba(0, 0, 0, 0.7) }
+                blurEnabled: true
+                blurMax: 16
+                blur: 0.75 * preview.hoverProgress
+                autoPaddingEnabled: false
             }
         }
-        ShellText
-        {
-            anchors { left: parent.left; leftMargin: 12; bottom: parent.bottom; bottomMargin: 10; right: change.left; rightMargin: 10 }
-            label: preview.wallpaper !== "" ? preview.wallpaper.substring(preview.wallpaper.lastIndexOf("/") + 1) : Tr.tr("settings.appearance.noWallpaper")
-            textFormat: Text.PlainText
-            size: 12
-            color: "#ffffff"
-        }
         Rectangle
         {
-            id: change
-            anchors { right: parent.right; rightMargin: 10; bottom: parent.bottom; bottomMargin: 8 }
-            width: caption.implicitWidth + 22
-            height: 26
-            radius: 13
-            color: Qt.rgba(1, 1, 1, preview.hovered || preview.visualFocus ? 0.28 : 0.16)
-            Tint on color {}
-            ShellText { id: caption; anchors.centerIn: parent; label: Tr.tr("settings.appearance.change"); size: 11; color: "#ffffff" }
+            anchors.fill: parent
+            color: "#66000000"
+            opacity: preview.hoverProgress
+            visible: opacity > 0
+
+            ShellText
+            {
+                anchors.centerIn: parent
+                label: Tr.tr("settings.appearance.change")
+                size: 16
+                font.weight: Font.DemiBold
+                color: "#ffffff"
+            }
         }
     }
     MouseArea

@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 
+import "../animations"
 import "../core"
 
 Column
@@ -52,9 +53,8 @@ Column
         width: credentials.width
         height: 34
         radius: Theme.radiusMedium
-        color: Theme.colorField
-        border.width: 1
-        border.color: editor.activeFocus ? Theme.colorAccent : Theme.colorHairline
+        color: editor.activeFocus ? Theme.colorFieldFocus : Theme.colorField
+        Tint on color {}
         TextInput
         {
             id: editor
@@ -72,7 +72,7 @@ Column
             onAccepted: field.accepted()
             Accessible.name: field.placeholder
         }
-        ShellText { anchors { fill: parent; leftMargin: 11; rightMargin: 11 } verticalAlignment: Text.AlignVCenter; visible: editor.text === ""; label: field.placeholder; color: Theme.text4 }
+        ShellText { anchors { fill: parent; leftMargin: 11; rightMargin: 11 } verticalAlignment: Text.AlignVCenter; visible: editor.text === ""; label: field.placeholder; color: Theme.text3 }
     }
 
     Field { id: login; visible: credentials.enterprise; placeholder: Tr.tr("settings.networks.username"); onAccepted: secret.grabFocus() }
@@ -86,7 +86,7 @@ Column
         size: 11
         color: Theme.colorWarning
     }
-    ActionButton
+    Button
     {
         visible: credentials.enterprise && !credentials.details.profile
         text: Tr.tr("settings.networks.connectionSettings")
@@ -113,7 +113,7 @@ Column
             Repeater
             {
                 model: ["peap", "ttls"]
-                ActionButton
+                Button
                 {
                     required property string modelData
                     text: modelData.toUpperCase()
@@ -129,7 +129,7 @@ Column
             Repeater
             {
                 model: credentials.method === "peap" ? ["mschapv2", "gtc"] : ["pap", "mschapv2"]
-                ActionButton
+                Button
                 {
                     required property string modelData
                     text: modelData.toUpperCase()
@@ -144,7 +144,7 @@ Column
     Row
     {
         spacing: 8
-        ActionButton { text: credentials.busy ? Tr.tr("common.connecting") : Tr.tr("menu.network.join"); enabled: credentials.canSubmit; onClicked: credentials.submitted() }
-        ActionButton { text: Tr.tr("common.cancel"); onClicked: credentials.cancelled() }
+        Button { text: credentials.busy ? Tr.tr("common.connecting") : Tr.tr("menu.network.join"); enabled: credentials.canSubmit; onClicked: credentials.submitted() }
+        Button { text: Tr.tr("common.cancel"); onClicked: credentials.cancelled() }
     }
 }

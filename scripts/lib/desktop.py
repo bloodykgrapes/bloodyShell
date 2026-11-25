@@ -344,8 +344,71 @@ def default_applications(Gio):
     return groups, selected
 
 
+FILE_ASSOCIATIONS = (
+    ("folders", "inode/directory", "", "", ""),
+    ("text", "text/plain", "", ".txt", ""),
+    ("png", "image/png", "PNG", ".png", "images"),
+    ("jpeg", "image/jpeg", "JPEG", ".jpg, .jpeg", "images"),
+    ("webp", "image/webp", "WebP", ".webp", "images"),
+    ("avif", "image/avif", "AVIF", ".avif", "images"),
+    ("gif", "image/gif", "GIF", ".gif", "images"),
+    ("svg", "image/svg+xml", "SVG", ".svg", "images"),
+    ("tiff", "image/tiff", "TIFF", ".tif, .tiff", "images"),
+    ("bmp", "image/bmp", "BMP", ".bmp", "images"),
+    ("pdf", "application/pdf", "PDF", ".pdf", "documents"),
+    ("epub", "application/epub+zip", "EPUB", ".epub", "documents"),
+    ("rtf", "application/rtf", "RTF", ".rtf", "documents"),
+    ("odt", "application/vnd.oasis.opendocument.text", "OpenDocument text", ".odt", "documents"),
+    ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Word", ".docx", "documents"),
+    ("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Excel", ".xlsx", "documents"),
+    ("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "PowerPoint", ".pptx", "documents"),
+    ("mp3", "audio/mpeg", "MP3", ".mp3", "audio"),
+    ("flac", "audio/flac", "FLAC", ".flac", "audio"),
+    ("ogg", "audio/ogg", "Ogg Vorbis", ".ogg", "audio"),
+    ("opus", "audio/x-opus+ogg", "Opus", ".opus", "audio"),
+    ("wav", "audio/vnd.wave", "WAV", ".wav", "audio"),
+    ("aac", "audio/aac", "AAC", ".aac", "audio"),
+    ("m4a", "audio/mp4", "M4A", ".m4a", "audio"),
+    ("mp4", "video/mp4", "MP4", ".mp4", "video"),
+    ("mkv", "video/x-matroska", "Matroska", ".mkv", "video"),
+    ("webm", "video/webm", "WebM", ".webm", "video"),
+    ("avi", "video/vnd.avi", "AVI", ".avi", "video"),
+    ("mpeg", "video/mpeg", "MPEG", ".mpeg, .mpg", "video"),
+    ("mov", "video/quicktime", "QuickTime", ".mov", "video"),
+)
+
+
+def file_associations(Gio, args):
+    types = {entry[0]: entry[1] for entry in FILE_ASSOCIATIONS}
+    if args != ["status"] and not (len(args) == 3 and args[0] == "set" and args[1] in types):
+        raise ValueError("Usage: applications associations status | set <type> <desktop-id>")
+    if args[0] == "set":
+        mime = types[args[1]]
+        app_id = desktop_name(args[2])
+        candidates = Gio.AppInfo.get_all_for_type(mime) or []
+        app = next((app for app in candidates if app.get_id() == app_id and app.should_show()), None)
+        if app is None:
+            raise ValueError("Choose an installed application that supports this file type")
+        if not app.set_as_default_for_type(mime):
+            raise RuntimeError("Could not update the file association")
+    entries = []
+    for key, mime, name, extensions, group in FILE_ASSOCIATIONS:
+        apps = {app.get_id(): app for app in Gio.AppInfo.get_all_for_type(mime) or [] if app.get_id() and app.should_show()}
+        current = Gio.AppInfo.get_default_for_type(mime, False)
+        if current and current.get_id() and current.should_show():
+            apps[current.get_id()] = current
+        entries.append(dict(id=key, mime=mime, name=name, extensions=extensions, group=group,
+                            current=current.get_id() if current else "",
+                            applications=[dict(id=app.get_id(), name=app.get_display_name()) for app in
+                                          sorted(apps.values(), key=lambda app: (app.get_display_name().casefold(), app.get_id()))]))
+    return dict(entries=entries)
+
+
 def applications_action(Gio):
     args = sys.argv[1:]
+    if args and args[0] == "associations":
+        print(json.dumps(file_associations(Gio, args[1:])))
+        return 0
     if len(args) == 2 and args[0] == "removal":
         plan = application_removal(Gio, args[1])
         management = runpy.run_path(str(Path(__file__).with_name("management.py")))

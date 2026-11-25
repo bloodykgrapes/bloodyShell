@@ -1,27 +1,44 @@
 import QtQuick
 
 import "../../../animations"
-import "../../../core"
 
-Loader
+Flickable
 {
     id: slot
 
-    property int side: Config.barSide
+    required property bool selected
+    required property real revealOpacity
+    required property real maximumWidth
+    required property real maximumHeight
+    property alias source: loader.source
+    readonly property alias item: loader.item
     property bool shown: false
+    readonly property bool presented: shown || (selected && revealOpacity > 0)
 
-    onLoaded: if ("presented" in item) item.presented = Qt.binding(() => slot.shown)
-
-    width: item ? item.implicitWidth : 0
-    height: item ? item.implicitHeight : 0
+    width: Math.min(maximumWidth, item ? item.implicitWidth : 0)
+    height: Math.min(maximumHeight, contentHeight)
+    contentWidth: width
+    contentHeight: loader.height
+    boundsBehavior: Flickable.StopAtBounds
+    flickableDirection: Flickable.VerticalFlick
+    interactive: contentHeight > height
+    clip: interactive
 
     visible: opacity > 0
-    opacity: shown ? 1 : 0
-    Appear on opacity {}
+    opacity: Math.min(revealOpacity, pageOpacity)
 
-    property real expansion: shown ? 1 : 0
-    Spring on expansion {}
+    property real pageOpacity: selected ? 1 : 0
+    Smooth on pageOpacity { duration: 140 }
 
-    scale: Config.animationsFluid ? 0.92 + 0.08 * expansion : 1
-    transformOrigin: side === Enums.EdgeTop ? Item.Top : side === Enums.EdgeBottom ? Item.Bottom : side === Enums.EdgeLeft ? Item.Left : Item.Right
+    Loader
+    {
+        id: loader
+        width: slot.width
+        height: item ? item.implicitHeight : 0
+        onLoaded:
+        {
+            slot.contentY = 0;
+            if ("presented" in item) item.presented = Qt.binding(() => slot.presented);
+        }
+    }
 }

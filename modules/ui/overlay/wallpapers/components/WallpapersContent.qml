@@ -1,9 +1,8 @@
 import QtQuick
-import Quickshell
-import Quickshell.Io
 import Quickshell.Widgets
 
 import "../../../../animations"
+import "../../../../animations/OverlayMotion.js" as Motion
 import "../../../../common"
 import "../../../../core"
 import "../../../../services"
@@ -14,19 +13,26 @@ Item
     objectName: "wallpapersContent"
 
     property real reveal: 1
+    property bool opening: true
     property var images: []
-    property bool loading: true
-    property string scanError: ""
     property int index: 0
     property real targetPos: 0
     property real pos: targetPos
     property bool dragging: false
     property bool instant: true
     property bool ready: false
-    property real entrance: 0
+    property bool catalogLoaded: false
+    property real galleryProgress: opening && catalogLoaded ? 1 : 0
 
-    readonly property real rise: Math.min(Config.animationsEnabled ? entrance : 1, reveal)
-    readonly property string folder: String(Config.wallpaperDirectory || "").replace(/^~(?=\/|$)/, Quickshell.env("HOME"))
+    readonly property bool fluid: Config.animationsFluid
+    readonly property real galleryReveal: fluid ? Math.min(reveal, galleryProgress) : reveal
+    readonly property real chromeOpacity: fluid ? Motion.phase(galleryReveal, 0.48, 0.96) : 1
+    readonly property real chromeOffset: 8 * (1 - chromeOpacity)
+    readonly property bool pointerReady: !fluid || galleryReveal >= 0.76
+
+    readonly property string folder: ServiceWallpapers.folder
+    readonly property bool loading: ServiceWallpapers.loading
+    readonly property string scanError: ServiceWallpapers.error
     readonly property string selectedPath: images[index] || ""
     readonly property bool loginWallpaper: OverlayState.wallpaperTarget === "login"
     readonly property string currentWallpaper: loginWallpaper ? ServiceGreeter.selection : Config.wallpaperCurrent
@@ -39,24 +45,23 @@ Item
     readonly property real cardY: Math.round((height - cardH) / 2 - 24)
     readonly property real step: cardW * 0.57
 
+    opacity: fluid ? 1 : reveal
+
+    Ease on galleryProgress
+    {
+        enabled: wallpapersContent.fluid
+        duration: wallpapersContent.opening ? Motion.wallpapersOpenDuration : Motion.fluidCloseDuration
+        curve: wallpapersContent.opening ? Motion.wallpapersCurve : Motion.fluidCloseCurve
+        durationByDistance: true
+    }
+
     Ease on pos
     {
         enabled: Config.animationsEnabled && !wallpapersContent.dragging && !wallpapersContent.instant
         duration: Theme.animationDurationMorph
         curve: [0.28, 0.0, 0.3, 1.0, 1.0, 1.0]
     }
-    NumberAnimation
-    {
-        id: enter
-        target: wallpapersContent
-        property: "entrance"
-        to: 1
-        duration: Config.animationsEnabled ? Theme.animationDurationControl : 0
-        easing.type: Easing.BezierSpline
-        easing.bezierCurve: Theme.easingEmphasized
-    }
 
-    function begin() { if (entrance === 0 && !enter.running) enter.start(); }
     function distanceOf(i)
     {
         if (images.length === 0) return 0;
@@ -91,44 +96,36 @@ Item
         else ServiceAppearance.applyWallpaper(path);
     }
     function nameOf(path) { return String(path).replace(/^.*\//, "").replace(/\.[^.]+$/, ""); }
-    function scanFolder()
+    function syncCatalog(keepSelection = true)
     {
-        scanError = "";
-        loading = folder !== "";
-        if (folder === "") { images = []; index = 0; targetPos = 0; return; }
-        if (scan.busy) return;
-        scan.folder = folder;
-        scan.selection = selectedPath || currentWallpaper;
-        scan.run(Paths.commandFor("wallpaper", ["list", folder]));
-    }
-    onFolderChanged: if (ready) scanFolder()
-    onLoginWallpaperChanged: if (ready) scanFolder()
-
-    CommandProcess
-    {
-        id: scan
-        property string folder: ""
-        property string selection: ""
-        stdout: StdioCollector { id: catalog }
-        onCompleted: code =>
+        const catalog = ServiceWallpapers.catalog;
+        const matches = catalog?.folder === folder;
+        const paths = !matches ? [] : loginWallpaper ? catalog.paths.filter(path => !ServiceAppearance.isVideo(path)) : catalog.paths;
+        if (!keepSelection || paths.length !== images.length || paths.some((path, i) => path !== images[i]))
         {
-            if (folder !== wallpapersContent.folder) { Qt.callLater(wallpapersContent.scanFolder); return; }
-            let paths = [];
-            if (code === 0)
-            {
-                try { paths = JSON.parse(catalog.text).paths.filter(path => !wallpapersContent.loginWallpaper || !ServiceAppearance.isVideo(path)).sort((a, b) => a.localeCompare(b, undefined, {numeric: true})); }
-                catch (error) { wallpapersContent.scanError = Tr.tr("wallpapers.readFailed"); }
-            }
-            else wallpapersContent.scanError = scan.errorMessage(Tr.tr("wallpapers.readFailed"));
-            wallpapersContent.instant = true;
-            wallpapersContent.images = paths;
-            const selected = paths.indexOf(selection), current = paths.indexOf(wallpapersContent.currentWallpaper);
-            wallpapersContent.index = Math.max(0, selected >= 0 ? selected : current);
-            wallpapersContent.targetPos = wallpapersContent.index;
-            wallpapersContent.wheelRest = 0;
-            wallpapersContent.instant = false;
-            wallpapersContent.loading = false;
+            const selected = keepSelection ? paths.indexOf(selectedPath) : -1;
+            instant = true;
+            images = paths;
+            index = Math.max(0, selected >= 0 ? selected : paths.indexOf(currentWallpaper));
+            targetPos = index;
+            wheelRest = 0;
+            instant = false;
         }
+        if (matches) catalogLoaded = true;
+    }
+
+    onFolderChanged:
+    {
+        if (!ready) return;
+        syncCatalog();
+        ServiceWallpapers.refresh();
+    }
+    onLoginWallpaperChanged: if (ready) syncCatalog(false)
+
+    Connections
+    {
+        target: ServiceWallpapers
+        function onCatalogChanged() { if (wallpapersContent.ready) wallpapersContent.syncCatalog() }
     }
     Connections
     {
@@ -143,14 +140,20 @@ Item
     }
 
     focus: true
-    Component.onCompleted: { ready = true; forceActiveFocus(); begin(); scanFolder(); }
+    Component.onCompleted:
+    {
+        ready = true;
+        forceActiveFocus();
+        syncCatalog();
+        ServiceWallpapers.refresh();
+    }
     Keys.onPressed: event =>
     {
         if (event.key === Qt.Key_Left) advance(-1);
         else if (event.key === Qt.Key_Right) advance(1);
         else if (event.key === Qt.Key_Home) select(0);
         else if (event.key === Qt.Key_End) select(images.length - 1);
-        else if (event.key === Qt.Key_F5) scanFolder();
+        else if (event.key === Qt.Key_F5) ServiceWallpapers.refresh(true);
         else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) apply(index);
         else if (event.key === Qt.Key_Escape) OverlayState.hide("wallpapers");
         else return;
@@ -209,7 +212,7 @@ Item
             target: null
             xAxis.enabled: true
             yAxis.enabled: false
-            enabled: wallpapersContent.images.length > 1 && !wallpapersContent.applying
+            enabled: wallpapersContent.pointerReady && wallpapersContent.images.length > 1 && !wallpapersContent.applying
             property real start: 0
             onActiveChanged:
             {
@@ -233,18 +236,20 @@ Item
                 readonly property real depth: Math.abs(distance)
                 readonly property bool selected: index === wallpapersContent.index
                 readonly property real shown: Math.max(0, Math.min(1, 3 - depth))
-                readonly property real arrival: Config.animationsFluid ? Math.max(0, Math.min(1, wallpapersContent.rise * 1.5 - depth * 0.15)) : wallpapersContent.rise
+                readonly property real entranceDelay: Math.min(depth, 2) * 0.18
+                readonly property real entrance: wallpapersContent.fluid
+                    ? Motion.phase(wallpapersContent.galleryReveal, entranceDelay, entranceDelay + 0.60) : 1
                 property real hover: hit.containsMouse && selected && !wallpapersContent.dragging ? 1.02 : 1
                 Spring on hover {}
 
                 visible: shown > 0.001
-                opacity: arrival * shown
+                opacity: shown * entrance
                 width: wallpapersContent.cardW
                 height: wallpapersContent.cardH
-                x: wallpapersContent.width / 2 - width / 2 + wallpapersContent.offsetOf(distance)
-                y: wallpapersContent.cardY + (1 - arrival) * 32
+                x: (wallpapersContent.width - width) / 2 + wallpapersContent.offsetOf(distance)
+                y: wallpapersContent.cardY + (wallpapersContent.fluid ? 18 * (1 - entrance) : 32 * (1 - wallpapersContent.reveal))
                 z: 100 - depth * 10
-                scale: (1 - Math.min(depth, 2.5) * 0.23) * (0.94 + 0.06 * arrival) * hover
+                scale: (1 - Math.min(depth, 2.5) * 0.23) * hover * (wallpapersContent.fluid ? 1 : 0.94 + 0.06 * wallpapersContent.reveal)
                 transform: Rotation
                 {
                     origin.x: card.width / 2
@@ -285,7 +290,7 @@ Item
                             sourceSize: Qt.size(Math.round(wallpapersContent.cardW * 1.5), Math.round(wallpapersContent.cardH * 1.5))
                             opacity: status === Image.Ready ? 1 : 0
                             scale: 1.02
-                            Smooth on opacity { duration: 220 }
+                            Smooth on opacity { enabled: Config.animationsEnabled && wallpapersContent.reveal >= 1; duration: 220 }
                         }
                     }
                     Rectangle
@@ -318,7 +323,7 @@ Item
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    enabled: !wallpapersContent.applying
+                    enabled: wallpapersContent.pointerReady && !wallpapersContent.applying
                     onClicked:
                     {
                         wallpapersContent.forceActiveFocus(Qt.MouseFocusReason);
@@ -330,7 +335,7 @@ Item
     }
 
     function lightIcon(icon) { return String(icon).replace("/icons/dark/", "/icons/light/"); }
-    component Arrow: ActionButton
+    component Arrow: Button
     {
         iconOnly: true
         width: 46; height: 46; radius: 23
@@ -339,8 +344,8 @@ Item
         border.width: 1
         border.color: Qt.rgba(1, 1, 1, 0.12)
         visible: wallpapersContent.images.length > 1
-        enabled: wallpapersContent.images.length > 1 && !wallpapersContent.applying
-        opacity: (enabled ? 1 : 0.3) * wallpapersContent.rise
+        enabled: wallpapersContent.pointerReady && !wallpapersContent.applying
+        opacity: wallpapersContent.chromeOpacity * (wallpapersContent.applying ? 0.3 : 1)
         autoRepeat: true
     }
     Arrow
@@ -349,7 +354,7 @@ Item
         icon: wallpapersContent.lightIcon(Icon.chevronLeft)
         text: Tr.tr("wallpapers.previous")
         x: Math.round(wallpapersContent.width / 2 - wallpapersContent.cardW / 2 - width - 24)
-        y: Math.round(wallpapersContent.cardY + (wallpapersContent.cardH - height) / 2)
+        y: Math.round(wallpapersContent.cardY + (wallpapersContent.cardH - height) / 2) + wallpapersContent.chromeOffset
         onClicked: wallpapersContent.advance(-1)
     }
     Arrow
@@ -358,7 +363,7 @@ Item
         icon: wallpapersContent.lightIcon(Icon.chevronRight)
         text: Tr.tr("wallpapers.next")
         x: Math.round(wallpapersContent.width / 2 + wallpapersContent.cardW / 2 + 24)
-        y: Math.round(wallpapersContent.cardY + (wallpapersContent.cardH - height) / 2)
+        y: Math.round(wallpapersContent.cardY + (wallpapersContent.cardH - height) / 2) + wallpapersContent.chromeOffset
         onClicked: wallpapersContent.advance(1)
     }
 
@@ -371,18 +376,18 @@ Item
         height: caption.height + 18
         radius: height / 2
         color: Theme.colorSolid
-        opacity: wallpapersContent.rise
+        opacity: wallpapersContent.chromeOpacity
         visible: wallpapersContent.images.length > 0
     }
     Column
     {
         id: caption
         anchors.horizontalCenter: parent.horizontalCenter
-        y: wallpapersContent.cardY + wallpapersContent.cardH + 30
+        y: wallpapersContent.cardY + wallpapersContent.cardH + 30 + wallpapersContent.chromeOffset
         width: Math.min(Math.max(title.implicitWidth, counter.implicitWidth), Math.max(0, parent.width - 64))
         spacing: 5
         visible: wallpapersContent.images.length > 0
-        opacity: wallpapersContent.rise
+        opacity: wallpapersContent.chromeOpacity
         ShellText
         {
             id: title
@@ -407,22 +412,25 @@ Item
     }
     ShellText
     {
-        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 34 }
+        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom }
+        anchors.bottomMargin: 34 - wallpapersContent.chromeOffset
         width: parent.width - 48
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
         label: wallpapersContent.images.length > 0 ? Tr.tr("wallpapers.shortcuts") : ""
+        opacity: wallpapersContent.chromeOpacity
         size: 11
         color: Qt.rgba(1, 1, 1, 0.5)
-        opacity: wallpapersContent.rise
     }
     ShellText
     {
-        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 10 }
+        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom }
+        anchors.bottomMargin: 10 - wallpapersContent.chromeOffset
         width: parent.width - 48
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
         label: wallpapersContent.applying ? Tr.tr("wallpapers.applying") : wallpapersContent.scanError || wallpapersContent.applyError
+        opacity: wallpapersContent.chromeOpacity
         color: wallpapersContent.applying ? Qt.rgba(1, 1, 1, 0.8) : "#ff8c8c"
         size: 11
     }
@@ -430,9 +438,10 @@ Item
     {
         visible: wallpapersContent.images.length === 0
         anchors.centerIn: parent
+        anchors.verticalCenterOffset: wallpapersContent.chromeOffset
         width: parent.width - 64
         spacing: 12
-        opacity: wallpapersContent.rise
+        opacity: wallpapersContent.fluid ? Motion.contentOpacity(wallpapersContent.reveal) : 1
         ShellIcon { anchors.horizontalCenter: parent.horizontalCenter; icon: wallpapersContent.lightIcon(Icon.wallpapers); size: 40; opacity: 0.5 }
         ShellText
         {

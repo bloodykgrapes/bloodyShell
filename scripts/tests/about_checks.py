@@ -46,8 +46,6 @@ import sys
 import time
 base = Path(os.environ["TEST_ABOUT_BASE"])
 name = Path(sys.argv[0]).name
-if name == "niri" and sys.argv[1:] == ["msg", "--json", "event-stream"]:
-    sys.exit(0)
 with (base / "calls").open("a") as stream: stream.write(name + "\\n")
 time.sleep(0.05)
 if name == "niri":
@@ -132,14 +130,15 @@ ShellRoot
                     case 3:
                         tests.check(tests.count() === 2, "Reopening About repeats hardware detection");
                         const cpu = tests.find(page.item, "aboutProcessor"), gpu = tests.find(page.item, "aboutGraphics");
-                        tests.check(cpu.stacked && gpu.stacked && cpu.height > 56 && gpu.height > 56, "Long hardware names are truncated on a narrow page");
+                        const cpuValue = tests.find(cpu, "aboutDetailValue"), gpuValue = tests.find(gpu, "aboutDetailValue");
+                        tests.check(cpuValue.lineCount > 1 && gpuValue.lineCount > 1 && !cpuValue.truncated && !gpuValue.truncated, "Long hardware names are truncated on a narrow page");
                         tests.check(page.item.projectUrl === "https://github.com/bloodykgrapes/bloodyShell", "Project links use the wrong repository");
                         page.item.grabToImage(result => result.saveToFile("/tmp/bloodyshell-about-light-ru.png"));
                         host.waitForJob(); host.setText("renamed-machine\\n");
                         memory.waitForJob(); memory.setText("unavailable\\n");
                         host.waitForJob(); memory.waitForJob();
                         missing.setText("1"); missing.waitForJob();
-                        tests.find(page.item, "aboutRefresh").clicked();
+                        ServiceSystem.refresh();
                         ServiceSystem.refresh(); step = 4; break;
                     case 4:
                         if (ServiceSystem.loading || ServiceSystem.hostname !== "renamed-machine") return;

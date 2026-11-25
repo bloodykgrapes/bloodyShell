@@ -5,6 +5,7 @@ singleton ServiceAppearance          1.0 ServiceAppearance.qml
 singleton ServiceApplications        1.0 ServiceApplications.qml
 singleton ServiceAudio               1.0 ServiceAudio.qml
 singleton ServiceBluetooth           1.0 ServiceBluetooth.qml
+singleton ServiceColors              1.0 ServiceColors.qml
 singleton ServiceCompositor          1.0 ServiceCompositor.qml
 singleton ServiceDependencies        1.0 ServiceDependencies.qml
 singleton ServiceDevices             1.0 ServiceDevices.qml
@@ -19,6 +20,7 @@ singleton ServiceMedia               1.0 ServiceMedia.qml
 singleton ServiceNetwork             1.0 ServiceNetwork.qml
 singleton ServiceNotifications       1.0 ServiceNotifications.qml
 singleton ServiceOSD                 1.0 ServiceOSD.qml
+singleton ServicePlymouth            1.0 ServicePlymouth.qml
 singleton ServicePower               1.0 ServicePower.qml
 singleton ServicePowerProfiles       1.0 ServicePowerProfiles.qml
 singleton ServiceRegion              1.0 ServiceRegion.qml
@@ -30,4 +32,5 @@ singleton ServiceSystem              1.0 ServiceSystem.qml
 singleton ServiceUpdate              1.0 ServiceUpdate.qml
 singleton ServiceUser                1.0 ServiceUser.qml
 singleton ServiceVirtualKeyboard     1.0 ServiceVirtualKeyboard.qml
+singleton ServiceWallpapers          1.0 ServiceWallpapers.qml
 singleton ServiceWindowActions       1.0 ServiceWindowActions.qml

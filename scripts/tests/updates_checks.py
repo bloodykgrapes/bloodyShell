@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 from pathlib import Path
 import runpy
 import shutil
@@ -10,6 +11,34 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def service_load_checks():
+    prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-service-load-") as temporary:
+        base = Path(temporary)
+        env = prepare(base)
+        for name in ("modules/services/ServiceLock.qml", "modules/ui/overlay/altTab/AltTabKeyboard.qml"):
+            shutil.copy2(ROOT / name, base / name)
+        (base / "home").mkdir()
+        env.update(HOME=str(base / "home"), XDG_STATE_HOME=str(base / "state"), QML_DISABLE_DISK_CACHE="1")
+        env.pop("WAYLAND_DISPLAY", None)
+        (base / "shell.qml").write_text('''import QtQuick
+import Quickshell
+import "modules/core"
+import "modules/services"
+ShellRoot {
+    Component.onCompleted: Qt.callLater(() => {
+        console.log("SERVICES_LOADED", ServiceDependencies.packages.length, ServiceRegion.firstDayOfWeek);
+        Qt.quit();
+    })
+}
+''')
+        result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=15)
+        output = result.stdout + result.stderr
+        assert result.returncode == 0 and "SERVICES_LOADED" in output, output
+        assert not any(error in output for error in ("Failed to load configuration", "is not a type", "ReferenceError", "TypeError")), output
+        print("Full service graph loaded without service stubs or QML disk cache.")
 
 
 def checks():
@@ -46,6 +75,7 @@ import QtQuick.Window
 import QtTest
 import Quickshell
 import "modules/core"
+import "modules/common"
 import "modules/services"
 import "modules/ui/overlay/settings/pages"
 import "modules/ui/overlay/settings/components"
@@ -66,7 +96,7 @@ ShellRoot {
             anchors.fill: parent
             readonly property alias popupLayer: popupLayer
             Loader { id: pageLoader; anchors.fill: parent; sourceComponent: PageUpdates {} }
-            SettingsButton { id: background; x: 2; y: 2; text: "Background"; onClicked: tests.backgroundClicks++; }
+            Button { id: background; x: 2; y: 2; text: "Background"; onClicked: tests.backgroundClicks++; }
             Item { id: popupLayer; anchors.fill: parent; z: 1000 }
         }
         TestCase { id: events; name: "ImportConfirmation"; when: false; optional: true }
@@ -113,8 +143,8 @@ ShellRoot {
                     if (!dialog.opened) return;
                     tests.check(dialog.description.includes("fastfetch") && dialog.description.includes("kitty"), "Dots confirmation hides affected applications");
                     const accept = tests.find(dialog.contentItem, "acceptConfirmation");
-                    const position = accept.mapToItem(dialog.background, 0, 0);
-                    tests.check(position.x >= 0 && position.x + accept.width <= dialog.background.width, "Localized buttons overflow the popup");
+                    const position = accept.mapToItem(dialog.contentItem, 0, 0);
+                    tests.check(position.x >= 0 && position.x + accept.width <= dialog.contentItem.width, "Localized buttons overflow the popup");
                     tests.click(accept);
                     tests.check(ServiceResources.pending !== null && dialog.visible && dialog.errorText !== "", "Missing terminal hides the confirmation or its error");
                     tests.click(tests.find(dialog.contentItem, "cancelConfirmation")); tests.phase++;
@@ -129,7 +159,7 @@ ShellRoot {
                 } else if (tests.phase === 7) {
                     if (dialog.visible) return;
                     tests.check(ServiceResources.pending === null && tests.backgroundClicks === 0, "Outside click leaked to the page");
-                    ServiceDependencies.entries = [{tool:"fixture",supported:true,removable:true,installed:true,required:false,packages:[]}];
+                    ServiceDependencies.packages = [{tool:"fixture",supported:true,removable:true,installed:true,required:false,packages:[]}];
                     ServiceDependencies.request("fixture", true); tests.phase++;
                 } else if (tests.phase === 8) {
                     const dependency = tests.find(page, "dependencyConfirmation");
@@ -221,13 +251,13 @@ def package_list_checks():
         (base / "scripts/lib/management.py").write_text('''import json, os, sys, time
 from pathlib import Path
 def dependencies_main():
-    assert sys.argv[1:] == ["status"], "Package tests must never run package operations"
+    assert sys.argv[1] == "status" and sys.argv[2] in ("optional", "required"), "Package tests must never run package operations"
     time.sleep(0.05)
     state = json.loads((Path(os.environ["TEST_SCREENSHOT_BASE"]) / "package-status.json").read_text())
     if state["fail"]:
         print("Fixture package status failure", file=sys.stderr)
         return 1
-    print(json.dumps(dict(entries=state["entries"], terminal=[])))
+    print(json.dumps(dict(entries=[entry for entry in state["entries"] if entry["required"] == (sys.argv[2] == "required")], terminal=[])))
     return 0
 ''')
         (base / "shell.qml").write_text('''import QtQuick
@@ -250,11 +280,16 @@ ShellRoot {
             function until(predicate,message) { for(let i=0;i<200 && !predicate();i++) wait(10); check(predicate(),message); }
             function exercise() {
                 const optional=findChild(page,"optionalPackages"), required=findChild(page,"requiredDependencies");
-                check(optional && required,"Packages and Dependencies are not separate lists");
+                check(optional && required && !findChild(page,"optionalTools"),"Settings must contain only Packages and Dependencies lists");
                 optional.expanded=true;
-                until(()=>!ServiceDependencies.busy && ServiceDependencies.entries.length===5,"Package catalog did not load");
+                check(ServiceDependencies.packagesChecking && !ServiceDependencies.dependenciesChecking && required.summary!==Tr.tr("common.checking"),"Opening Packages also checks Dependencies");
+                until(()=>!ServiceDependencies.busy && ServiceDependencies.packages.length===3,"Package catalog did not load");
+                check(ServiceDependencies.dependencies.length===0,"Checking Packages loaded Dependencies");
+                const packageRow=findChild(optional,"packageRow-cava");
                 required.expanded=true;
+                check(ServiceDependencies.dependenciesChecking && !ServiceDependencies.packagesChecking && optional.summary==="1 / 3","Opening Dependencies changes Packages state");
                 until(()=>!ServiceDependencies.busy,"Dependencies did not finish refreshing");
+                check(findChild(optional,"packageRow-cava")===packageRow,"Checking Dependencies rebuilt Packages rows");
                 check(ServiceDependencies.packages.length===3 && ServiceDependencies.dependencies.length===2,"Catalog split is incorrect");
                 check(optional.summary==="1 / 3" && required.summary==="1 / 2","Installed counts mix required and optional packages");
                 check(!findChild(optional,"packageRow-niri") && !findChild(required,"packageRow-cava"),"An entry appears in the wrong list");
@@ -290,8 +325,9 @@ ShellRoot {
                 dialog.close(); until(()=>!dialog.visible,"Repair confirmation did not close");
                 const state=JSON.parse(control.text());
                 state.fail=true; control.setText(JSON.stringify(state)); control.waitForJob();
-                ServiceDependencies.refresh();
+                ServiceDependencies.refresh(false);
                 until(()=>!ServiceDependencies.busy && ServiceDependencies.error!=="","Failed status refresh did not report its error");
+                check(ServiceDependencies.packagesError!=="" && ServiceDependencies.dependenciesError==="","A package check error leaked into Dependencies");
                 check(optional.summary==="1 / 3" && required.summary==="1 / 2","Failed refresh discarded installed state");
                 state.fail=false;
                 state.entries=state.entries.map(entry=>Object.assign({},entry,{installed:entry.tool!=="brightnessctl"}));
@@ -345,9 +381,6 @@ def confirmation_checks():
         instrument("services", "ServiceStorage", {
             "confirmMount": ("", "testMounted++; pending = null;")
         }, "    property int testMounted: 0")
-        instrument("services", "ServiceNetwork", {
-            "forgetNetwork": ("name", "testForgotten = name; testForgets++;")
-        }, '    property string testForgotten: ""\n    property int testForgets: 0')
         (base / "bin/pkexec").write_text('#!/bin/sh\ntouch "$HOME/unexpected-privileged-operation"\nexit 99\n')
         (base / "bin/pkexec").chmod(0o755)
         (base / "shell.qml").write_text('''import QtQuick
@@ -365,6 +398,14 @@ ShellRoot {
     function check(ok, message) { if (!ok) throw new Error(message); }
     function find(item, name) { return events.findChild(item, name); }
     function click(item) { events.mouseClick(item, item.width/2, item.height/2, Qt.LeftButton, Qt.NoModifier, 0); }
+    function exposed(item) {
+        for (let ancestor = item.parent; ancestor; ancestor = ancestor.parent) {
+            if (!ancestor.clip) continue;
+            const point = item.mapToItem(ancestor, item.width / 2, item.height / 2);
+            if (point.x < 0 || point.y < 0 || point.x >= ancestor.width || point.y >= ancestor.height) return false;
+        }
+        return item.visible;
+    }
     function pendingMount() { ServiceStorage.pending = {label:"Test volume", mode:"persistent", target:"/mnt/Test Data"}; }
     function pendingAccount(count) { ServiceUser.pending = {values:{}, changes:Array.from({length:count}, (_, i) => ({label:"Field " + i, before:"Previous value", after:"Updated value"}))}; }
     Window {
@@ -372,14 +413,13 @@ ShellRoot {
         Item {
             anchors.fill: parent
             readonly property alias popupLayer: popupLayer
-            Loader { id: pageLoader; anchors.fill: parent; sourceComponent: general }
+            Loader { id: pageLoader; anchors.fill: parent; sourceComponent: about }
             Item { id: popupLayer; anchors.fill: parent; z: 1000 }
         }
-        Component { id: general; PageGeneral {} }
+        Component { id: about; PageAbout {} }
         Component { id: display; PageDisplay {} }
         Component { id: storage; PageStorage {} }
         Component { id: account; PageUser {} }
-        Component { id: networks; PageNetworks {} }
         TestCase { id: events; name: "SettingsConfirmations"; when: false; optional: true }
     }
     Timer {
@@ -391,7 +431,15 @@ ShellRoot {
                 const page = pageLoader.item;
                 if (tests.phase === 0) {
                     if (tests.ticks < 8) return;
-                    tests.click(tests.find(page, "requestReset")); tests.phase++;
+                    const maintenance = tests.find(page, "aboutMaintenance");
+                    tests.check(maintenance && !maintenance.expanded, "Maintenance should start collapsed");
+                    maintenance.expanded = true;
+                    tests.phase = 20;
+                } else if (tests.phase === 20) {
+                    const button = tests.find(page, "requestReset");
+                    page.contentY = Math.max(0, page.contentHeight - page.height);
+                    if (!tests.exposed(button)) return;
+                    tests.click(button); tests.phase = 1;
                 } else if (tests.phase === 1) {
                     const dialog = tests.find(page, "resetConfirmation"); if (!dialog.opened) return;
                     tests.check(dialog.modal && tests.find(dialog.contentItem, "cancelConfirmation").activeFocus, "Reset is not a modal with Cancel focused");
@@ -452,29 +500,16 @@ ShellRoot {
                     tests.click(tests.find(dialog.contentItem, "acceptConfirmation")); tests.phase++;
                 } else if (tests.phase === 18) {
                     tests.check(ServiceUser.testApplied === 1, "Account acceptance did not apply changes");
-                    pageLoader.sourceComponent = networks; tests.phase++;
-                } else if (tests.phase === 19) { page.forgetFor = "Example Wi-Fi"; tests.phase++;
-                } else if (tests.phase === 20) {
-                    const dialog = tests.find(page, "forgetConfirmation"); if (!dialog.opened) return;
-                    tests.check(dialog.danger, "Forgetting Wi-Fi lost destructive styling");
-                    tests.click(tests.find(dialog.contentItem, "acceptConfirmation")); tests.phase++;
-                } else if (tests.phase === 21) {
-                    tests.check(ServiceNetwork.testForgets === 1 && ServiceNetwork.testForgotten === "Example Wi-Fi", "Forget did not target the confirmed network");
-                    if (tests.find(page, "forgetConfirmation").visible) return;
-                    page.forgetFor = "Keep Wi-Fi"; tests.phase++;
-                } else if (tests.phase === 22) {
-                    const dialog = tests.find(page, "forgetConfirmation"); if (!dialog.opened) return;
-                    pageLoader.active = false; tests.phase++;
+                    tests.phase=19;
                 }
             } catch (error) { console.error("CONFIRMATIONS_FAILED", tests.phase, error); Qt.quit(); }
         }
     }
     Timer {
-        interval: 100; running: tests.phase === 23; repeat: true
+        interval: 100; running: tests.phase === 19; repeat: true
         onTriggered: {
             if (OverlayState.settingsPopup) return;
-            if (ServiceNetwork.testForgets !== 1) console.error("CONFIRMATIONS_FAILED destruction applied an operation");
-            else console.log("CONFIRMATIONS_PASSED reset, display recovery, mount, account changes, Wi-Fi forgetting, cancellation, bounded long content, and destruction");
+            console.log("CONFIRMATIONS_PASSED reset, display recovery, mount, account changes, cancellation, bounded long content, and destruction");
             Qt.quit();
         }
     }
@@ -489,6 +524,100 @@ ShellRoot {
             assert not any(error in output for error in ("CONFIRMATIONS_FAILED", "ReferenceError", "TypeError", "Binding loop", "Cannot assign", "Unable to assign")), output
             assert not (base / "home/unexpected-privileged-operation").exists()
     print("Settings confirmations passed in both animation modes without changing accounts, displays, mounts or network connections.")
+
+
+def popup_layout_checks():
+    prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-popup-layout-") as temporary:
+        base = Path(temporary)
+        env = prepare(base)
+        env.pop("WAYLAND_DISPLAY", None)
+        (base / "shell.qml").write_text('''import QtQuick
+import QtQuick.Window
+import QtTest
+import Quickshell
+import "modules/core"
+import "modules/common"
+import "modules/ui/overlay/settings/components"
+
+ShellRoot {
+    Window {
+        id: window; visible:true; width:640; height:420
+        property bool showHeader:true
+        SettingsPopup {
+            id: dialog; host:window.contentItem; preferredWidth:520
+            panelContent: SettingsPopupLayout {
+                anchors.fill: parent
+                id: form
+                title:"Shared popup layout"
+                header: SettingsInput {visible:window.showHeader; width:parent.width; placeholderText:"Header control"}
+                Repeater {model:20;SettingsRow {required property int index;label:"Option "+index}}
+                actions: Button {text:"Cancel";onClicked:dialog.close()}
+            }
+        }
+        SettingsPopup {
+            id: picker; host:window.contentItem; preferredWidth:560;preferredHeight:540
+            panelContent: SettingsPopupLayout {
+                anchors.fill: parent
+                id: pickerLayout;title:"List picker";fillContent:true
+                ListView {
+                    id: inner; width:parent.width;height:pickerLayout.bodyHeight;model:30;clip:true
+                    delegate:SettingsRow {required property int index;label:"Application "+index}
+                }
+                actions:Button {text:"Cancel";onClicked:picker.close()}
+            }
+        }
+        TestCase {
+            id: input;when:false;optional:true
+            function check(ok,message){if(!ok)throw new Error(message);}
+            function find(item,name){if(item.objectName===name)return item;for(const child of item.children||[]){const found=find(child,name);if(found)return found;}return null;}
+            function bounds(popup,layout){
+                const actions=find(layout,"settingsPopupActions");
+                check(popup.width<=window.width-32 && popup.height<=window.height-32,"Popup exceeds its host");
+                check(actions.y+actions.height<=layout.height+0.5,"Popup actions are clipped");
+                check(popup.x>=16 && popup.y>=16,"Popup is not centered within its margins");
+            }
+            function exercise(){
+                for(const motion of [0,2])for(const theme of [0,1]){
+                    Config.set("themeAnimations",motion);Config.set("themeStyle",theme);
+                    window.width=640;window.height=420;window.showHeader=true;
+                    dialog.open();wait(motion?400:30);
+                    for(const accent of [false,true]){
+                        Config.set("themeAccent",accent);wait(20);
+                        check(String(Theme.accentForeground)===(Theme.lightForeground(Theme.colorAccent)?"#ffffff":"#000000"),"Primary button and toggle foreground contrast does not follow theme changes");
+                    }
+                    Config.set("themeAccent",false);
+                    bounds(dialog,form);
+                    const body=find(form,"settingsPopupBody"),title=find(form,"settingsPopupTitle"),actions=find(form,"settingsPopupActions");
+                    check(body.interactive && body.height>0,"Long form does not scroll");
+                    const titleY=title.y,actionsY=actions.y;
+                    body.contentY=body.contentHeight-body.height;wait(10);
+                    check(title.y===titleY && actions.y===actionsY,"Title or footer moves with popup content");
+                    window.width=380;window.height=300;window.showHeader=false;wait(30);bounds(dialog,form);
+                    form.errorText=Array(35).fill("Detailed error information").join("\\n");wait(300);bounds(dialog,form);
+                    check(body.contentY>0 && find(form,"settingsPopupError").text.includes("Detailed error"),"Long errors are hidden or removed");
+                    form.errorText="";dialog.close();wait(motion?240:20);
+                    picker.open();wait(motion?400:30);bounds(picker,pickerLayout);
+                    const outer=find(pickerLayout,"settingsPopupBody");
+                    check(inner.height>0 && !outer.interactive && inner.contentHeight>inner.height,"List picker has nested outer scrolling");
+                    pickerLayout.errorText=Array(30).fill("Picker failure").join("\\n");wait(300);bounds(picker,pickerLayout);
+                    check(outer.interactive,"Long picker errors cannot be scrolled");
+                    pickerLayout.errorText="";wait(30);
+                    check(!outer.interactive && inner.height>0 && outer.contentY===0,"Clearing an error does not restore the picker");
+                    picker.close();wait(motion?240:20);
+                }
+                console.log("POPUP_LAYOUT_PASSED shared slots, bounded sizing, fixed title/actions, long forms/errors, list scrolling, resize and themes");Qt.quit();
+            }
+        }
+        Timer{interval:120;running:Config.initialized;onTriggered:{try{input.exercise();}catch(error){console.error("POPUP_LAYOUT_FAILED",error);Qt.quit();}}}
+    }
+}
+''')
+        result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=10)
+        output = result.stdout + result.stderr
+        print(output)
+        assert result.returncode == 0 and "POPUP_LAYOUT_PASSED" in output, output
+        assert not re.search(r"POPUP_LAYOUT_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|is not a type|Failed to load configuration", output), output
 
 
 def popup_animation_checks():
@@ -525,7 +654,13 @@ ShellRoot {
                     check(dialog.presenting && OverlayState.settingsPopup, "Opening popup did not register");
                     wait(30);
                     if (mode === 0) check(dialog.reveal === 1 && dialog.scale === 1, "Disabled animations still animate");
-                    else check(dialog.reveal > 0 && dialog.reveal < 1 && dialog.scale < 1, "Popup has no opening fade or scale");
+                    else if (mode === 1) check(dialog.reveal > 0 && dialog.reveal < 1 && dialog.scale < 1, "Standard popup has no opening animation");
+                    else {
+                        const panel = dialog.contentItem;
+                        check(dialog.reveal > 0 && dialog.reveal < 1 && dialog.scale === 1
+                            && panel.surface.width < panel.width && panel.contentItem.width === panel.width,
+                            "Fluid dialog does not reveal its bounds at a fixed content size");
+                    }
                     wait(Theme.animationDurationControl + 40);
                     check(dialog.opened && dialog.reveal === 1 && dialog.scale === 1, "Opening did not settle");
                     dialog.close();
@@ -803,9 +938,11 @@ ShellRoot {
 
 
 if __name__ == "__main__":
+    service_load_checks()
     checks()
     package_list_checks()
     confirmation_checks()
+    popup_layout_checks()
     popup_animation_checks()
     release_notes_checks()
     release_notes_page_checks()

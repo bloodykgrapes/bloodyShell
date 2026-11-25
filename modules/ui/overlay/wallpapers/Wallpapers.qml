@@ -2,6 +2,7 @@ import QtQuick
 
 import "components" as Content
 import ".."
+import "../../../core"
 
 OverlayView
 {
@@ -13,5 +14,6 @@ OverlayView
     {
         anchors.fill: parent
         reveal: wallpapers.reveal
+        opening: OverlayState.current === wallpapers.name
     }
 }

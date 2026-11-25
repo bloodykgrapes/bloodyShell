@@ -2,19 +2,23 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Controls.Basic as Controls
 
-import "../../../../common"
+import "../../../../animations/OverlayMotion.js" as Motion
 import "../../../../core"
+import "../.." as OverlayUI
 
 Controls.Popup
 {
     id: popup
 
     required property Item host
+    property Item panelContent: null
     readonly property bool suspended: OverlayState.popupsSuspended
     property real reveal: 0
     property bool presenting: false
     property bool keyboardNavigation: false
     property Item focusOrigin: null
+    property real preferredWidth: 460
+    property real preferredHeight: 0
 
     parent:
     {
@@ -28,10 +32,13 @@ Controls.Popup
     focus: !suspended
     enabled: !suspended
     closePolicy: suspended ? Controls.Popup.NoAutoClose : Controls.Popup.CloseOnEscape | Controls.Popup.CloseOnPressOutside
-    padding: 22
-    transformOrigin: Item.Center
-    opacity: suspended ? 0 : reveal
-    scale: 1 - (Config.animationsFluid ? 0.06 : 0.02) * (1 - reveal)
+    padding: 0
+    width: Math.min(preferredWidth, Math.max(0, parent.width - 32))
+    height: Math.min(preferredHeight > 0 ? preferredHeight : implicitHeight, Math.max(0, parent.height - 32))
+    x: (parent.width - width) / 2
+    y: (parent.height - height) / 2
+    opacity: suspended ? 0 : panelContent ? Motion.panelOpacity(reveal, Config.animationsFluid) : 1
+    scale: panelContent && !Config.animationsFluid ? 0.98 + 0.02 * reveal : 1
 
     function syncModalState() { OverlayState.setPopupActive(popup, presenting && !suspended); }
     onPresentingChanged: syncModalState()
@@ -74,12 +81,30 @@ Controls.Popup
     }
 
     Controls.Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4 * popup.reveal) }
-    background: MenuReveal
+    background: null
+    contentItem: OverlayUI.OverlayPanel
     {
         objectName: "settingsPopupSurface"
-        progress: 1
-        color: Theme.settingsColorBackground
-        borderWidth: 1
+        reveal: Config.animationsFluid ? popup.reveal : 1
+        surfaceColor: Theme.popupColorBackground
+        useSurfaceMaterial: !ShellMaterial.blur
+        radius: Theme.popupRadius
+        implicitWidth: (popup.panelContent?.implicitWidth ?? 0) + 2 * Theme.popupPadding
+        implicitHeight: (popup.panelContent?.implicitHeight ?? 0) + 2 * Theme.popupPadding
+
+        Item
+        {
+            id: bodyHost
+            anchors.fill: parent
+            anchors.margins: Theme.popupPadding
+        }
+    }
+    Binding
+    {
+        target: popup.panelContent
+        property: "parent"
+        value: bodyHost
+        when: popup.panelContent !== null
     }
     enter: Transition
     {
@@ -88,9 +113,10 @@ Controls.Popup
             target: popup
             property: "reveal"
             to: 1
-            duration: Config.animationsEnabled ? Theme.animationDurationControl : 0
+            duration: !Config.animationsEnabled ? 0
+                : Config.animationsFluid ? Motion.fluidOpenDuration : Theme.animationDurationControl
             easing.type: Easing.BezierSpline
-            easing.bezierCurve: Theme.easingEmphasized
+            easing.bezierCurve: Config.animationsFluid ? Motion.fluidOpenCurve : Theme.easingEmphasized
         }
     }
     exit: Transition
@@ -100,9 +126,9 @@ Controls.Popup
             target: popup
             property: "reveal"
             to: 0
-            duration: Config.animationsEnabled ? Theme.animationDurationClose : 0
+            duration: Config.animationsEnabled ? OverlayState.closeDuration : 0
             easing.type: Easing.BezierSpline
-            easing.bezierCurve: Theme.easingAccelerate
+            easing.bezierCurve: Config.animationsFluid ? Motion.fluidCloseCurve : Theme.easingAccelerate
         }
     }
 }

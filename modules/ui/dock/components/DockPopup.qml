@@ -86,7 +86,7 @@ Item
         y: dockPopup.horizontal ? (dockPopup.side === Enums.EdgeTop ? dockPopup.gap : 0) : 0
         width: dockPopup.panelW
         height: dockPopup.panelH
-        radius: 14
+        radius: Theme.menuControlRadius
         origin: dockPopup.horizontal ? Qt.point(0.5, dockPopup.side === Enums.EdgeTop ? 0 : 1)
             : Qt.point(dockPopup.side === Enums.EdgeLeft ? 0 : 1, 0.5)
 
@@ -142,71 +142,38 @@ Item
         }
     }
 
-    component WindowRow: Rectangle
+    component WindowRow: ButtonList
     {
         id: row
+        objectName: "dockWindowRow"
 
         required property var modelData
-        readonly property bool hot: rowArea.containsMouse || closeArea.containsMouse
+        icon: modelData.urgent ? Icon.bellON : ""
+        trailingIcon: modelData.focused ? Icon.check : ""
+        text: modelData.title || Tr.tr("dock.window")
+        Accessible.selected: modelData.focused
 
-        width: parent ? parent.width : 200
-        height: 32
-        radius: Theme.radiusMedium
-
-        color: modelData.focused ? (hot ? Theme.colorPressed : Theme.colorField) : (hot ? Theme.colorHover : "transparent")
-        Tint on color {}
-
-        Rectangle
+        onClicked:
         {
-            anchors { left: parent.left; leftMargin: 10; verticalCenter: parent.verticalCenter }
-            width: 6; height: 6; radius: 3
-            color: row.modelData.urgent ? Theme.colorAttention : row.modelData.focused ? Theme.colorAccent : Theme.text4
+            ServiceCompositor.focusWindow(modelData.id);
+            dockPopup.host.popupClose();
         }
 
-        ShellText
+        property TapHandler middleClick: TapHandler
         {
-            anchors { left: parent.left; leftMargin: 24; right: closeButton.left; rightMargin: 6; verticalCenter: parent.verticalCenter }
-            label: row.modelData.title || Tr.tr("dock.window")
-            color: row.modelData.focused ? Theme.text1 : Theme.text2
+            parent: row
+            acceptedButtons: Qt.MiddleButton
+            onTapped: ServiceCompositor.closeWindow(row.modelData.id)
         }
 
-        MouseArea
+        Button
         {
-            id: rowArea
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            acceptedButtons: Qt.LeftButton | Qt.MiddleButton
-
-            onClicked: mouse =>
-            {
-                if (mouse.button === Qt.MiddleButton) { ServiceCompositor.closeWindow(row.modelData.id); return; }
-                ServiceCompositor.focusWindow(row.modelData.id);
-                dockPopup.host.popupClose();
-            }
-        }
-
-        Rectangle
-        {
-            id: closeButton
-
-            anchors { right: parent.right; rightMargin: 5; verticalCenter: parent.verticalCenter }
-            width: 22; height: 22; radius: 11
-
-            opacity: row.hot ? 1 : 0
-            color: closeArea.containsMouse ? Theme.colorPressed : "transparent"
-            Smooth on opacity {}
-
-            ShellIcon { anchors.centerIn: parent; icon: Icon.close; size: 12 }
-
-            MouseArea
-            {
-                id: closeArea
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: ServiceCompositor.closeWindow(row.modelData.id)
-            }
+            compact: true
+            objectName: "dockWindowClose"
+            icon: Icon.close
+            text: Tr.tr("dock.closeWindow")
+            danger: true
+            onClicked: ServiceCompositor.closeWindow(row.modelData.id)
         }
     }
 
@@ -273,7 +240,7 @@ Item
 
                         MenuSeparator { }
 
-                        MenuItem
+                        ButtonList
                         {
                             icon: Icon.add
                             text: dockPopup.windows.length > 0 ? Tr.tr("dock.newWindow") : Tr.tr("common.open")
@@ -284,7 +251,7 @@ Item
                             }
                         }
 
-                        MenuItem
+                        ButtonList
                         {
                             readonly property bool pinned: !!dockPopup.shown && dockPopup.shown.isPinned === true
                             readonly property string appId: dockPopup.shown && dockPopup.shown.appId ? dockPopup.shown.appId : ""
@@ -303,7 +270,7 @@ Item
 
                         MenuSeparator { visible: dockPopup.windows.length > 0 }
 
-                        MenuItem
+                        ButtonList
                         {
                             visible: dockPopup.windows.length > 0
                             danger: true

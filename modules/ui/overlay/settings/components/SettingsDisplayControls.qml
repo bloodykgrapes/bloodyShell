@@ -88,7 +88,7 @@ Column
         onRejected: if (ServiceDisplay.confirming) ServiceDisplay.revert()
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         visible: ServiceDisplay.error !== ""
         title: Tr.tr("settings.display.displaySettings")
@@ -101,7 +101,7 @@ Column
         }
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("settings.display.monitor")
         enabled: displayControls.output !== null && !ServiceDisplay.confirming
@@ -141,7 +141,7 @@ Column
         {
             label: Tr.tr("settings.display.resolution")
 
-            SettingsCombo
+            SettingsDropdown
             {
                 preferredWidth: 300
                 objectName: "displayResolution"
@@ -155,7 +155,7 @@ Column
         {
             label: Tr.tr("settings.display.refreshRate")
 
-            SettingsCombo
+            SettingsDropdown
             {
                 preferredWidth: 300
                 objectName: "displayRefreshRate"

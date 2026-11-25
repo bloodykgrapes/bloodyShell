@@ -32,7 +32,9 @@ Rectangle
     signal layoutSelected(int index)
 
     implicitWidth: 840
-    implicitHeight: 32 + keyHeight * 5 + gap * 5 + 28
+    implicitHeight: 28 + keyHeight * 5 + gap * 5 + 28
+    Accessible.role: Accessible.Pane
+    Accessible.name: labels.title
     radius: 24
     color: colors.surface
 
@@ -57,21 +59,29 @@ Rectangle
     {
         return {action: name, text: text, code: code, weight: weight};
     }
+    readonly property var letterRows: hasLayout ? engine.rows.slice(1).map(row => row.filter(key => engine.isLetter(key.code))) : []
+    readonly property int letterColumns: letterRows.length === 3 ? Math.max(letterRows[0].length, letterRows[1].length, letterRows[2].length + 2) : 10
+    readonly property real letterWidth: Math.max(0, (keys.width - gap * (letterColumns - 1)) / Math.max(1, letterColumns))
+
+    function digit(code)
+    {
+        const shiftedDigit = !/^[0-9]$/.test(engine.label(code, false, false)) && /^[0-9]$/.test(engine.label(code, true, false));
+        return {code: code, fixedShift: shiftedDigit};
+    }
     readonly property var rows:
     {
-        if (!hasLayout) return [];
+        if (!hasLayout || letterRows.length !== 3) return [];
         if (symbols) return [
-            [2,3,4,5,6,7,8,9,10,11].map(c => character(c, false)).concat([action("backspace", "⌫", 14, 1.7)]),
+            [2,3,4,5,6,7,8,9,10,11].map(c => character(c, false)).concat([action("backspace", "Backspace", 14, 1.5)]),
             [2,3,4,5,6,7,8,9,10,11].map(c => character(c, true)).concat([character(12, false), character(13, false)]),
-            [26,27,43,39,40,41,51,52,53].map(c => character(c, false)).concat([action("enter", "↵", 28, 1.7)]),
+            [26,27,43,39,40,41,51,52,53].map(c => character(c, false)),
             [26,27,43,39,40,41,51,52,53,12,13].map(c => character(c, true))
         ];
-        const data = engine.rows;
         return [
-            data[0].concat([action("backspace", "⌫", 14, 1.7)]),
-            [action("tab", "⇥", 15)].concat(data[1]),
-            [action("caps", "⇪", 0)].concat(data[2], [action("enter", "↵", 28)]),
-            [action("shift", "⇧", 0, 1.8)].concat(data[3], [action("shift", "⇧", 0, 1.8)])
+            [2,3,4,5,6,7,8,9,10,11].map(digit),
+            letterRows[0],
+            letterRows[1],
+            [action("shift", "Shift", 0, 1.5)].concat(letterRows[2], [action("backspace", "Backspace", 14, 1.5)])
         ];
     }
 
@@ -79,14 +89,13 @@ Rectangle
     {
         if (key.action) return key.text;
         if (!engine) return "";
-        return engine.label(key.code, symbols ? !!key.shift : shifted, symbols ? false : caps, alternate);
+        return engine.label(key.code, key.fixedShift !== undefined ? key.fixedShift : symbols ? !!key.shift : shifted, key.fixedShift !== undefined || symbols ? false : caps, alternate);
     }
     function activate(key)
     {
-        if (key.action === "shift") { shifted = !shifted; return; }
-        if (key.action === "caps") { caps = !caps; return; }
+        if (key.action === "shift") { if (caps) { caps = false; shifted = false; } else shifted = !shifted; return; }
         if (!available) return;
-        if (engine.tap(key.code, symbols ? !!key.shift : shifted, symbols ? false : caps, alternate) && !key.action)
+        if (engine.tap(key.code, key.fixedShift !== undefined ? key.fixedShift : symbols ? !!key.shift : shifted, key.fixedShift !== undefined || symbols ? false : caps, alternate) && !key.action)
             shifted = false;
     }
 
@@ -99,11 +108,12 @@ Rectangle
         Item
         {
             width: parent.width
-            height: 32
+            height: 28
             Text
             {
-                anchors { left: parent.left; verticalCenter: parent.verticalCenter; right: language.left; rightMargin: 12 }
-                text: keyboard.hasLayout ? keyboard.status || keyboard.labels.title : keyboard.labels.title
+                anchors { left: language.right; leftMargin: 12; verticalCenter: parent.verticalCenter; right: close.left; rightMargin: 12 }
+                visible: keyboard.hasLayout && keyboard.status !== ""
+                text: keyboard.status
                 font { family: keyboard.family; pixelSize: 12; weight: Font.Medium }
                 color: keyboard.colors.muted
                 elide: Text.ElideRight
@@ -113,15 +123,37 @@ Rectangle
                 host: keyboard
                 id: language
                 objectName: "virtualKeyboardLayout"
-                anchors { right: close.left; rightMargin: 5 }
+                anchors.left: parent.left
                 width: 70; height: 28
                 text: keyboard.selectedLayout.layout.toUpperCase()
                 description: keyboard.labels.nextLayout
-                visible: keyboard.layouts.length > 1 && keyboard.hasLayout
+                visible: keyboard.hasLayout
                 textSize: 11
                 onActivated:
                 {
                     keyboard.layoutSelected((keyboard.layoutIndex + 1) % keyboard.layouts.length);
+                }
+            }
+            Row
+            {
+                id: navigation
+                anchors { left: language.right; leftMargin: 6 }
+                spacing: 5
+                visible: keyboard.hasLayout && keyboard.status === ""
+                Repeater
+                {
+                    model: [{code:105, icon:"left", label:"Left"}, {code:106, icon:"right", label:"Right"}, {code:15, icon:"tab", label:"Tab"}]
+                    Parts.Key
+                    {
+                        required property var modelData
+                        host: keyboard
+                        objectName: "virtualKey" + modelData.code
+                        width: 32; height: 28
+                        iconName: modelData.icon
+                        description: modelData.label
+                        repeatable: modelData.code !== 15
+                        onActivated: keyboard.activate(modelData)
+                    }
                 }
             }
             Parts.Key
@@ -132,7 +164,7 @@ Rectangle
                 objectName: "virtualKeyboardClose"
                 anchors.right: parent.right
                 width: 32; height: 28
-                text: "⌄"; description: keyboard.labels.close
+                iconName: "close"; description: keyboard.labels.close
                 onActivated: keyboard.dismissed()
             }
         }
@@ -145,9 +177,15 @@ Rectangle
                 id: keyRow
                 required property var modelData
                 required property int index
-                readonly property real units: modelData.reduce((sum, key) => sum + (key.weight || 1), 0)
-                readonly property real unitWidth: (width - keyboard.gap * (modelData.length - 1)) / Math.max(1, units)
-                width: keys.width
+                readonly property int characters: modelData.filter(key => !key.action).length
+                readonly property real actionUnits: modelData.reduce((sum, key) => sum + (key.action ? key.weight || 1 : 0), 0)
+                readonly property bool letterRow: !keyboard.symbols && (index === 1 || index === 2)
+                readonly property real characterWidth: !keyboard.symbols && index > 0 ? keyboard.letterWidth
+                    : Math.max(0, (width - keyboard.gap * (modelData.length - 1)) / Math.max(1, characters + actionUnits))
+                readonly property real actionWidth: actionUnits > 0
+                    ? (width - keyboard.gap * (modelData.length - 1) - characters * characterWidth) / actionUnits : 0
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: letterRow ? characters * keyboard.letterWidth + keyboard.gap * (characters - 1) : keys.width
                 height: keyboard.keyHeight
                 spacing: keyboard.gap
                 Repeater
@@ -159,12 +197,15 @@ Rectangle
                         id: key
                         required property var modelData
                         objectName: "virtualKey" + modelData.code + (modelData.shift ? "Shift" : "")
-                        width: keyRow.unitWidth * (modelData.weight || 1)
+                        width: modelData.action ? keyRow.actionWidth * (modelData.weight || 1) : keyRow.characterWidth
+                        iconName: modelData.action === "shift" && keyboard.caps ? "caps" : modelData.action || ""
                         text: keyboard.caption(modelData)
                         description: modelData.action ? (keyboard.labels[modelData.action] || text) : text
-                        checked: modelData.action === "shift" ? keyboard.shifted : modelData.action === "caps" && keyboard.caps
+                        checked: modelData.action === "shift" ? keyboard.shifted || keyboard.caps : false
                         accent: modelData.action === "enter"
                         repeatable: modelData.action === "backspace"
+                        doubleActivatable: modelData.action === "shift"
+                        onDoubleActivated: { keyboard.caps = true; keyboard.shifted = false; }
                         onActivated: keyboard.activate(modelData)
                     }
                 }
@@ -210,7 +251,7 @@ Rectangle
             Parts.Key
             {
                 host: keyboard
-                width: parent.width * 0.11
+                width: parent.width * 0.10
                 text: "AltGr"; description: keyboard.labels.alternate
                 checked: keyboard.alternate
                 textSize: 12
@@ -220,24 +261,36 @@ Rectangle
             Parts.Key
             {
                 host: keyboard
+                width: parent.width * 0.055
+                text: ","
+                onActivated: if (keyboard.engine) keyboard.engine.typeSymbol(",")
+            }
+            Parts.Key
+            {
+                host: keyboard
                 objectName: "virtualKeyboardSpace"
-                width: parent.width - parent.width * 0.44 - keyboard.gap * 4
+                width: parent.width - parent.width * 0.47 - keyboard.gap * 5
+                iconName: "space"
                 text: keyboard.labels.space
                 textSize: 12
                 onActivated: keyboard.activate({code: 57})
             }
-            Repeater
+            Parts.Key
             {
-                model: [{code: 105, text: "←"}, {code: 106, text: "→"}]
-                Parts.Key
-                {
-                    host: keyboard
-                    required property var modelData
-                    width: keys.width * 0.11
-                    text: modelData.text
-                    repeatable: true
-                    onActivated: keyboard.activate(modelData)
-                }
+                host: keyboard
+                width: parent.width * 0.055
+                text: "."
+                onActivated: if (keyboard.engine) keyboard.engine.typeSymbol(".")
+            }
+            Parts.Key
+            {
+                host: keyboard
+                objectName: "virtualKey28"
+                width: parent.width * 0.15
+                iconName: "enter"
+                description: keyboard.labels.enter
+                accent: true
+                onActivated: keyboard.activate({code:28, action:"enter"})
             }
         }
     }

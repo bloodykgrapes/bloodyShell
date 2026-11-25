@@ -3,7 +3,6 @@ import QtQuick
 import "." as Content
 import "../../../animations"
 import "../../../core"
-import "../../../common"
 import ".."
 
 OverlayView
@@ -11,30 +10,20 @@ OverlayView
     id: launcher
 
     name: "launcher"
+    scrimCutout: panel.blurSurface
 
-    SurfaceShadow
-    {
-        surface: panel
-        cornerRadius: Theme.launcherRadius
-        opacity: launcher.reveal
-        scale: panel.scale
-        transform: Translate { y: launcher.lift }
-    }
-
-    Item
+    OverlayPanel
     {
         id: panel
         anchors.horizontalCenter: parent.horizontalCenter
         y: Math.max(24, Math.round((parent.height - content.fullHeight) / 2))
 
-        width: Math.min(Theme.launcherWidth, parent.width - 48)
-        height: Math.min(content.implicitHeight, parent.height - 48)
-        clip: true
+        width: Math.max(0, Math.min(Theme.launcherWidth, parent.width - 48))
+        height: Math.max(0, Math.min(content.implicitHeight, parent.height - 48))
         Glide on height {}
 
-        opacity: launcher.reveal
-        scale: 1 - 0.04 * launcher.settle
-        transform: Translate { y: launcher.lift }
+        radius: Theme.launcherRadius
+        reveal: launcher.reveal
 
         MouseArea { anchors.fill: parent }
 
@@ -42,6 +31,8 @@ OverlayView
         {
             id: content
             anchors.fill: parent
+            color: "transparent"
+            border.width: 0
         }
     }
 }

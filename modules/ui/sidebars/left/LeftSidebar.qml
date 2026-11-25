@@ -23,24 +23,26 @@ Sidebar
         OverlayState.show(name);
     }
 
-    component SidebarAction: ActionButton
+    component SidebarAction: Button
     {
         width: (parent.width - parent.spacing) / 2
         height: 36
-        radius: 14
-        iconSize: 15
+        radius: Theme.menuControlRadius
+        iconSize: 16
+        color: Theme.menuControlBackground
     }
 
     SidebarSection
     {
         host: leftSidebar
         order: 0
-        ActionButton
+        Button
         {
             objectName: "sidebarUser"
             width: parent.width
-            height: 72
-            radius: 22
+            height: 68
+            radius: Theme.menuControlRadius
+            color: Theme.menuControlBackground
             hoverScale: Config.animationsFluid ? 1.015 : 1.01
             pressScale: 0.98
             Accessible.name: Tr.tr("common.user") + ": " + (ServiceUser.fullName || ServiceUser.user)
@@ -53,7 +55,7 @@ Sidebar
                 ClippingRectangle
                 {
                     id: avatar
-                    width: 44; height: 44; radius: 16
+                    width: 40; height: 40; radius: 12
                     anchors.verticalCenter: parent.verticalCenter
                     color: Theme.colorField
                     Image
@@ -62,7 +64,7 @@ Sidebar
                         anchors.fill: parent
                         source: ServiceUser.avatar ? "file://" + ServiceUser.avatar : ""
                         fillMode: Image.PreserveAspectCrop
-                        sourceSize: Qt.size(88, 88)
+                        sourceSize: Qt.size(80, 80)
                         asynchronous: true
                         cache: false
                     }
@@ -73,7 +75,7 @@ Sidebar
                     width: Math.max(0, parent.width - avatar.width - userChevron.width - parent.spacing * 2)
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 4
-                    ShellText { width: parent.width; label: ServiceUser.fullName || ServiceUser.user; textFormat: Text.PlainText; size: 15; font.weight: Font.DemiBold; color: Theme.text1 }
+                    ShellText { width: parent.width; label: ServiceUser.fullName || ServiceUser.user; textFormat: Text.PlainText; size: 14; font.weight: Font.DemiBold; color: Theme.text1 }
                     ShellText { width: parent.width; label: "@" + ServiceUser.user; textFormat: Text.PlainText; size: 11; color: Theme.text3 }
                 }
                 ShellIcon { id: userChevron; anchors.verticalCenter: parent.verticalCenter; icon: Icon.chevronRight; size: 14; opacity: 0.6 }
@@ -88,7 +90,8 @@ Sidebar
         {
             objectName: "sidebarWallpaper"
             width: parent.width
-            height: implicitHeight
+            height: Math.round(width / 2.7)
+            cornerRadius: Theme.menuControlRadius
             onClicked: leftSidebar.open("wallpapers")
         }
     }
@@ -99,7 +102,7 @@ Sidebar
         Row
         {
             width: parent.width
-            spacing: 12
+            spacing: 10
             SidebarAction
             {
                 objectName: "sidebarLauncher"
@@ -123,7 +126,7 @@ Sidebar
         Row
         {
             width: parent.width
-            spacing: 12
+            spacing: 10
             SidebarAction
             {
                 objectName: "sidebarReload"

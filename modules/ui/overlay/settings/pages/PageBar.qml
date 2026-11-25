@@ -14,7 +14,7 @@ SettingsPage
 
     Parts.SettingsPanelControls { prefix: "bar" }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("common.style")
 
@@ -30,20 +30,6 @@ SettingsPage
                 namePrefix: "frameStyle-bar-"
                 current: Config.barType
                 onSelected: value => Config.set("barType", value)
-            }
-        }
-        SettingsRow
-        {
-            label: Tr.tr("settings.bar.menu")
-            description: Tr.tr("settings.bar.menuStyleHint")
-            stacked: true
-            SettingsStyleChoices
-            {
-                kind: "menu"
-                options: Registry.menuOptions
-                namePrefix: "menuStyle-"
-                current: Config.barMenu
-                onSelected: value => Config.set("barMenu", value)
             }
         }
     }

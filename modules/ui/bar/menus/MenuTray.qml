@@ -14,7 +14,6 @@ import "../components"
 Menu
 {
     id: menuTray
-    centerOnWidget: true
 
     readonly property int cell: 36
     readonly property int gap: 6
@@ -250,12 +249,12 @@ Menu
                         objectName: "trayApp"
                         width: menuTray.cell
                         height: menuTray.cell
-                        radius: 12
+                        radius: Theme.menuControlRadius
                         iconSize: 18
                         trayItem: modelData
                         active: menuTray.requestedItem === modelData
-                        backgroundColor: Qt.tint(Theme.frameColor, pressed ? Theme.colorPressed : active ? Theme.colorChosen
-                            : containsMouse || visualFocus ? Theme.colorHoverStrong : Theme.colorField)
+                        backgroundColor: Qt.tint(Qt.tint(Theme.menuControlBackground, active ? Theme.menuControlSelected : "transparent"),
+                            pressed ? Theme.colorPressed : containsMouse || visualFocus ? Theme.colorHover : "transparent")
                         onLaunched: MenuState.close()
                         onContextRequested: menuTray.toggleContext(modelData)
                     }
@@ -292,8 +291,8 @@ Menu
             objectName: "trayContext"
             width: parent.width
             height: contextBody.implicitHeight + 16
-            radius: Theme.radiusLarge
-            color: Theme.colorField
+            radius: Theme.menuControlRadius
+            color: Theme.menuControlBackground
             opacity: contextSection.reveal
             scale: Config.animationsFluid ? 0.97 + 0.03 * contextSection.reveal : 1
             transform: Translate { y: Config.animationsEnabled ? 8 * (1 - contextSection.reveal) : 0 }
@@ -337,7 +336,7 @@ Menu
                 {
                     width: parent.width
                     height: 36
-                    ActionButton
+                    Button
                     {
                         id: backButton
                         objectName: "trayBack"
@@ -370,7 +369,7 @@ Menu
                         font.weight: Font.DemiBold
                         color: Theme.text1
                     }
-                    ActionButton
+                    Button
                     {
                         id: closeButton
                         objectName: "trayCloseContext"

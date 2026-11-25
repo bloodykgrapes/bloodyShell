@@ -78,7 +78,7 @@ SettingsDisclosure
         visible: effects.scanned && !effects.state.installed
         label: Tr.tr("common.notInstalled")
         description: Tr.tr("settings.easyEffects.installHint")
-        SettingsButton
+        Button
         {
             objectName: "easyEffectsDependencies"
             text: Tr.tr("common.updates")
@@ -90,7 +90,7 @@ SettingsDisclosure
         visible: effects.state.installed
         label: Tr.tr(effects.state.running ? "settings.easyEffects.running" : "settings.easyEffects.stopped")
         description: effects.state.running ? "" : Tr.tr("settings.easyEffects.startHint")
-        SettingsButton
+        Button
         {
             objectName: "openEasyEffects"
             text: Tr.tr("settings.easyEffects.open")
@@ -129,7 +129,7 @@ SettingsDisclosure
             visible: effects.state.installed
             label: modelData.label
             description: presets.length === 0 ? Tr.tr("settings.easyEffects.noPresets") : ""
-            SettingsCombo
+            SettingsDropdown
             {
                 objectName: "easyEffectsPreset-" + presetRow.modelData.pipeline
                 preferredWidth: 300
@@ -146,7 +146,7 @@ SettingsDisclosure
         visible: effects.error !== ""
         label: Tr.tr("common.actionFailed")
         description: effects.error
-        SettingsButton
+        Button
         {
             text: Tr.tr("common.refresh")
             enabled: !effects.busy

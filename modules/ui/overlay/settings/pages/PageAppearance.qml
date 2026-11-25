@@ -22,7 +22,7 @@ SettingsPage
         return [{ label: Tr.tr("settings.appearance.notInstalled").arg(current), value: current }].concat(list.map(n => ({ label: n, value: n })));
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("common.shell")
 
@@ -43,8 +43,22 @@ SettingsPage
 
         SettingsRow
         {
+            label: Tr.tr("settings.appearance.shellSurface")
+            stacked: true
+            SettingsStyleChoices
+            {
+                objectName: "shellSurfaceSelector"
+                kind: "surface"
+                namePrefix: "surfaceStyle-"
+                options: Registry.surfaceOptions
+                current: Config.shellSurface
+                onSelected: value => Config.set("shellSurface", value)
+            }
+        }
+
+        SettingsRow
+        {
             label: Tr.tr("settings.appearance.automaticColor")
-            description: Tr.tr("settings.appearance.automaticColorHint")
             Toggle { checked: Config.themeAccent; onToggled: value => Config.set("themeAccent", value) }
         }
 
@@ -61,7 +75,6 @@ SettingsPage
         SettingsRow
         {
             label: Tr.tr("settings.appearance.animations")
-            description: Tr.tr("settings.appearance.animationsHint")
             stacked: true
 
             SettingsStyleChoices
@@ -74,31 +87,25 @@ SettingsPage
         }
         SettingsRow
         {
-            label: Tr.tr("settings.appearance.equalizerStyle")
-            description: Tr.tr("settings.appearance.equalizerStyleHint")
-            stacked: true
+            label: Tr.tr("settings.appearance.scrollSpeed")
+            description: Tr.tr("settings.appearance.scrollSpeedHint")
 
-            SettingsStyleChoices
+            SettingsStepper
             {
-                kind: "equalizer"
-                options: Registry.equalizerOptions
-                namePrefix: "equalizerStyle-"
-                current: Config.equalizerStyle
-                onSelected: value => Config.set("equalizerStyle", value)
+                value: Config.scrollSpeed
+                from: 1; to: 4; step: 0.25; decimals: 2; suffix: "×"
+                onEdited: value => Config.set("scrollSpeed", value)
             }
         }
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("settings.appearance.wallpaper")
 
         SettingsRow
         {
-            objectName: "currentWallpaperRow"
-            label: Tr.tr("settings.appearance.currentWallpaper")
             stacked: true
-
             WallpaperPreview
             {
                 objectName: "currentWallpaperPreview"
@@ -109,47 +116,35 @@ SettingsPage
         }
         SettingsRow
         {
-            id: directoryRow
-
             label: Tr.tr("settings.appearance.wallpaperFolder")
-            stacked: true
-
-            Row
+            SettingsInput
             {
-                width: parent.width
-                spacing: 8
-
-                SettingsInput
-                {
-                    id: directoryInput
-                    width: parent.width
-                    text: Config.wallpaperDirectory
-                    placeholderText: "~/Pictures/Wallpapers"
-                    onEditingFinished: if (text.trim() !== "") Config.set("wallpaperDirectory", text.trim())
-                }
+                text: Config.wallpaperDirectory
+                placeholderText: "~/Pictures/Wallpapers"
+                onEditingFinished: if (text.trim() !== "") Config.set("wallpaperDirectory", text.trim())
             }
         }
         SettingsRow
         {
             label: Tr.tr("settings.appearance.wallpaperTransition")
-            SettingsCombo
+            SettingsDropdown
             {
                 objectName: "wallpaperTransitionSelector"
                 options: [
-                    {label: Tr.tr("common.off"), value: "none"},
-                    {label: Tr.tr("settings.appearance.wallpaperSimple"), value: "simple"},
-                    {label: Tr.tr("settings.appearance.wallpaperFade"), value: "fade"},
-                    {label: Tr.tr("settings.appearance.wallpaperLeft"), value: "left"},
-                    {label: Tr.tr("settings.appearance.wallpaperRight"), value: "right"},
-                    {label: Tr.tr("settings.appearance.wallpaperTop"), value: "top"},
-                    {label: Tr.tr("settings.appearance.wallpaperBottom"), value: "bottom"},
-                    {label: Tr.tr("settings.appearance.wallpaperWipe"), value: "wipe"},
-                    {label: Tr.tr("settings.appearance.wallpaperWave"), value: "wave"},
-                    {label: Tr.tr("settings.appearance.wallpaperGrow"), value: "grow"},
-                    {label: Tr.tr("settings.appearance.wallpaperCenter"), value: "center"},
-                    {label: Tr.tr("settings.appearance.wallpaperAny"), value: "any"},
-                    {label: Tr.tr("settings.appearance.wallpaperShrink"), value: "outer"},
-                    {label: Tr.tr("settings.appearance.wallpaperRandom"), value: "random"}
+                    { label: Tr.tr("common.off"), value: "none"},
+                    { label: Tr.tr("settings.appearance.wallpaperSimple"), value: "simple" },
+                    { label: Tr.tr("settings.appearance.wallpaperFade"),   value: "fade"   },
+                    { label: Tr.tr("settings.appearance.wallpaperLeft"),   value: "left"   },
+                    { label: Tr.tr("settings.appearance.wallpaperRight"),  value: "right"  },
+                    { label: Tr.tr("settings.appearance.wallpaperTop"),    value: "top"    },
+                    { label: Tr.tr("settings.appearance.wallpaperBottom"), value: "bottom" },
+                    { label: Tr.tr("settings.appearance.wallpaperWipe"),   value: "wipe"   },
+                    { label: Tr.tr("settings.appearance.wallpaperWave"),   value: "wave"   },
+                    { label: Tr.tr("settings.appearance.wallpaperGrow"),   value: "grow"   },
+                    { label: Tr.tr("settings.appearance.wallpaperCenter"), value: "center" },
+                    { label: Tr.tr("settings.appearance.wallpaperAny"),    value: "any"    },
+                    { label: Tr.tr("settings.appearance.wallpaperShrink"), value: "outer"  },
+                    { label: Tr.tr("settings.appearance.wallpaperRandom"), value: "random" }
                 ]
                 current: Config.wallpaperTransition
                 onSelected: value => Config.set("wallpaperTransition", value)
@@ -164,7 +159,7 @@ SettingsPage
         }
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("common.applications")
         enabled: ServiceAppearance.loaded
@@ -180,7 +175,7 @@ SettingsPage
         SettingsRow
         {
             label: Tr.tr("settings.appearance.iconTheme")
-            SettingsCombo
+            SettingsDropdown
             {
                 options: pageAppearance.withCurrent(ServiceAppearance.iconThemes, ServiceAppearance.iconTheme)
                 current: ServiceAppearance.iconTheme
@@ -190,7 +185,7 @@ SettingsPage
         SettingsRow
         {
             label: Tr.tr("settings.appearance.cursorTheme")
-            SettingsCombo
+            SettingsDropdown
             {
                 options: pageAppearance.withCurrent(ServiceAppearance.cursorThemes, ServiceAppearance.cursorTheme)
                 current: ServiceAppearance.cursorTheme
@@ -210,7 +205,7 @@ SettingsPage
         SettingsRow
         {
             label: Tr.tr("settings.appearance.fontFamily")
-            SettingsCombo
+            SettingsDropdown
             {
                 options: pageAppearance.withCurrent(ServiceAppearance.fonts, ServiceAppearance.fontFamily)
                 current: ServiceAppearance.fontFamily
@@ -230,7 +225,7 @@ SettingsPage
         SettingsRow
         {
             label: Tr.tr("settings.appearance.appTheme")
-            SettingsButton { text: Tr.tr("settings.appearance.reapply"); icon: Icon.reload; enabled: !ServiceAppearance.busy; onClicked: ServiceAppearance.reapply() }
+            Button { text: Tr.tr("settings.appearance.reapply"); icon: Icon.reload; enabled: !ServiceAppearance.busy; onClicked: ServiceAppearance.reapply() }
         }
     }
 }

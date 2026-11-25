@@ -1,7 +1,8 @@
 """Atomic file operations, validated archives and owned worker processes."""
 
-import os
 from contextlib import contextmanager
+import fcntl
+import os
 from pathlib import Path, PurePosixPath
 import shutil
 import signal
@@ -9,6 +10,16 @@ import stat
 import subprocess
 import tarfile
 import tempfile
+
+
+@contextmanager
+def directory_lock(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(descriptor)
 
 
 @contextmanager

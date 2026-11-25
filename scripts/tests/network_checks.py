@@ -218,7 +218,7 @@ ShellRoot
         id: window
         visible: true
         width: 800; height: 900
-        PageNetworks { id: page; anchors.fill: parent }
+        MenuNetwork { id: page; width:320; height:implicitHeight }
         MenuNetwork { id: menu; visible: false; width: 320; height: implicitHeight }
         MenuBluetooth { id: bluetoothMenu; visible: false; width: 320; height: implicitHeight }
         TestCase { id: input; when: false; optional: true }
@@ -255,7 +255,7 @@ ShellRoot
                         ServiceNetwork.setScanning(page, true);
                         window.check(ServiceNetwork.scanUsers === 1, "Duplicate registration changed scan ownership");
                         page.visible = false;
-                        window.check(ServiceNetwork.scanUsers === 0 && !device.scannerEnabled, "Hidden settings retained network scanning");
+                        window.check(ServiceNetwork.scanUsers === 0 && !device.scannerEnabled, "Hidden menu retained network scanning");
                         page.visible = true;
                         window.check(ServiceNetwork.refreshNetworks(), "Manual refresh did not start");
                         window.check(ServiceNetwork.refreshing && !ServiceNetwork.refreshNetworks(), "Duplicate refresh was allowed");

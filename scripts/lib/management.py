@@ -3,7 +3,7 @@
 from pathlib import Path
 import argparse
 import ast
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 import fcntl
 import json
 import os
@@ -25,46 +25,63 @@ SYSTEM_COMMAND = Path("/usr/local/bin/bloodyShell")
 FILES = runpy.run_path(str(Path(__file__).with_name("files.py")))
 
 
-DEPENDENCIES = (
-    'required|qs|Runs the shell|quickshell|copr:errornointernet/quickshell quickshell|-',
-    'required|niri|Compositor|niri|niri|niri',
-    'required|awww|Wallpapers|awww|-|-',
-    'required|grim|Screenshots|grim|grim|grim',
-    'required|wl-copy|Screenshot clipboard|wl-clipboard|wl-clipboard|wl-clipboard',
-    'required|curl|Updates|curl|curl|curl',
-    'required|nmcli|Network and enterprise Wi-Fi|networkmanager python-gobject libnm|NetworkManager python3-gobject NetworkManager-libnm|network-manager python3-gi gir1.2-nm-1.0',
-    'required|wpctl|Sound|pipewire wireplumber|pipewire wireplumber|pipewire wireplumber',
-    'required|upower|Battery|upower|upower|upower',
-    'required|findmnt|Storage discovery|util-linux|util-linux|util-linux',
-    'optional|udisksctl|Mount disks for the current session.|udisks2|udisks2|udisks2',
-    'optional|pkexec|Administrator authorization.|polkit|polkit|pkexec',
-    'required|python3|Shell helpers|python|python3|python3',
-    'required|gsettings|App theme|glib2|glib2|libglib2.0-bin',
-    'optional|brightnessctl|Screen brightness control.|brightnessctl|brightnessctl|brightnessctl',
-    'optional|bluetoothctl|Bluetooth device support.|bluez bluez-utils|bluez|bluez',
-    'optional|wlsunset|Warmer screen colors at night.|wlsunset|wlsunset|wlsunset',
-    'required|ffmpeg|Screenshot cropping and wallpaper colors|ffmpeg|ffmpeg-free|ffmpeg',
-    'optional|lpstat|Printer management.|cups system-config-printer|cups system-config-printer|cups system-config-printer',
-    'optional|notify-send|Update notifications.|libnotify|libnotify|libnotify-bin',
-    'optional|cava|Audio visualizer.|cava|cava|cava',
-    'optional|easyeffects|Sound effects and audio presets.|easyeffects|easyeffects|easyeffects',
-    'optional|playerctl|Media keyboard shortcuts.|playerctl|playerctl|playerctl',
-    'optional|nautilus|File manager.|nautilus|nautilus|nautilus',
-    'optional|kitty|Terminal.|kitty|kitty|kitty',
-    'optional|fastfetch|System information.|fastfetch|fastfetch|fastfetch',
-    'optional|gum|Keyboard menus for package setup.|gum|gum|gum',
-    'optional|sddm|Login screen.|sddm qt6-declarative qt6-svg|sddm qt6-qtdeclarative qt6-qtsvg|sddm qml6-module-qtquick-controls qml6-module-qtquick-effects qml6-module-qtquick-shapes',
-    'optional|qt6-multimedia|Video wallpaper playback.|qt6-multimedia qt6-multimedia-ffmpeg|qt6-qtmultimedia|qml6-module-qtmultimedia',
-)
+def package_data(root=None):
+    data = json.loads(((ROOT if root is None else root) / "assets/packages.json").read_text())
+    if not isinstance(data, dict) or data.get("version") != 1 or data.get("distributions") != ["arch", "fedora", "debian"]:
+        raise ValueError("Invalid package catalog")
+    installer = data.get("installer")
+    entries, options = data.get("dependencies"), installer.get("options") if isinstance(installer, dict) else None
+    if not isinstance(entries, list) or not entries or not isinstance(options, list) or not options:
+        raise ValueError("Invalid package catalog entries")
+    for records, key in ((entries, "tool"), (options, "id")):
+        identifiers = [entry.get(key) for entry in records if isinstance(entry, dict)]
+        if len(identifiers) != len(records) or any(not isinstance(name, str) or not name for name in identifiers) or len(set(identifiers)) != len(identifiers):
+            raise ValueError("Invalid or duplicate package catalog identifier")
+    for entry in [*entries, *options]:
+        mapping = entry.get("packages", {})
+        if not isinstance(mapping, dict) or not isinstance(entry.get("description"), str) or not entry["description"].strip():
+            raise ValueError("Invalid package metadata")
+        for family, names in mapping.items():
+            if family not in data["distributions"] or not isinstance(names, list) or any(not isinstance(name, str) or not re.fullmatch(r"(?:copr:)?[A-Za-z0-9][A-Za-z0-9+_.:/@-]*", name) for name in names):
+                raise ValueError("Invalid package mapping")
+    for entry in entries:
+        if type(entry.get("required")) is not bool or not isinstance(entry.get("name"), str) or not entry["name"].strip() or set(entry["packages"]) != set(data["distributions"]):
+            raise ValueError("Invalid dependency metadata")
+        commands = entry.get("commands", [])
+        if not isinstance(commands, list) or any(not isinstance(command, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9+_.-]*", command) for command in commands):
+            raise ValueError("Invalid dependency command")
+    known = {entry["tool"] for entry in entries}
+    choices = {entry["id"] for entry in options}
+    for entry in options:
+        if not isinstance(entry.get("label"), str) or not entry["label"].strip() or any(not isinstance(entry.get(key, []), list) or any(not isinstance(value, str) for value in entry.get(key, [])) for key in ("tools", "requires")):
+            raise ValueError("Invalid installer option metadata")
+        if entry.get("section") not in ("Packages", "Tools", "Appearance") or not set(entry.get("tools", [])).issubset(known) or not set(entry.get("requires", [])).issubset(choices):
+            raise ValueError("Invalid installer option")
+    return data
 
 
 def catalog():
-    return [dict(zip(("kind", "tool", "feature", "arch", "fedora", "debian"), row.split("|"))) for row in DEPENDENCIES]
+    data = package_data()
+    return [dict(kind="required" if entry["required"] else "optional", tool=entry["tool"], name=entry["name"], feature=entry["description"],
+                 **{family: " ".join(entry["packages"].get(family, [])) or "-" for family in data["distributions"]}) for entry in data["dependencies"]]
+
+
+def installer_packages(family):
+    data = package_data()
+    if family not in data["distributions"]:
+        raise ValueError("Unsupported package distribution")
+    entries = {entry["tool"]: entry for entry in data["dependencies"]}
+    return {option["id"]: list(dict.fromkeys([
+        *option.get("packages", {}).get(family, []),
+        *(name for tool in option.get("tools", []) for name in entries[tool]["packages"][family])
+    ])) for option in data["installer"]["options"]}
 
 
 def available(tool):
     if tool == "qs":
         return bool(shutil.which("qs") or shutil.which("quickshell"))
+    if tool == "bluetoothd":
+        return bool(shutil.which("bluetoothd") or any(path.is_file() for path in (Path("/usr/lib/bluetooth/bluetoothd"), Path("/usr/libexec/bluetooth/bluetoothd"))))
     if tool == "qt6-multimedia":
         paths = [Path(value) for key in ("QML_IMPORT_PATH", "QML2_IMPORT_PATH") for value in os.environ.get(key, "").split(os.pathsep) if value]
         paths.extend((Path("/usr/lib/qt6/qml"), Path("/usr/lib64/qt6/qml")))
@@ -80,7 +97,8 @@ def available(tool):
             return helper.is_file() and subprocess.run([sys.executable, str(ROOT / "scripts/bloodyShell"), "internal", "network-auth", "--check"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5).returncode == 0
         except (OSError, subprocess.TimeoutExpired):
             return False
-    return True
+    entry = next((entry for entry in package_data()["dependencies"] if entry["tool"] == tool), {})
+    return all(shutil.which(command) for command in entry.get("commands", []))
 
 
 def family():
@@ -144,25 +162,33 @@ def plan(action, tool, distro=None):
     raise ValueError("Unsupported distribution")
 
 
-def dependencies_status():
+def dependencies_status(kind=None):
     distro = family()
     entries = catalog()
     protected = {name for item in entries if item["kind"] == "required" for name in packages(item, distro)}
     return {"terminal": terminal(), "entries": [
         {"tool": item["tool"], "feature": item["feature"], "required": item["kind"] == "required" or item["tool"] == "python3", "installed": available(item["tool"]),
          "packages": packages(item, distro), "removable": item["kind"] != "required" and item["tool"] != "python3" and not protected.intersection(packages(item, distro)),
-         "supported": bool(packages(item, distro))} for item in entries]}
+         "supported": bool(packages(item, distro))} for item in entries if kind is None or item["kind"] == kind]}
 
 
 def dependencies_main():
+    if sys.argv[1:] == ["family"]:
+        print(family())
+        return 0
+    if len(sys.argv) == 3 and sys.argv[1] == "native-packages":
+        distro = sys.argv[2]
+        groups = installer_packages(distro)
+        print("\n".join(dict.fromkeys(groups["input"])))
+        return 0
     if sys.argv[1:] == ["catalog"]:
-        print("\n".join(DEPENDENCIES))
+        print("\n".join("|".join(entry[key] for key in ("kind", "tool", "feature", "arch", "fedora", "debian")) for entry in catalog()))
         return 0
     if len(sys.argv) == 3 and sys.argv[1] == "check":
         known = {entry["tool"] for entry in catalog()}
         return 0 if sys.argv[2] in known and available(sys.argv[2]) else 1
-    if sys.argv[1:] == ["status"]:
-        print(json.dumps(dependencies_status()))
+    if sys.argv[1:] == ["status"] or (len(sys.argv) == 3 and sys.argv[1] == "status" and sys.argv[2] in ("required", "optional")):
+        print(json.dumps(dependencies_status(sys.argv[2] if len(sys.argv) == 3 else None)))
         return 0
     try:
         if len(sys.argv) != 3:
@@ -372,6 +398,7 @@ def stage_runtime(source, target, binary):
     for name in RUNTIME_FILES:
         if not (source / name).is_file() or (source / name).is_symlink():
             raise RuntimeError("Missing runtime file: " + name)
+    package_data(source)
     paths = [source / name for name in RUNTIME_FILES]
     for name in RUNTIME_DIRS:
         directory = source / name
@@ -480,13 +507,104 @@ def runtime_main():
     return 0
 
 
-def restart_runtime():
+def restart_runtime(verify=False, source=None):
     target = command_location()[0]
     if not os.environ.get("WAYLAND_DISPLAY") or not (target / "scripts/bloodyShell").is_file():
         return None
-    result = FILES["run"]([sys.executable, str(target / "scripts/bloodyShell"), "restart"],
-                          capture_output=True, text=True, timeout=15)
-    return result.returncode == 0
+    try:
+        cli = runpy.run_path(str((source or target) / "scripts/bloodyShell"))
+        command = cli["quickshell"]()
+        previous = {entry["id"] for entry in cli["instances"](command, target)} if verify else set()
+        cli["stop"](command, target, quiet=True)
+        result = FILES["run"]([command, "--no-duplicate", "--path", str(target), "--daemonize"],
+                              capture_output=True, text=True, timeout=30 if verify else 15)
+        if result.returncode or not verify:
+            return result.returncode == 0
+        return verify_runtime(cli, command, target, previous)
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        return False
+
+
+def verify_runtime(cli, command, target, previous, timeout=30, stable=2):
+    """Require a fresh instance to answer IPC and remain ready before committing."""
+    expected = (target / "version").read_text().strip()
+    deadline = time.monotonic() + timeout
+    ready_id, ready_since = None, None
+    while time.monotonic() < deadline:
+        healthy = None
+        try:
+            for entry in cli["instances"](command, target):
+                if entry["id"] in previous:
+                    continue
+                reply = FILES["run"]([command, "ipc", "--id", entry["id"], "call", "--", "health", "status"],
+                                     capture_output=True, text=True, timeout=min(2, max(0.1, deadline - time.monotonic())))
+                if reply.returncode:
+                    continue
+                health = json.loads(reply.stdout)
+                if isinstance(health, dict) and health.get("ready") is True and health.get("version") == expected:
+                    healthy = entry["id"]
+                    break
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+            pass
+        if healthy is None:
+            ready_id, ready_since = None, None
+        elif healthy != ready_id:
+            ready_id, ready_since = healthy, time.monotonic()
+        elif time.monotonic() - ready_since >= stable:
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def restore_runtime(target, binary, backup):
+    """Restore the known working runtime and launcher without touching user configs."""
+    previous = backup / "shell"
+    if not previous.is_dir() or previous.is_symlink() or not FILES["safe_path"](target):
+        raise RuntimeError("The previous shell backup is unavailable: " + str(previous))
+    # Stop the rejected version before replacing its files. Failure to stop must
+    # leave both the installed version and its backup available for recovery.
+    cli = runpy.run_path(str(previous / "scripts/bloodyShell"))
+    cli["stop"](cli["quickshell"](), target, quiet=True)
+    with tempfile.TemporaryDirectory(prefix=".bloodyShell-recovery-", dir=target.parent) as temporary:
+        staged, rejected = Path(temporary) / "runtime", Path(temporary) / "rejected"
+        FILES["copy_path"](previous, staged)
+        restored = False
+        try:
+            os.replace(target, rejected)
+            os.replace(staged, target)
+            launcher = backup / "launcher/command"
+            if launcher.is_symlink():
+                remove_command(binary / "bloodyShell")
+                (binary / "bloodyShell").symlink_to(os.readlink(launcher))
+            elif launcher.is_file():
+                write_command(binary / "bloodyShell", launcher.read_bytes(), stat.S_IMODE(launcher.stat().st_mode))
+            restored = True
+        finally:
+            if rejected.exists() and not restored:
+                remove_path(target)
+                os.replace(rejected, target)
+
+
+def refresh_login_screen(source, tag, pending):
+    if not SDDM_THEME.is_dir() or SDDM_THEME.is_symlink():
+        pending.unlink(missing_ok=True)
+        return
+    pending.parent.mkdir(parents=True, exist_ok=True)
+    FILES["atomic_write"](pending, (tag + "\n").encode(), 0o600)
+    try:
+        # Invoke the refresh function explicitly. Old releases only know how to install SDDM.
+        result = subprocess.run(["bash", "-euo", "pipefail", "-c",
+                                 'readonly NAME=bloodyShell PACKAGE="$1"\n'
+                                 'source "$PACKAGE/scripts/lib/system.sh"\nrefresh_greeter',
+                                 "bloodyShell-refresh-greeter", str(source)])
+    except OSError as error:
+        print("Could not refresh the login screen: " + str(error), file=sys.stderr, flush=True)
+        return
+    if result.returncode == 0:
+        pending.unlink(missing_ok=True)
+    else:
+        message = "Administrator access is needed to refresh the login screen." if result.returncode == 75 else "The login-screen refresh failed."
+        print(message + " Run bloodyShell update in a terminal to retry.", file=sys.stderr, flush=True)
 
 
 def update_main():
@@ -499,13 +617,15 @@ def update_main():
         raise RuntimeError("Run update as your normal user, without sudo")
     target, binary = command_location()
     state = state_directory()
-    status_file = Path(os.environ.get("BLOODYSHELL_STATUS") or
-                       Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "bloodyShell/update.status")
+    cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "bloodyShell"
+    status_file = Path(os.environ.get("BLOODYSHELL_STATUS") or cache / "update.status")
+    recovery_file = cache / "update-recovery.json"
+    pending_login = cache / "login-screen-update.pending"
     def status(value):
         status_file.parent.mkdir(parents=True, exist_ok=True)
         FILES["atomic_write"](status_file, (value + "\n").encode(), 0o600)
     def step(index, message):
-        status(f"step {index}/3 {message}")
+        status(f"step {index}/4 {message}")
         print(message, flush=True)
     def download(url, destination=None):
         command = ["curl", "-fsSL", "--retry", "2", "--max-time", "120" if destination else "20"]
@@ -522,6 +642,10 @@ def update_main():
                 raise RuntimeError("The shell is not installed. Run ./setup from the source folder.")
             current = (target / "version").read_text().strip() if (target / "version").is_file() else "0.0.0"
             step(1, "Checking for updates")
+            pending_tag = pending_login.read_text().strip() if pending_login.is_file() else ""
+            if pending_tag and (not SDDM_THEME.is_dir() or SDDM_THEME.is_symlink()):
+                pending_login.unlink(missing_ok=True)
+                pending_tag = ""
             tag = options.tag
             if tag is None:
                 releases = json.loads(download("https://api.github.com/repos/bloodykgrapes/bloodyShell/releases?per_page=30"))
@@ -542,11 +666,15 @@ def update_main():
                     raise RuntimeError("No releases are available")
                 tag = max(candidates)[1]
             release_key = version_key(tag)
-            if not options.force and release_key <= version_key(current):
+            up_to_date = not options.force and release_key <= version_key(current)
+            retry_login = up_to_date and pending_tag and pending_tag.removeprefix("v") == current.removeprefix("v")
+            if up_to_date and not retry_login:
                 install_command(ROOT / "scripts/bloodyShell", binary, state / "backups" / ("cli-" + str(time.time_ns())))
                 print("Up to date · " + current, flush=True)
                 status("done " + current)
                 return 0
+            if retry_login:
+                tag = pending_tag
             step(2, "Downloading " + tag.removeprefix("v"))
             with tempfile.TemporaryDirectory(prefix="bloodyShell-release-") as temporary:
                 temporary = Path(temporary)
@@ -556,13 +684,49 @@ def update_main():
                 FILES["extract_archive"](archive, source, allow_links=True)
                 if (source / "version").read_text().strip().removeprefix("v") != tag.removeprefix("v"):
                     raise ValueError("Package version does not match the release tag")
+                if retry_login:
+                    refresh_login_screen(source, tag, pending_login)
+                    status("done " + current)
+                    return 0 if not pending_login.exists() else 1
                 step(3, "Installing " + tag.removeprefix("v"))
                 backup = state / "backups" / (time.strftime("%Y-%m-%d_%H-%M-%S") + "-update-" + str(time.time_ns()))
-                install_runtime(source, target, binary, backup)
+                profiles = path_plan(binary)
+                installed = False
+                try:
+                    with ExitStack() as transaction:
+                        config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+                        if (config / "niri/bloodyShell").is_dir():
+                            resources = runpy.run_path(str(source / "scripts/lib/resources.py"))
+                            resources["import_config"](source / "dots/niri", "niri", transaction)
+                        install_runtime(source, target, binary, backup)
+                        installed = True
+                        step(4, "Checking shell startup")
+                        restarted = restart_runtime(verify=True, source=backup / "shell")
+                        if restarted is False:
+                            raise RuntimeError("The new shell did not pass its startup check")
+                except BaseException as failure:
+                    if not installed:
+                        raise
+                    status("step 4/4 Restoring the previous version")
+                    print("Startup failed. Restoring the previous version", flush=True)
+                    try:
+                        restore_runtime(target, binary, backup)
+                        rollback_path_plan(profiles)
+                        message = "Update failed; restored version " + current
+                        cache.mkdir(mode=0o700, parents=True, exist_ok=True)
+                        FILES["atomic_write"](recovery_file, json.dumps(dict(tag=tag, version=current, error=message)).encode(), 0o600)
+                        recovered = restart_runtime()
+                    except BaseException as recovery:
+                        raise RuntimeError("Startup failed and automatic recovery could not finish. Backup: " + str(backup) + ". " + str(recovery)) from failure
+                    if recovered is False:
+                        message += ". Run bloodyShell doctor; the restored shell could not restart"
+                        FILES["atomic_write"](recovery_file, json.dumps(dict(tag=tag, version=current, error=message)).encode(), 0o600)
+                    raise RuntimeError(message) from failure
+                if restarted is None:
+                    print("Startup check skipped outside a Wayland session. Previous version saved in " + str(backup), flush=True)
+                refresh_login_screen(source, tag, pending_login)
+            recovery_file.unlink(missing_ok=True)
             status("done " + tag.removeprefix("v"))
-        # Release the operation lock before starting the new shell.
-        if restart_runtime() is False:
-            print("Updated. Run bloodyShell doctor to check why the shell could not restart.", flush=True)
         print("Updated to " + tag.removeprefix("v"), flush=True)
         return 0
     except BaseException as error:

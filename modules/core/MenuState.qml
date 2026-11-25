@@ -17,6 +17,17 @@ Singleton
     property var    menuWidget: null
     property bool   menuKeyboard: false
 
+    function requestKeyboard(item)
+    {
+        if (!menuActive) return;
+        for (let parent = item; parent; parent = parent.parent)
+        {
+            if (parent !== menuOwner) continue;
+            menuKeyboard = true;
+            return;
+        }
+    }
+
     function toggle(menu, source)
     {
         const id = String(menu);

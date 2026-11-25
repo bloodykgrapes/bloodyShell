@@ -57,6 +57,12 @@ Singleton
     readonly property string mount:               path + "mount.svg"
     readonly property string shortcuts:           path + "shortcuts.svg"
 
+    readonly property string visualizer:           path + "visualizer.svg"
+    readonly property string fileAssociations:     path + "file_associations.svg"
+    readonly property string usb:                  path + "usb.svg"
+    readonly property string printer:              path + "printer.svg"
+    readonly property string confirmation:         path + "confirmation.svg"
+
     readonly property string bluetoothON:        path + "bluetooth_enabled.svg"
     readonly property string bluetoothOFF:       path + "bluetooth_disabled.svg"
 
@@ -146,6 +152,8 @@ Singleton
     readonly property string settingsPower:        path + "power_profile.svg"
     readonly property string settingsStorage:      path + "storage.svg"
     readonly property string settingsDevices:      path + "devices.svg"
+    readonly property string processor:            path + "processor.svg"
+    readonly property string memory:               path + "memory.svg"
     readonly property string settingsApplications: path + "apps.svg"
     readonly property string settingsTimeLanguage: path + "language.svg"
 

@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 
 import "../../../animations"
+import "../../../animations/OverlayMotion.js" as Motion
 import "../../../common"
 import "../../../core"
 import "../../../services"
@@ -16,11 +17,22 @@ FocusScope
     readonly property alias selectionItem: selection
     readonly property bool ready: background.status === Image.Ready
     readonly property rect pixels: ServiceScreenshot.pixels(selection.region, width, height)
-    property real progress: 0
+    property bool mounted: false
+    property real progress: mounted && ready ? 1 : 0
+    readonly property bool fluid: Config.animationsFluid
+    readonly property real toolbarProgress: fluid ? Motion.phase(progress, 0.18, 0.90) : progress
     readonly property real margin: Math.max(8, Math.min(24, height * 0.04))
 
-    Glide on progress { duration: Theme.animationDurationOpen }
-    Component.onCompleted: Qt.callLater(() => { progress = 1; forceActiveFocus(); })
+    Ease on progress
+    {
+        duration: screenshot.fluid ? Motion.fluidOpenDuration : Theme.animationDurationOpen
+        curve: screenshot.fluid ? Motion.fluidOpenCurve : Theme.easingEmphasized
+    }
+    Component.onCompleted: Qt.callLater(() =>
+    {
+        screenshot.mounted = true;
+        screenshot.forceActiveFocus();
+    })
     Keys.onEscapePressed: ServiceScreenshot.cancel()
     Keys.onReturnPressed: submit()
     Keys.onEnterPressed: submit()
@@ -59,55 +71,45 @@ FocusScope
         objectName: "screenshotSelection"
         anchors.fill: parent
         enabled: screenshot.ready && !ServiceScreenshot.working
+        shadeOpacity: screenshot.fluid ? Motion.phase(screenshot.progress, 0, 0.60) : 1
         mode: Config.screenshotMode === Enums.ScreenshotScreen ? Enums.ScreenshotScreen : Enums.ScreenshotArea
         onSelected: if (Config.screenshotsInstantly) screenshot.submit()
     }
 
-    SurfaceShadow { surface: modePanel; cornerRadius: modePanel.radius; opacity: screenshot.progress }
-    SurfaceShadow { surface: controls; cornerRadius: controls.radius; opacity: screenshot.progress }
-
-    Rectangle
+    ShellText
     {
-        id: modePanel
-        objectName: "screenshotModePanel"
-        anchors.horizontalCenter: parent.horizontalCenter
-        y: screenshot.margin - 12 * (1 - screenshot.progress)
-        width: Math.min(modes.implicitWidth + 20, screenshot.width - screenshot.margin * 2)
-        height: modes.height + 16
-        radius: 20
-        color: Theme.colorSolid
-        border.width: 1
-        border.color: Theme.colorPanelEdge
-        opacity: screenshot.progress
-
-        MouseArea { anchors.fill: parent }
-        SettingsChoices
-        {
-            id: modes
-            objectName: "screenshotModes"
-            anchors.centerIn: parent
-            width: Math.min(implicitWidth, parent.width - 20)
-            options: [{label: Tr.tr("screenshot.area"), value: Enums.ScreenshotArea}, {label: Tr.tr("screenshot.screen"), value: Enums.ScreenshotScreen}]
-            current: selection.mode
-            enabled: !ServiceScreenshot.working
-            onSelected: value => Config.set("screenshotMode", value)
-        }
+        anchors.centerIn: parent
+        width: parent.width - screenshot.margin * 2
+        horizontalAlignment: Text.AlignHCenter
+        label: Tr.tr("screenshot.selectArea")
+        visible: screenshot.ready && selection.mode === Enums.ScreenshotArea && !selection.valid && !selection.dragging
+        opacity: screenshot.toolbarProgress
+        color: Qt.rgba(1, 1, 1, 0.92)
+        style: Text.Outline
+        styleColor: Qt.rgba(0, 0, 0, 0.65)
+        size: 13
+        font.weight: Font.Medium
     }
 
     Rectangle
     {
+        id: dimensions
         objectName: "screenshotDimensions"
-        readonly property real above: selection.region.y - height - 10
-        readonly property real minimumY: modePanel.y + modePanel.height + 10
+        readonly property real gap: 10
+        readonly property real above: selection.region.y - height - gap
+        readonly property real below: selection.region.y + selection.region.height + gap
+        readonly property real minimumY: screenshot.margin + toolbar.height + gap
+        readonly property real maximumY: screenshot.height - height - gap
+        readonly property real preferredY: above >= minimumY ? above : below <= maximumY ? below : selection.region.y + gap
+
         visible: selection.valid && selection.mode === Enums.ScreenshotArea
-        x: Math.max(12, Math.min(screenshot.width - width - 12, selection.region.x))
-        y: Math.max(minimumY, Math.min(controls.y - height - 10, above >= minimumY ? above : selection.region.y + 12))
-        width: Math.min(information.implicitWidth + 20, screenshot.width - 24)
-        height: 30
-        radius: 10
+        x: Math.max(gap, Math.min(screenshot.width - width - gap, selection.region.x + (selection.region.width - width) / 2))
+        y: Math.min(maximumY, Math.max(minimumY, preferredY))
+        width: Math.min(information.implicitWidth + 20, screenshot.width - gap * 2)
+        height: 26
+        radius: height / 2
         color: Theme.colorSolid
-        border.width: 1
-        border.color: Theme.colorPanelEdge
+
         ShellText
         {
             id: information
@@ -116,94 +118,101 @@ FocusScope
             label: screenshot.pixels.width + " × " + screenshot.pixels.height
             textFormat: Text.PlainText
             color: Theme.text1
-            size: 12
+            size: 11
             font.family: Theme.fontMono
         }
     }
 
-    Rectangle
+    SurfaceShadow { surface: toolbar; cornerRadius: toolbar.radius; opacity: toolbar.opacity }
+
+    ShellSurface
     {
-        id: controls
+        id: toolbar
         objectName: "screenshotToolbar"
-        readonly property bool compact: width < destination.implicitWidth + actions.implicitWidth + 48
+        readonly property real inset: 8
+        readonly property real idealWidth: modes.implicitWidth + destination.implicitWidth + actions.implicitWidth + controls.spacing * 2
+
         anchors.horizontalCenter: parent.horizontalCenter
-        y: parent.height - height - screenshot.margin + 12 * (1 - screenshot.progress)
-        width: Math.min(Math.max(480, destination.implicitWidth + actions.implicitWidth + 48), screenshot.width - screenshot.margin * 2)
-        height: hint.implicitHeight + 54 + actionArea.height
-        radius: 22
-        color: Theme.colorSolid
-        border.width: 1
-        border.color: Theme.colorPanelEdge
-        opacity: screenshot.progress
+        y: screenshot.margin - 14 * (1 - screenshot.toolbarProgress)
+        width: Math.min(idealWidth + inset * 2, screenshot.width - screenshot.margin * 2)
+        height: contents.height + inset * 2
+        radius: Theme.radiusLarge
+        baseColor: Theme.popupColorBackground
+        materialEnabled: !ShellMaterial.blur
+        opacity: screenshot.toolbarProgress
+        enabled: opacity > 0
 
         MouseArea { anchors.fill: parent }
-        ShellText
+        Column
         {
-            id: hint
-            x: 18; y: 14
-            width: parent.width - 36
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.Wrap
-            textFormat: Text.PlainText
-            color: ServiceScreenshot.error ? Theme.colorCritical : Theme.text2
-            label: ServiceScreenshot.error || Tr.tr(ServiceScreenshot.working ? "screenshot.working" : selection.mode === Enums.ScreenshotArea ? "screenshot.areaHint" : "screenshot.screenHint")
-        }
-        Rectangle
-        {
-            x: 18; y: hint.y + hint.implicitHeight + 12
-            width: parent.width - 36
-            height: 1
-            color: Theme.colorHairline
-        }
-        Item
-        {
-            id: actionArea
-            x: 14; y: hint.y + hint.implicitHeight + 25
-            width: parent.width - 28
-            height: controls.compact ? destination.height + actions.height + 10 : Math.max(destination.height, actions.height)
+            id: contents
+            x: toolbar.inset
+            y: toolbar.inset
+            width: toolbar.width - toolbar.inset * 2
+            spacing: 6
 
-            SettingsChoices
+            Flow
             {
-                id: destination
-                objectName: "screenshotDestination"
-                x: controls.compact ? (parent.width - width) / 2 : 0
-                y: controls.compact ? 0 : (parent.height - height) / 2
-                width: Math.min(implicitWidth, parent.width)
-                options: [{label: Tr.tr("screenshot.copy"), value: "copy"}, {label: Tr.tr("screenshot.save"), value: "save"}]
-                current: Config.screenshotsAction
-                enabled: !ServiceScreenshot.working
-                onSelected: value => Config.set("screenshotsAction", value)
-            }
-            Row
-            {
-                id: actions
-                x: controls.compact ? (parent.width - width) / 2 : parent.width - width
-                y: controls.compact ? destination.height + 10 : (parent.height - height) / 2
+                id: controls
+                width: parent.width
                 spacing: 8
 
-                ActionButton
+                SettingsChoices
                 {
-                    objectName: "screenshotConfirm"
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: Tr.tr("screenshot.capture")
-                    icon: Icon.check
-                    height: destination.height
-                    color: Theme.colorSelection
-                    hoverScale: 1
-                    enabled: screenshot.ready && selection.valid && !ServiceScreenshot.working
-                    onClicked: screenshot.submit()
+                    id: modes
+                    objectName: "screenshotModes"
+                    width: Math.min(implicitWidth, controls.width)
+                    options: [{label: Tr.tr("screenshot.area"), value: Enums.ScreenshotArea}, {label: Tr.tr("screenshot.screen"), value: Enums.ScreenshotScreen}]
+                    current: selection.mode
+                    enabled: !ServiceScreenshot.working
+                    onSelected: value => Config.set("screenshotMode", value)
                 }
-                ActionButton
+                SettingsChoices
                 {
-                    objectName: "screenshotCancel"
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: Tr.tr("common.cancel")
-                    icon: Icon.close
-                    iconOnly: true
-                    width: destination.height
-                    height: destination.height
-                    onClicked: ServiceScreenshot.cancel()
+                    id: destination
+                    objectName: "screenshotDestination"
+                    width: Math.min(implicitWidth, controls.width)
+                    options: [{label: Tr.tr("screenshot.copy"), value: "copy"}, {label: Tr.tr("screenshot.save"), value: "save"}]
+                    current: Config.screenshotsAction
+                    enabled: !ServiceScreenshot.working
+                    onSelected: value => Config.set("screenshotsAction", value)
                 }
+                Row
+                {
+                    id: actions
+                    spacing: 6
+
+                    Button
+                    {
+                        objectName: "screenshotConfirm"
+                        text: Tr.tr("screenshot.capture")
+                        icon: Icon.screenshot
+                        iconOnly: screenshot.width < 440
+                        primary: true
+                        hoverScale: 1
+                        enabled: screenshot.ready && selection.valid && !ServiceScreenshot.working
+                        onClicked: screenshot.submit()
+                    }
+                    Button
+                    {
+                        objectName: "screenshotCancel"
+                        text: Tr.tr("common.cancel")
+                        icon: Icon.close
+                        iconOnly: true
+                        hoverScale: 1
+                        onClicked: ServiceScreenshot.cancel()
+                    }
+                }
+            }
+
+            ShellText
+            {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                color: ServiceScreenshot.error ? Theme.colorCritical : Theme.text2
+                label: ServiceScreenshot.error || (ServiceScreenshot.working ? Tr.tr("screenshot.working") : "")
             }
         }
     }

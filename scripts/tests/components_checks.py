@@ -40,6 +40,31 @@ def checks():
         resource.write_text(resource.read_text().replace('GREETER_STATE = Path("/var/lib/bloodyShell")', 'GREETER_STATE = Path(' + repr(str(state)) + ')').replace('writable=os.access(directory, os.W_OK)', 'writable=False'))
         service = base / "modules/services/ServiceGreeter.qml"
         service.write_text(service.read_text().replace('"/var/lib/bloodyShell"', json.dumps(str(state))))
+        themes = base / "boot splash"
+        for name in ("current", "aurora"):
+            folder = themes / name
+            folder.mkdir(parents=True)
+            module = "details" if name == "current" else "script"
+            (folder / (name + ".plymouth")).write_text(f"[Plymouth Theme]\nName={name.title()}\nModuleName={module}\n")
+        (themes / "aurora/preview.png").write_bytes(screenshot["png"](160, 90))
+        (base / "boot-theme").write_text("current")
+        selector = base / "bin/plymouth-set-default-theme"
+        selector.write_text('#!/bin/sh\ncase "$1" in\n'
+                            '  --list) printf "current\\naurora\\n";;\n'
+                            '  --rebuild-initrd)\n'
+                            '    printf "%s" "$2" > "$TEST_SCREENSHOT_BASE/boot-theme"\n'
+                            '    if [ "$(cat "$TEST_SCREENSHOT_BASE/deny-terminal")" = rebuild ]; then\n'
+                            '      echo "Rebuild failed" >&2; exit 1\n'
+                            '    fi;;\n'
+                            '  "") cat "$TEST_SCREENSHOT_BASE/boot-theme";;\n'
+                            '  *) exit 1;;\nesac\n')
+        auth = base / "bin/pkexec"
+        auth.write_text('#!/bin/sh\n[ "$(cat "$TEST_SCREENSHOT_BASE/deny-terminal")" != yes ] || { echo "Authorization denied" >&2; exit 126; }\nexec "$@"\n')
+        for binary in (selector, auth):
+            binary.chmod(0o755)
+        plymouth = base / "scripts/lib/plymouth.py"
+        plymouth.write_text(plymouth.read_text().replace('Path("/usr/share/plymouth/themes")', f'Path({str(themes)!r})')
+                            .replace('("/usr/bin", "/usr/sbin", "/bin", "/sbin")', f'({str(base / "bin")!r},)'))
         (base / "config/bloodyShell/settings.json").write_text(json.dumps(dict(helperSeen=True, themeAnimations=0,
             wallpaperDirectory=str(wallpapers), wallpaperCurrent=str(wallpapers / "a.png"))))
         (base / "shell.qml").write_text('''import QtQuick
@@ -53,6 +78,7 @@ import "modules/ui/overlay"
 
 ShellRoot {
     FileView { id: deny; path: Quickshell.env("TEST_SCREENSHOT_BASE") + "/deny-terminal"; blockWrites: true }
+    FileView { id: configuredTheme; path: Quickshell.env("TEST_SCREENSHOT_BASE") + "/boot-theme"; blockLoading: true; blockWrites: true }
     Window {
         id: window; visible:true; width:1024; height:768
         OverlayFixture { id: overlay; anchors.fill:parent }
@@ -69,6 +95,61 @@ ShellRoot {
                 until(()=>overlay.testPage.item && findChild(overlay.testPage.item,"loginWallpaperPreview") && ServiceGreeter.installed && !ServiceGreeter.wallpaperBusy,"Components did not load login settings");
                 const original=overlay.testPage.item;
                 const screenshots=findChild(original,"screenshotOptions"), login=findChild(original,"loginOptions");
+                const keyboard=findChild(original,"virtualKeyboardOptions");
+                const mode=findChild(keyboard,"virtualKeyboardMode");
+                check(keyboard && mode && mode.options.length===2,"Virtual keyboard does not have a segmented mode row");
+                keyboard.expanded=true;
+                mode.selected(false);
+                check(!Config.virtualKeyboardEnabled,"Disabled mode did not save");
+                const visualizer=findChild(original,"visualizerOptions");
+                check(visualizer && visualizer.title===Tr.tr("settings.components.visualizer"),"Visualizer foldout is missing");
+                visualizer.expanded=true;
+                findChild(original,"equalizerStyle-"+Enums.EqualizerWaves).clicked();
+                findChild(original,"visualizerOpacity").moved(0.4);
+                check(Config.equalizerStyle===Enums.EqualizerWaves && Config.desktopEqualizerOpacity===0.4,"Visualizer controls did not save");
+                const boot=findChild(original,"plymouthSection");
+                boot.expanded=true;
+                until(()=>!ServicePlymouth.busy && findChild(boot,"plymouthTheme-aurora"),"Plymouth theme cards did not load");
+                const currentTheme=findChild(boot,"plymouthTheme-current"), aurora=findChild(boot,"plymouthTheme-aurora");
+                const applyBoot=findChild(aurora.parent,"applyPlymouthTheme");
+                const currentMark=findChild(currentTheme,"plymouthCurrentTheme"), auroraMark=findChild(aurora,"plymouthCurrentTheme");
+                check(currentTheme.selected && !aurora.selected && !applyBoot.visible,"Current boot theme was not selected");
+                check(currentMark.visible && !auroraMark.visible,"Current theme was not marked");
+                check(findChild(currentTheme,"plymouthPreview").textTheme,"A text-only Plymouth theme did not get a preview");
+                until(()=>findChild(aurora,"plymouthThemeImage").status===Image.Ready,"Plymouth preview did not load before selection");
+                const art=findChild(aurora,"plymouthPreview"), title=findChild(aurora,"plymouthThemeTitle");
+                check(art.height>0 && title.label==="Aurora" && title.mapToItem(aurora,0,0).y>=art.mapToItem(aurora,0,art.height).y,"Theme title is not below its preview");
+                let viewport=aurora.parent;
+                while(viewport && typeof viewport.revealItem!=="function") viewport=viewport.parent;
+                check(viewport!==null,"Plymouth cards are outside the settings viewport");
+                window.height=680; wait(30);
+                check(applyBoot.mapToItem(viewport,0,0).y+applyBoot.height>viewport.height,"Apply fixture is already in view");
+                aurora.clicked();
+                check(aurora.selected && !currentTheme.selected && ServicePlymouth.state.current==="current" && applyBoot.visible && applyBoot.enabled,"Theme card did not show its Apply button");
+                check(currentMark.visible && !auroraMark.visible,"Pending selection moved the current theme mark");
+                until(()=>{
+                    const top=applyBoot.mapToItem(viewport,0,0).y;
+                    return top>=viewport.headerHeight && top+applyBoot.height<=viewport.height;
+                },"Apply button was clipped after selection");
+                deny.setText("yes"); deny.waitForJob(); mouseClick(applyBoot,applyBoot.width/2,applyBoot.height/2);
+                until(()=>!ServicePlymouth.busy && ServicePlymouth.applyError==="Authorization denied","Plymouth authorization failure was hidden");
+                check(currentMark.visible && !auroraMark.visible,"Authorization failure moved the current theme mark");
+                deny.setText("rebuild"); deny.waitForJob(); applyBoot.clicked();
+                until(()=>!ServicePlymouth.busy && ServicePlymouth.state.current==="aurora" && ServicePlymouth.applyError==="Rebuild failed","Plymouth did not refresh the configured theme after a rebuild failure");
+                check(auroraMark.visible && applyBoot.visible,"Configured theme lost its mark or retry after a rebuild failure");
+                deny.setText("no"); deny.waitForJob(); applyBoot.clicked();
+                until(()=>!ServicePlymouth.busy && ServicePlymouth.applied,"Plymouth theme did not apply");
+                check(aurora.selected && auroraMark.visible && !applyBoot.visible,"Applied Plymouth theme did not become current");
+                configuredTheme.reload(); configuredTheme.waitForJob();
+                check(configuredTheme.text()==="aurora","Theme fixture did not persist the applied theme");
+                configuredTheme.setText("current"); configuredTheme.waitForJob(); ServicePlymouth.refresh();
+                until(()=>!ServicePlymouth.busy && ServicePlymouth.state.current==="current","External theme change was not detected");
+                check(currentTheme.selected && currentMark.visible && !aurora.selected && !auroraMark.visible && !applyBoot.visible,"Picker kept a stale selection after an external change");
+                configuredTheme.setText("missing"); configuredTheme.waitForJob(); ServicePlymouth.refresh();
+                until(()=>!ServicePlymouth.busy && ServicePlymouth.state.current==="missing","Unavailable configured theme was not detected");
+                check(!currentTheme.selected && !currentMark.visible && !aurora.selected && !auroraMark.visible,"Picker marked a fallback theme as current");
+                window.height=768;
+                boot.expanded=false;
                 screenshots.expanded=true; login.expanded=true; wait(20);
                 const path=findChild(original,"screenshotsPath"), action=findChild(original,"screenshotsAction"), instant=findChild(original,"screenshotsInstantly");
                 check(Config.screenshotsAction==="copy" && !Config.screenshotsInstantly,"Screenshot defaults are incorrect");
@@ -97,7 +178,7 @@ ShellRoot {
                 until(()=>OverlayState.current==="settings" && OverlayState.stacked==="","Login wallpaper retry failed");
                 check(Config.wallpaperCurrent===selected && ServiceGreeter.selection.endsWith("a.png"),"Retry changed the desktop wallpaper");
                 check(overlay.testPage.item===original && screenshots.expanded && login.expanded,"Components state was lost");
-                console.log("COMPONENTS_PASSED screenshot defaults, validation, shared login picker, desktop independence, cancellation, retry and preserved settings"); Qt.quit();
+                console.log("COMPONENTS_PASSED Plymouth preview, authorization and apply, screenshot defaults, and shared login wallpaper"); Qt.quit();
             }
         }
         Timer { interval:100; running:true; onTriggered:{try{events.exercise();}catch(error){console.error("COMPONENTS_FAILED",error);Qt.quit();}} }
@@ -115,5 +196,77 @@ ShellRoot {
         assert len(list(state.glob("wallpaper-*"))) == 1, "Login wallpaper replacement leaked files"
 
 
+def time_language_checks():
+    prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-time-language-") as temporary:
+        base = Path(temporary)
+        env = prepare(base)
+        env.pop("WAYLAND_DISPLAY", None)
+        (base / "home").mkdir()
+        env["HOME"] = str(base / "home")
+        (base / "modules/services/ServiceKeyboard.qml").write_text('''pragma Singleton
+import Quickshell
+Singleton {
+    property bool busy: false
+    property string error: ""
+    property string switchOption: ""
+    property var layouts: [{layout:"us",variant:""}]
+    property var catalog: [{code:"us",name:"English"},{code:"ru",name:"Russian"}]
+    property var variants: ({ru:[{code:"phonetic",name:"Phonetic"}]})
+    function refresh() {}
+    function title(entry) { return entry.layout; }
+    function set(key,value) { this[key]=value; }
+    function addLayout(layout,variant) { layouts=layouts.concat([{layout:layout,variant:variant}]); }
+    function moveLayout(index,delta) {}
+    function removeLayout(index) {}
+}
+''')
+        (base / "shell.qml").write_text('''import QtQuick
+import QtQuick.Window
+import QtTest
+import Quickshell
+import "modules/core"
+import "modules/services"
+import "modules/ui/overlay/settings/pages"
+ShellRoot {
+    Window { id: window; visible:true; width:720; height:760; PageTimeLanguage {id: page;anchors.fill:parent} }
+    TestCase {
+        id: events; when:false; optional:true
+        function check(ok,message) { if(!ok) throw new Error(message); }
+        function exercise() {
+            const language=findChild(page,"languageSettings"), dateTime=findChild(page,"dateTimeSettings"), keyboard=findChild(page,"keyboardSettings");
+            check(language.y<dateTime.y && dateTime.y<keyboard.y,"Time and Language groups are out of order");
+            const popup=findChild(page,"keyboardLayoutPicker"), add=findChild(page,"addKeyboardLayout");
+            const layout=findChild(popup,"newKeyboardLayout"), variant=findChild(popup,"newKeyboardVariant"), confirm=findChild(popup,"confirmKeyboardLayout");
+            add.clicked(); wait(50);
+            check(popup.opened && !confirm.enabled,"Layout picker did not open with an empty selection");
+            layout.selected("ru");variant.selected("phonetic");
+            check(confirm.enabled,"Valid layout cannot be added");confirm.clicked();wait(100);
+            check(!popup.visible && ServiceKeyboard.layouts.length===2 && ServiceKeyboard.layouts[1].variant==="phonetic","Layout and variant did not save");
+            add.clicked();wait(50);
+            check(popup.layout==="" && popup.variant==="","Reopening the picker kept an unfinished selection");
+            layout.selected("ru");variant.selected("phonetic");check(!confirm.enabled,"Duplicate layout can be added");
+            popup.close();wait(100);
+            add.clicked();wait(50);layout.selected("us");
+            check(!confirm.enabled,"Existing default layout can be added twice");
+            popup.close();wait(100);
+            check(ServiceKeyboard.layouts.length===2,"Cancelling changed the layout list");
+            window.width=400;add.clicked();wait(50);
+            check(popup.width<=window.width-32 && popup.height<window.height,"Layout picker does not fit a compact window");
+            page.visible=false;wait(100);check(!popup.visible,"Leaving the page kept the picker open");
+            console.log("TIME_LANGUAGE_PASSED ordering, add popup, variants, duplicates, cancellation, compact size and page cleanup");Qt.quit();
+        }
+    }
+    Timer {interval:200;running:Config.initialized;onTriggered:{try{events.exercise();}catch(error){console.error("TIME_LANGUAGE_FAILED",error);Qt.quit();}}}
+}
+''')
+        result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=15)
+        output = result.stdout + result.stderr
+        assert result.returncode == 0 and "TIME_LANGUAGE_PASSED" in output, output
+        assert not re.search(r"TIME_LANGUAGE_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|Failed to load configuration", output), output
+        print("Time and Language grouping and layout popup checks passed without system changes.")
+
+
 if __name__ == "__main__":
     checks()
+    time_language_checks()

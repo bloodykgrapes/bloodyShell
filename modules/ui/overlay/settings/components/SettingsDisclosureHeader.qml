@@ -23,8 +23,8 @@ Common.InteractiveControl
     signal toggled(bool expanded)
 
     implicitWidth: 400
-    implicitHeight: Math.max(Theme.settingsRowHeight, labels.implicitHeight + 28)
-    radius: Theme.radiusLarge + 2
+    implicitHeight: Math.max(Theme.settingsRowHeight, labels.implicitHeight + 24)
+    radius: Theme.radiusLarge
     color: area.pressed ? Theme.settingsColorPressed
         : header.hovered || visualFocus ? Theme.settingsColorHover : Theme.settingsColorCard
     activeFocusOnTab: true
@@ -33,14 +33,17 @@ Common.InteractiveControl
     Spring on scale {}
     Tint on color {}
 
-    ShellIcon
+    Rectangle
     {
         id: symbol
         x: Theme.settingsRowInset
         anchors.verticalCenter: parent.verticalCenter
-        size: 22
-        icon: header.icon
+        width: 34
+        height: width
+        radius: Theme.radiusMedium
+        color: Theme.colorField
         visible: header.icon !== ""
+        ShellIcon { anchors.centerIn: parent; icon: header.icon; size: 19 }
     }
 
     Column
@@ -56,7 +59,7 @@ Common.InteractiveControl
             width: parent.width
             label: header.title
             wrapMode: Text.Wrap
-            size: 13
+            size: Theme.settingsLabelSize
             font.weight: Font.Medium
             color: Theme.text1
         }
@@ -81,13 +84,13 @@ Common.InteractiveControl
             anchors.verticalCenter: parent.verticalCenter
             width: Math.min(implicitWidth, header.width * 0.28)
             label: header.summary
-            size: 11
+            size: 12
             color: Theme.text3
         }
         Rectangle
         {
-            width: 28
-            height: 28
+            width: 30
+            height: 30
             radius: 9
             color: header.expanded ? Theme.colorField : "transparent"
             Tint on color {}
@@ -96,7 +99,7 @@ Common.InteractiveControl
             {
                 anchors.centerIn: parent
                 icon: Icon.chevronRight
-                size: 13
+                size: 14
                 rotation: header.expanded ? 90 : 0
                 Glide on rotation { duration: Theme.animationDurationControl }
             }

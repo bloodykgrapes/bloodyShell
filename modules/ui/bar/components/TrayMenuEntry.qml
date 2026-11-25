@@ -55,17 +55,15 @@ Item
 
     MenuSeparator { anchors.centerIn: parent; visible: row.separator }
 
-    ActionButton
+    ButtonList
     {
         id: action
         objectName: "trayAction"
         anchors.fill: parent
         visible: !row.separator
         enabled: !!row.entry && row.entry.enabled
-        color: "transparent"
-        radius: Theme.radiusMedium
-        hoverScale: 1.025
-        Accessible.name: row.entry ? row.entry.text : ""
+        text: row.entry ? row.entry.text : ""
+        trailingIcon: row.entry && row.entry.hasChildren ? Icon.chevronRight : ""
         Accessible.role: !row.checkable ? Accessible.MenuItem
             : row.entry.buttonType === QsMenuButtonType.RadioButton ? Accessible.RadioButton : Accessible.CheckBox
         Accessible.checkable: row.checkable
@@ -77,13 +75,8 @@ Item
             else event.accepted = false;
         }
 
-        Item
+        leading: Item
         {
-            id: mark
-            x: 10
-            anchors.verticalCenter: parent.verticalCenter
-            width: 16
-            height: width
 
             ShellIcon
             {
@@ -111,21 +104,6 @@ Item
                 fillMode: Image.PreserveAspectFit
                 asynchronous: true
             }
-        }
-        ShellText
-        {
-            anchors { left: mark.right; leftMargin: 10; right: arrow.left; rightMargin: 10; verticalCenter: parent.verticalCenter }
-            label: row.entry ? row.entry.text : ""
-            textFormat: Text.PlainText
-            color: Theme.text1
-        }
-        ShellIcon
-        {
-            id: arrow
-            anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
-            icon: row.entry && row.entry.hasChildren ? Icon.chevronRight : ""
-            size: 12
-            opacity: 0.6
         }
     }
 }

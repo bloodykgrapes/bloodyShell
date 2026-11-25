@@ -1,1 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><defs><clipPath id="slash-gap"><path d="M0 2.4V24H21.6ZM2.4 0H24V21.6Z" /></clipPath></defs><g fill="#e3e3e3" stroke="#e3e3e3" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#slash-gap)"><g transform="scale(0.025 0.025) translate(-0 960)"><rect x="360" y="-860" width="240" height="420" rx="120" stroke="none" /><path d="M220,-500 a260,260 0 0 0 520,0 M480,-240 V-120 M360,-120 H600" fill="none" stroke-width="72" /></g></g><path d="m3.5 3.5 17 17" fill="none" stroke="#e3e3e3" stroke-width="1.8" stroke-linecap="round" /></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="24" height="24" viewBox="0 0 24 24">
+  <title>microphone_off.svg</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <path d="M12 2.5 L12 2.5 C13.657 2.5 15 3.843 15 5.5 L15 10 C15 11.657 13.657 13 12 13 L12 13 C10.343 13 9 11.657 9 10 L9 5.5 C9 3.843 10.343 2.5 12 2.5 Z" fill="#e3e3e3" opacity="0.35"/>
+    <path d="M5.5 11.5 C5.5 15.09 8.41 18 12 18 C15.59 18 18.5 15.09 18.5 11.5 M12 18 L12 21 M9 21 L15 21" fill="none" stroke="#e3e3e3" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.35"/>
+  </g>
+</svg>

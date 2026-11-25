@@ -28,11 +28,12 @@ def checks():
             target = Path(result["destination"])
             fragments = target / "bloodyShell"
             assert sorted(path.name for path in fragments.iterdir()) == sorted((*managed, *user))
-            assert "eDP-1" not in (fragments / "07-user-output.kdl").read_text(), "Import installed machine-specific display settings"
+            assert "eDP-1" not in (fragments / "08-settings.kdl").read_text(), "Import installed machine-specific display settings"
             personal = {
-                "05-user.kdl": '// personal\nlayout { gaps 29; }\ninclude "../../external.kdl"\n',
-                "06-user-input.kdl": 'input { keyboard { xkb { layout "de"; }; }; }\ncursor { xcursor-theme "Adwaita"; xcursor-size 31; }\n',
-                "07-user-output.kdl": 'output "Personal display" { scale 2.0; }\n',
+                "09-user.kdl": '// personal\nlayout { gaps 29; }\ninclude "../../external.kdl"\n',
+                "08-settings.kdl": ('input { keyboard { xkb { layout "de"; }; }; }\n'
+                                    'cursor { xcursor-theme "Adwaita"; xcursor-size 31; }\n'
+                                    'output "Personal display" { scale 2.0; }\n'),
             }
             for name, text in personal.items():
                 (fragments / name).write_text(text)
@@ -43,7 +44,7 @@ def checks():
             (target / "config.kdl").write_text("// a managed loader will be refreshed\n")
             (fragments / "extra.kdl").write_text('// unrelated file\n')
             before = {name: ((fragments / name).read_bytes(), (fragments / name).stat().st_mtime_ns) for name in user}
-            (source / "bloodyShell/01-layout.kdl").write_text((source / "bloodyShell/01-layout.kdl").read_text().replace("gaps 10", "gaps 17"))
+            (source / "bloodyShell/04-layout.kdl").write_text((source / "bloodyShell/04-layout.kdl").read_text().replace("gaps 10", "gaps 17"))
             for repeat in range(2):
                 imported = resources["import_config"](source, "niri")
                 assert Path(imported["backup"]).is_dir()
@@ -51,14 +52,14 @@ def checks():
                     assert (fragments / name).read_bytes() == contents
                     assert (fragments / name).stat().st_mtime_ns == modified
                     assert (fragments / name).stat().st_mode & 0o777 == 0o600
-                assert "gaps 17" in (fragments / "01-layout.kdl").read_text()
+                assert "gaps 17" in (fragments / "04-layout.kdl").read_text()
                 assert (fragments / "extra.kdl").is_file()
                 loader = (target / "config.kdl").read_text()
                 assert loader == (ROOT / "dots/niri/config.kdl").read_text()
             # A protected symlink remains a link, and import never writes its target.
             shared = target / "shared-input.kdl"
             shared.write_text('input { keyboard { xkb { layout "fr"; }; }; }\n')
-            input_file = fragments / "06-user-input.kdl"
+            input_file = fragments / "08-settings.kdl"
             input_file.unlink()
             input_file.symlink_to("../shared-input.kdl")
             resources["import_config"](source, "niri")
@@ -76,16 +77,6 @@ def checks():
             assert snapshot == {str(path.relative_to(target)): path.read_bytes() for path in target.rglob("*") if path.is_file()}
             assert not list(target.parent.glob(".bloodyShell-config-*"))
 
-            # Neither the helper nor UI services may write managed layout/window files.
-            original = (fragments / "01-layout.kdl").read_bytes()
-            for name in managed:
-                try:
-                    desktop["niri_write"](name, "invalid")
-                except ValueError:
-                    pass
-                else:
-                    raise AssertionError("Managed niri fragment was writable: " + name)
-            assert (fragments / "01-layout.kdl").read_bytes() == original
             original_input = input_file.read_text()
             cursor = desktop["cursor_config"](original_input, 'New "cursor"', 28)
             assert original_input.strip() in cursor and cursor.count("xcursor-size") == 1
@@ -96,10 +87,10 @@ def checks():
             assert updated.count("xcursor-size") == 1 and "xcursor-size 24" in updated
             changed = subprocess.run([sys.executable, str(ROOT / "scripts/bloodyShell"), "internal", "compositor", "config", "niri", "cursor", "Adwaita", "32"], capture_output=True, text=True, timeout=8)
             assert changed.returncode == 0, changed.stdout + changed.stderr
-            text = (fragments / "06-user-input.kdl").read_text()
+            text = input_file.read_text()
             assert original_input.strip() in text and "xcursor-size 32" in text
             resources["import_config"](source, "niri")
-            assert (fragments / "06-user-input.kdl").read_text() == text
+            assert input_file.read_text() == text
     assert not (ROOT / "modules/ui/overlay/settings/pages/PageCompositor.qml").exists()
     registry = (ROOT / "modules/core/Registry.qml").read_text()
     assert 'id: "compositor"' not in registry
@@ -126,7 +117,7 @@ input {
 }
 cursor { xcursor-theme "Adwaita"; xcursor-size 24; }
 '''
-    assert mouse_settings(text) == dict(speed=-0.25, profile='flat', naturalScroll=False, leftHanded=False, scrollHorizontal=-2.0, scrollVertical=0.6, middleEmulation=False)
+    assert mouse_settings(text) == dict(speed=-0.25, profile='flat', naturalScroll=False, leftHanded=False, scrollHorizontal=-2.0, scrollVertical=0.6, middleEmulation=False, scrollMethod='on-button-down', scrollButton=274, scrollButtonLock=False)
     changed = mouse_config(text, dict(speed=0.6, naturalScroll=True, leftHanded=True, scrollVertical=1.5, middleEmulation=True))
     assert mouse_settings(changed)['scrollHorizontal'] == -2 and mouse_settings(changed)['scrollVertical'] == 1.5
     for preserved in ('// keep this comment', '// accel-speed 1.0', '/- left-handed', 'touchpad { tap; accel-speed 0.2; }', 'scroll-method "on-button-down"', 'scroll-button 274', 'keyboard { xkb { layout "de"; options "compose:menu"; }; }', 'cursor { xcursor-theme "Adwaita"; xcursor-size 24; }'):
@@ -142,6 +133,17 @@ cursor { xcursor-theme "Adwaita"; xcursor-size 24; }
         try: mouse_config(text, invalid)
         except ValueError: pass
         else: raise AssertionError('Invalid mouse settings accepted: ' + str(invalid))
+    scrolling = mouse_config(text, dict(scrollMethod="on-button-down", scrollButton=275, scrollButtonLock=True))
+    assert mouse_settings(scrolling)['scrollButton'] == 275 and mouse_settings(scrolling)['scrollButtonLock']
+    reset = mouse_config(scrolling, dict(scrollMethod="", scrollButton=-1, scrollButtonLock=False))
+    assert mouse_settings(reset)['scrollMethod'] == "" and mouse_settings(reset)['scrollButton'] == -1
+    assert 'scroll-method "' not in reset and 'scroll-button ' not in reset and 'scroll-button-lock' not in reset
+    for method in ("no-scroll", "on-button-down", "two-finger", "edge"):
+        assert mouse_settings(mouse_config(text, dict(scrollMethod=method)))['scrollMethod'] == method
+    for invalid in ({'scrollMethod': 'unknown'}, {'scrollMethod': True}, {'scrollButton': 1.5}, {'scrollButton': True}, {'scrollButton': -2}, {'scrollButton': 65536}, {'scrollButtonLock': 'true'}):
+        try: mouse_config(text, invalid)
+        except ValueError: pass
+        else: raise AssertionError('Invalid mouse scrolling accepted: ' + str(invalid))
     keyboard = api['keyboard_config'](changed, 'keyboard {\n    xkb { layout "fr"; }\n    repeat-rate 40\n}')
     assert mouse_settings(keyboard) == mouse_settings(changed) and 'layout "fr"' in keyboard
     with tempfile.TemporaryDirectory(prefix='bloodyShell-mouse-config-') as temporary:
@@ -149,11 +151,11 @@ cursor { xcursor-theme "Adwaita"; xcursor-size 24; }
         config = base / 'config/niri'
         fragments = config / 'bloodyShell'
         fragments.mkdir(parents=True)
-        (config / 'config.kdl').write_text('include "bloodyShell/06-user-input.kdl"\n')
+        (config / 'config.kdl').write_text('include "bloodyShell/08-settings.kdl"\n')
         shared = base / 'shared-input.kdl'
-        shared.write_text((ROOT / 'dots/niri/bloodyShell/06-user-input.kdl').read_text())
+        shared.write_text((ROOT / 'dots/niri/bloodyShell/06-input.kdl').read_text())
         shared.chmod(0o600)
-        (fragments / '06-user-input.kdl').symlink_to(shared)
+        (fragments / '08-settings.kdl').symlink_to(shared)
         (base / 'bin').mkdir()
         (base / 'bin/qs').write_text("#!/bin/sh\nprintf '[]\\n'\n")
         (base / 'bin/qs').chmod(0o700)
@@ -167,7 +169,7 @@ cursor { xcursor-theme "Adwaita"; xcursor-size 24; }
         result = subprocess.run(cli + ['mouse', json.dumps(dict(speed=0.4,scrollVertical=1.7,naturalScroll=True))],env=env,capture_output=True,text=True,check=True)
         assert json.loads(result.stdout)['mouse']['speed'] == 0.4
         assert not (base / 'state/bloodyShell/changes.json').exists(), 'Mouse changes created a tracking journal'
-        assert (fragments / '06-user-input.kdl').is_symlink() and shared.stat().st_mode & 0o777 == 0o600
+        assert (fragments / '08-settings.kdl').is_symlink() and shared.stat().st_mode & 0o777 == 0o600
         subprocess.run(cli + ['keyboard','keyboard {\n    xkb { layout "fr"; }\n    repeat-rate 40\n}'],env=env,capture_output=True,text=True,check=True)
         assert mouse_settings(shared.read_text())['speed'] == 0.4 and 'repeat-rate 40' in shared.read_text()
         subprocess.run(cli + ['mouse',json.dumps({'leftHanded':True})],env=env,capture_output=True,text=True,check=True)
@@ -177,7 +179,7 @@ cursor { xcursor-theme "Adwaita"; xcursor-size 24; }
         failed = subprocess.run(cli + ['mouse',json.dumps({'speed':0.9})],env=env,capture_output=True,text=True)
         assert failed.returncode != 0 and shared.read_bytes() == before, 'Rejected mouse configuration was not rolled back'
         subprocess.run(['niri','validate','-c',str(config / 'config.kdl')],capture_output=True,text=True,check=True)
-        assert shared.read_bytes() == before and (fragments / '06-user-input.kdl').is_symlink(), 'Rejected edits changed the user configuration'
+        assert shared.read_bytes() == before and (fragments / '08-settings.kdl').is_symlink(), 'Rejected edits changed the user configuration'
     print('Mouse configuration passed: real niri validation, defaults, flags, signed scroll axes, comments, disabled nodes, inline KDL, idempotence, concurrent keyboard edits, symlinks, permissions and rollback.')
 
 
@@ -194,9 +196,10 @@ def mouse_ui_checks():
         config = base / 'config/niri'
         directory = config / 'bloodyShell'
         directory.mkdir(parents=True)
-        (config / 'config.kdl').write_text('include "bloodyShell/06-user-input.kdl"\n')
-        initial = (ROOT / 'dots/niri/bloodyShell/06-user-input.kdl').read_text().replace('scroll-factor 1.0','scroll-factor horizontal=-1.2 vertical=0.8')
-        path = directory / '06-user-input.kdl'
+        (config / 'config.kdl').write_text('include "bloodyShell/08-settings.kdl"\n')
+        initial = (ROOT / 'dots/niri/bloodyShell/06-input.kdl').read_text().replace('scroll-factor 1.0','scroll-factor horizontal=-1.2 vertical=0.8')
+        initial += "\n\n" + (ROOT / 'dots/niri/bloodyShell/08-settings.kdl').read_text()
+        path = directory / '08-settings.kdl'
         path.write_text(initial)
         (base / 'bin/niri').write_text('#!/bin/sh\n[ "$1" = validate ] || exit 1\n[ ! -s "' + str(base / 'deny') + '" ] || { echo denied >&2; exit 1; }\nexec /usr/bin/niri "$@"\n')
         (base / 'shell.qml').write_text('''import QtQuick
@@ -219,16 +222,28 @@ ShellRoot {
             function until(predicate, message) { for(let i=0;i<180;i++) { if(predicate()) return; wait(20); } throw new Error(message); }
             function exercise() {
                 until(() => ServiceDevices.mouseLoaded && ServiceDevices.mouseAvailable, "Mouse settings did not load: " + ServiceDevices.mouseError);
+                const printers=findChild(page,"printerDevices"), usb=findChild(page,"usbDevices"), mouse=findChild(page,"mouseOptions");
+                check(mouse.y<usb.y && usb.y<printers.y && !findChild(page,"bluetoothDevices") && !usb.expanded && !mouse.expanded,"Device groups and foldouts are out of order");
+                findChild(page,"mouseOptions").expanded=true; wait(30);
                 const speed = findChild(page,"mousePointerSpeed"), acceleration = findChild(page,"mouseAcceleration"), primary = findChild(page,"mousePrimaryButton");
                 const natural = findChild(page,"mouseNaturalScroll"), middle = findChild(page,"mouseMiddleEmulation");
                 const horizontal = findChild(page,"mouseHorizontalScrollSpeed"), vertical = findChild(page,"mouseVerticalScrollSpeed");
                 check(speed && acceleration && primary && natural && middle && horizontal && vertical && speed.enabled, "Mouse controls are missing or disabled");
                 check(speed.value === 0 && acceleration.current === "flat" && horizontal.value === 1.2 && vertical.value === 0.8, "Mouse controls did not reflect the input configuration");
+                const method = findChild(page,"mouseScrollMethod"), button = findChild(page,"mouseScrollButton"), mode = findChild(page,"mouseButtonScrollMode");
+                check(method && button && mode && method.current === "on-button-down" && button.current === -1 && !mode.current, "Scroll controls did not reflect existing settings");
+                check(acceleration.optionWidths && primary.optionWidths && method.toggle && button.toggle && mode.toggle, "Mouse selector styles are incorrect");
+                check(method.mapToItem(page,0,0).y > middle.mapToItem(page,0,0).y, "New scroll options must follow the existing mouse settings");
+                method.selected("no-scroll");
+                check(!button.visible && !mode.visible, "Wheel-only scrolling kept button options visible");
+                method.selected("on-button-down"); button.selected(275); mode.selected(true);
                 speed.moved(0.6); acceleration.selected("adaptive"); primary.selected(true); natural.toggled(true); middle.toggled(true);
                 horizontal.edited(2.1); vertical.edited(1.7);
                 ServiceKeyboard.set("repeatRate",40);
                 until(() => !ServiceDevices.mouseBusy && inputFile.text().includes("repeat-rate 40") && inputFile.text().includes("scroll-factor horizontal=-2.1 vertical=1.7"), "Mouse and keyboard saves lost a concurrent edit: " + ServiceDevices.mouseError + " " + ServiceKeyboard.error);
                 check(ServiceDevices.mouse.speed === 0.6 && ServiceDevices.mouse.leftHanded && ServiceDevices.mouse.middleEmulation && ServiceDevices.mouse.naturalScroll && ServiceDevices.mouse.profile === "adaptive", "Saved mouse controls lost their values");
+                check(inputFile.text().includes("scroll-button 275") && inputFile.text().includes("scroll-button-lock")
+                    && ServiceDevices.mouse.scrollMethod === "on-button-down" && ServiceDevices.mouse.scrollButtonLock, "Button scrolling changes did not persist");
                 inputFile.setText(inputFile.text().replace("accel-speed 0.6","accel-speed 0.25"));
                 until(() => ServiceDevices.mouse.speed === 0.25 && speed.value === 0.25, "External input changes were not reflected in settings");
                 deny.setText("deny");
@@ -268,9 +283,9 @@ def concurrent_checks():
         base = Path(temporary)
         directory = base / "config/niri/bloodyShell"
         directory.mkdir(parents=True)
-        (directory.parent / "config.kdl").write_text('include "bloodyShell/06-user-input.kdl"\n')
-        path = directory / "06-user-input.kdl"
-        path.write_text('input { keyboard { xkb { layout "us"; }; }; mouse { accel-speed 0.0; }; touchpad { tap; }; }\n')
+        (directory.parent / "config.kdl").write_text('include "bloodyShell/08-settings.kdl"\n')
+        path = directory / "08-settings.kdl"
+        path.write_text('input { keyboard { xkb { layout "us"; }; }; mouse { accel-speed 0.0; }; touchpad { tap; }; }\noutput "Offline" { off; }\n')
         binary = base / "bin"
         binary.mkdir()
         niri = binary / "niri"
@@ -282,7 +297,7 @@ def concurrent_checks():
             ["keyboard", 'keyboard { xkb { layout "de,us"; }; repeat-rate 42; }'],
             ["mouse", '{"speed":0.45,"profile":"flat"}'],
             ["cursor", "Adwaita", "32"],
-            ["write", "07-user-output.kdl", 'output "Test" { scale 1.25; }']
+            ["outputs", 'output "Test" { scale 1.25; }']
         ]
         processes = [subprocess.Popen([sys.executable, str(ROOT / "scripts/bloodyShell"), "internal", "compositor", "config", "niri", *args],
                                       env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -298,8 +313,8 @@ def concurrent_checks():
         text = path.read_text()
         assert 'layout "de,us"' in text and 'repeat-rate 42' in text, text
         assert 'accel-speed 0.45' in text and 'accel-profile "flat"' in text and 'xcursor-size 32' in text, text
-        assert 'touchpad { tap; }' in text and 'scale 1.25' in (directory / "07-user-output.kdl").read_text(), text
-        assert set(item.name for item in directory.iterdir()) == {"06-user-input.kdl", "07-user-output.kdl"}, "Input saving left lock or staging files"
+        assert 'touchpad { tap; }' in text and text.count('scale 1.25') == 1 and 'output "Offline" { off; }' in text, text
+        assert set(item.name for item in directory.iterdir()) == {"08-settings.kdl"}, "Input saving left lock or staging files"
     print("Concurrent niri writes passed: keyboard, mouse, cursor and output changes are kept without lock files.")
 
 

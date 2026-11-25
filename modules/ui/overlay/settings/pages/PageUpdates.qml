@@ -65,18 +65,16 @@ SettingsPage
         title: Tr.tr("settings.dependencies.confirm")
         description: ServiceDependencies.pending
             ? (ServiceDependencies.pending.remove ? Tr.tr("settings.dependencies.confirmRemove") : Tr.tr("settings.dependencies.confirmInstall")).arg(ServiceDependencies.pending.name) : ""
-        errorText: ServiceDependencies.error
+        errorText: ServiceDependencies.actionError
         acceptText: Tr.tr("settings.dependencies.continueInTerminal")
-        acceptEnabled: !ServiceDependencies.busy
+        acceptEnabled: ServiceDependencies.pending !== null && !ServiceDependencies.checking(ServiceDependencies.pending.required) && ServiceDependencies.operation === ""
         danger: ServiceDependencies.pending !== null && ServiceDependencies.pending.remove
         onAccepted: ServiceDependencies.apply()
         onRejected: ServiceDependencies.pending = null
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
-        title: Tr.tr("common.status")
-
         Item
         {
             id: statusCard
@@ -177,6 +175,15 @@ SettingsPage
                             color: Theme.text3
                             wrapMode: Text.Wrap
                         }
+                        ShellText
+                        {
+                            visible: ServiceUpdate.installed && ServiceUpdate.pendingLoginVersion === ServiceUpdate.version
+                            width: parent.width
+                            label: Tr.tr("settings.updates.loginScreenPending")
+                            size: 11
+                            color: Theme.colorWarning
+                            wrapMode: Text.Wrap
+                        }
                     }
 
                     Flow
@@ -189,14 +196,14 @@ SettingsPage
                         width: statusHeading.compact ? Math.max(0, parent.width - badge.width - 14) : Math.max(0, desiredWidth)
                         spacing: 8
 
-                        SettingsButton
+                        Button
                         {
                             maximumWidth: Math.max(0, statusHeading.width - badge.width - 14)
                             visible: pageUpdates.phase === "error" && ServiceUpdate.installFailed
                             text: Tr.tr("settings.updates.openLog")
                             onClicked: ServiceUpdate.openLog()
                         }
-                        SettingsButton
+                        Button
                         {
                             maximumWidth: Math.max(0, statusHeading.width - badge.width - 14)
                             visible: !ServiceUpdate.availableUpdate || pageUpdates.phase === "error" || pageUpdates.phase === "dev"
@@ -205,7 +212,7 @@ SettingsPage
                             enabled: ServiceUpdate.installed && !ServiceUpdate.busy
                             onClicked: ServiceUpdate.check()
                         }
-                        SettingsButton
+                        Button
                         {
                             maximumWidth: Math.max(0, statusHeading.width - badge.width - 14)
                             visible: ServiceUpdate.installed && ServiceUpdate.availableUpdate && pageUpdates.phase !== "error"
@@ -275,33 +282,16 @@ SettingsPage
         }
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("settings.updates.options")
 
-        SettingsRow
-        {
-            label: Tr.tr("settings.updates.channel")
-            description: Tr.tr("settings.updates.channelHint")
-
-            SettingsChoices
-            {
-                options:
-                [
-                    { label: Tr.tr("settings.updates.channelStable"), value: false },
-                    { label: Tr.tr("settings.updates.channelBeta"), value: true }
-                ]
-                current: Config.updateBeta
-                onSelected: value => Config.set("updateBeta", value)
-            }
-        }
         SettingsRow
         {
             label: Tr.tr("settings.updates.autoCheck")
             description: Tr.tr("settings.updates.autoCheckHint")
 
             enabled: ServiceUpdate.installed
-
             SettingsChoices
             {
                 options:
@@ -320,9 +310,30 @@ SettingsPage
         {
             label: Tr.tr("settings.updates.autoUpdate")
             description: Tr.tr("settings.updates.autoUpdateHint")
-            enabled: ServiceUpdate.installed
 
-            Toggle { checked: Config.updateAuto; onToggled: value => Config.set("updateAuto", value) }
+            enabled: ServiceUpdate.installed
+            Toggle
+            {
+                checked: Config.updateAuto;
+                onToggled: value => Config.set("updateAuto", value)
+            }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.updates.channel")
+            description: Tr.tr("settings.updates.channelHint")
+            
+            enabled: ServiceUpdate.installed
+            SettingsChoices
+            {
+                options:
+                [
+                    { label: Tr.tr("settings.updates.channelStable"), value: false },
+                    { label: Tr.tr("settings.updates.channelBeta"), value: true }
+                ]
+                current: Config.updateBeta
+                onSelected: value => Config.set("updateBeta", value)
+            }
         }
     }
 
@@ -344,7 +355,7 @@ SettingsPage
             visible: ServiceResources.error !== ""
             label: Tr.tr("common.error")
             description: ServiceResources.error
-            SettingsButton
+            Button
             {
                 text: Tr.tr("common.refresh")
                 enabled: !ServiceResources.busy && !ServiceUpdate.busy && ServiceResources.pending === null
@@ -370,7 +381,7 @@ SettingsPage
                 Row
                 {
                     spacing: 8
-                    SettingsButton
+                    Button
                     {
                         objectName: "clearResource-" + resourceRow.modelData.id
                         visible: resourceRow.modelData.kind === "greeter"
@@ -379,7 +390,7 @@ SettingsPage
                         enabled: resourceRow.modelData.installed === true && !ServiceResources.busy && !ServiceUpdate.busy && ServiceResources.pending === null
                         onClicked: ServiceResources.request(resourceRow.modelData.id, "clear")
                     }
-                    SettingsButton
+                    Button
                     {
                         objectName: "importResource-" + resourceRow.modelData.id
                         text: ServiceResources.operation === resourceRow.modelData.id && ServiceResources.operationAction === "import" ? Tr.tr("common.working") : Tr.tr("settings.imports.import")
@@ -394,18 +405,18 @@ SettingsPage
 
     PackageList
     {
-        objectName: "optionalPackages"
-        title: Tr.tr("settings.packages.title")
-        description: Tr.tr("settings.packages.description")
-        requiredPackages: false
-    }
-
-    PackageList
-    {
         objectName: "requiredDependencies"
         title: Tr.tr("settings.dependencies.title")
         description: Tr.tr("settings.dependencies.description")
         requiredPackages: true
+    }
+
+    PackageList
+    {
+        objectName: "optionalPackages"
+        title: Tr.tr("settings.packages.title")
+        description: Tr.tr("settings.packages.description")
+        requiredPackages: false
     }
 
     component PackageList: SettingsDisclosure
@@ -413,23 +424,28 @@ SettingsPage
         id: packageList
 
         required property bool requiredPackages
-        readonly property var entries: requiredPackages ? ServiceDependencies.dependencies : ServiceDependencies.packages
+        readonly property var entries: requiredPackages ? ServiceDependencies.dependencies
+            : ServiceDependencies.packages
+
+        readonly property bool checking: ServiceDependencies.checking(requiredPackages)
+        readonly property string error: ServiceDependencies.listError(requiredPackages)
 
         icon: Icon.packages
-        summary: ServiceDependencies.busy ? Tr.tr("common.checking")
+        summary: checking ? Tr.tr("common.checking")
             : entries.length > 0 ? entries.filter(entry => entry.installed).length + " / " + entries.length : ""
         onExpandedChanged:
         {
-            if (expanded) ServiceDependencies.refresh();
-            else ServiceDependencies.pending = null;
+            if (expanded) ServiceDependencies.refresh(requiredPackages);
+            else if (ServiceDependencies.pending && ServiceDependencies.pending.required === requiredPackages)
+                ServiceDependencies.pending = null;
         }
 
         SettingsRow
         {
-            visible: ServiceDependencies.error !== ""
+            visible: packageList.error !== ""
             label: Tr.tr("settings.dependencies.error")
-            description: ServiceDependencies.error
-            SettingsButton { text: Tr.tr("common.refresh"); onClicked: ServiceDependencies.refresh(); enabled: !ServiceDependencies.busy }
+            description: packageList.error
+            Button { text: Tr.tr("common.refresh"); onClicked: ServiceDependencies.refresh(packageList.requiredPackages); enabled: !packageList.checking && ServiceDependencies.operation === "" }
         }
         Repeater
         {
@@ -442,7 +458,7 @@ SettingsPage
                 label: modelData.packages.length ? modelData.packages.join(", ") : modelData.tool
                 description: packageList.requiredPackages ? "" : ServiceDependencies.description(modelData)
                 valueText: dependencyRow.modelData.installed ? Tr.tr("common.installed") : Tr.tr("common.notInstalled")
-                SettingsButton
+                Button
                 {
                     objectName: "packageAction-" + dependencyRow.modelData.tool
                     visible: !dependencyRow.modelData.installed || (!packageList.requiredPackages && dependencyRow.modelData.removable)
@@ -450,7 +466,7 @@ SettingsPage
                         : !dependencyRow.modelData.supported ? Tr.tr("settings.dependencies.manual")
                         : dependencyRow.modelData.installed ? Tr.tr("common.remove") : Tr.tr("common.install")
                     danger: dependencyRow.modelData.installed
-                    enabled: dependencyRow.modelData.supported && !ServiceDependencies.busy && ServiceDependencies.pending === null
+                    enabled: dependencyRow.modelData.supported && !packageList.checking && ServiceDependencies.operation === "" && ServiceDependencies.pending === null
                     onClicked: ServiceDependencies.request(dependencyRow.modelData.tool, dependencyRow.modelData.installed)
                 }
             }
@@ -474,7 +490,7 @@ SettingsPage
                 : ServiceUpdate.currentNotesMissing ? Tr.tr("settings.updates.unpublished")
                 : ServiceUpdate.currentNotesError ? Tr.tr("common.error") : Tr.tr("settings.updates.noReleaseNotes")
             description: ServiceUpdate.currentNotesError
-            SettingsButton
+            Button
             {
                 objectName: "retryCurrentChangelog"
                 text: Tr.tr("settings.updates.retry")
@@ -498,7 +514,7 @@ SettingsPage
         }
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         objectName: "pendingChangelogs"
         visible: ServiceUpdate.pending.length > 0

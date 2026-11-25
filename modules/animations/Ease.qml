@@ -8,6 +8,7 @@ Behavior
 
     property int duration: Theme.animationDurationMorph
     property bool elastic: false
+    property bool durationByDistance: false
     property var curve: Theme.easingEmphasized
 
     enabled: Config.animationsEnabled
@@ -18,6 +19,7 @@ Behavior
     property real fromValue: 0
     property real toValue: 0
     property var  activeCurve: curve
+    property int  activeDuration: duration
 
     function slopeAt(c, t)
     {
@@ -43,18 +45,23 @@ Behavior
         const now = Date.now();
         const from = current();
         const distance = targetValue - from;
+        const travel = Config.animationsFluid && durationByDistance
+            ? Math.round(duration * (0.25 + 0.75 * Math.sqrt(Math.min(1, Math.abs(distance)))))
+            : duration;
 
         if (Config.animationsFluid && motion.running && Math.abs(distance) > 0.0001)
         {
-            const t = Math.max(0, Math.min(1, (now - startTime) / Math.max(1, duration)));
-            const velocity = slopeAt(activeCurve, t) * (toValue - fromValue) / (duration / 1000);
+            const previousDuration = Math.max(1, activeDuration);
+            const t = Math.max(0, Math.min(1, (now - startTime) / previousDuration));
+            const velocity = slopeAt(activeCurve, t) * (toValue - fromValue) / previousDuration;
 
-            const slope = Math.max(elastic ? -2 : 0, Math.min(elastic ? 8 : 4, velocity * (duration / 1000) / distance));
-            activeCurve = [0.15, 0.15 * slope, curve[2], curve[3], 1.0, 1.0];
+            const slope = Math.max(elastic ? -2 : 0, Math.min(elastic ? 8 : 4, velocity * travel / distance));
+            activeCurve = durationByDistance && slope === 0 ? curve : [0.15, 0.15 * slope, curve[2], curve[3], 1.0, 1.0];
         }
         else activeCurve = curve;
 
         startTime = now;
+        activeDuration = travel;
         fromValue = from;
         toValue = targetValue;
     }
@@ -63,7 +70,7 @@ Behavior
     {
         id: motion
 
-        duration: ease.duration
+        duration: Config.animationsFluid ? ease.activeDuration : ease.duration
         easing.type: Easing.BezierSpline
         easing.bezierCurve: ease.activeCurve
     }

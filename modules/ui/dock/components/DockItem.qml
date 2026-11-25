@@ -208,7 +208,7 @@ MouseArea
                 anchors.centerIn: parent
                 width: Math.round(dockItem.base * 0.86)
                 height: width
-                readonly property int pixels: Math.ceil(dockItem.base * 1.2 * 0.86 * Screen.devicePixelRatio)
+                readonly property int pixels: Math.ceil(width * Math.max(2, dockItem.host.zoomScale) * Screen.devicePixelRatio)
                 sourceSize.width: pixels
                 sourceSize.height: pixels
                 source: ServiceApplications.iconFor(dockItem.appId)
@@ -259,8 +259,6 @@ MouseArea
                 height: 22
                 radius: 11
                 color: Theme.colorSolid
-                border.width: 1
-                border.color: Theme.colorLine
 
                 Row
                 {

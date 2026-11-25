@@ -4,7 +4,7 @@ import "../../../../common"
 import "../../../../core"
 import "../../../../services"
 
-SettingsGroup
+SettingsRowGroup
 {
     id: mouseSettings
     visible: ServiceCompositor.supports("mouse")
@@ -96,5 +96,62 @@ SettingsGroup
         description: Tr.tr("settings.devices.middleEmulationHint")
         enabled: mouseSettings.available
         Toggle { objectName: mouseSettings.namePrefix + "MiddleEmulation"; checked: ServiceDevices.mouse.middleEmulation; onToggled: value => ServiceDevices.setMouse("middleEmulation", value) }
+    }
+    SettingsRow
+    {
+        visible: mouseSettings.advanced
+        label: Tr.tr("settings.devices.scrollMethod")
+        enabled: mouseSettings.available
+        SettingsDropdown
+        {
+            objectName: mouseSettings.namePrefix + "ScrollMethod"
+            options: [
+                {label: Tr.tr("settings.devices.deviceDefault"), value: ""},
+                {label: Tr.tr("settings.devices.wheelOnly"), value: "no-scroll"},
+                {label: Tr.tr("settings.devices.buttonScrolling"), value: "on-button-down"},
+                {label: Tr.tr("settings.devices.twoFingerScrolling"), value: "two-finger"},
+                {label: Tr.tr("settings.devices.edgeScrolling"), value: "edge"}
+            ]
+            current: ServiceDevices.mouse.scrollMethod
+            onSelected: value => ServiceDevices.setMouse("scrollMethod", value)
+        }
+    }
+    SettingsRow
+    {
+        visible: mouseSettings.advanced && ServiceDevices.mouse.scrollMethod === "on-button-down"
+        label: Tr.tr("settings.devices.scrollButton")
+        enabled: mouseSettings.available
+        SettingsDropdown
+        {
+            objectName: mouseSettings.namePrefix + "ScrollButton"
+            readonly property var buttons: [
+                {label: Tr.tr("settings.devices.deviceDefault"), value: -1},
+                {label: Tr.tr("settings.devices.middleButton"), value: 274},
+                {label: Tr.tr("settings.devices.rightButton"), value: 273},
+                {label: Tr.tr("settings.devices.leftButton"), value: 272},
+                {label: Tr.tr("settings.devices.sideButton1"), value: 275},
+                {label: Tr.tr("settings.devices.sideButton2"), value: 276}
+            ]
+            options: buttons.some(button => button.value === current) ? buttons
+                : buttons.concat([{label: Tr.tr("settings.devices.customButton").arg(current), value: current}])
+            current: ServiceDevices.mouse.scrollButton
+            onSelected: value => ServiceDevices.setMouse("scrollButton", value)
+        }
+    }
+    SettingsRow
+    {
+        visible: mouseSettings.advanced && ServiceDevices.mouse.scrollMethod === "on-button-down"
+        label: Tr.tr("settings.devices.buttonScrollMode")
+        enabled: mouseSettings.available
+        SettingsDropdown
+        {
+            objectName: mouseSettings.namePrefix + "ButtonScrollMode"
+            options: [
+                {label: Tr.tr("settings.devices.holdButton"), value: false},
+                {label: Tr.tr("settings.devices.toggleButton"), value: true}
+            ]
+            current: ServiceDevices.mouse.scrollButtonLock
+            onSelected: value => ServiceDevices.setMouse("scrollButtonLock", value)
+        }
     }
 }

@@ -23,27 +23,12 @@ ROOT = Path(__file__).resolve().parents[2]
 MANAGEMENT = runpy.run_path(str(Path(__file__).with_name("management.py")))
 FILES = MANAGEMENT["FILES"]
 STAGES = ("Checking", "Packages", "Appearance", "System setup", "Shell and configs", "Finishing up")
-OPTIONS = ("input", "audio", "brightness", "fish", "themes", "login", "wallpapers")
-LABELS = dict(zip(OPTIONS, ("Input tools", "Audio tools", "Brightness tools", "Fish", "Fonts and Themes", "Login screen", "Wallpapers")))
-DESCRIPTIONS = {
-    "input": "Builds the on-screen keyboard and Alt+Tab helper.",
-    "audio": "Adds the audio visualizer, sound effects and media controls.",
-    "brightness": "Adds display brightness and night-light controls.",
-    "fish": "Installs Fish and makes it your login shell.",
-    "themes": "Installs Noto and JetBrains Mono, Adwaita GTK and MacTahoe icons.",
-    "login": "Installs the bloodyShell login screen and enables SDDM at next boot.",
-    "wallpapers": "Downloads the optional wallpaper collection.",
-}
-NATIVE_PACKAGES = {
-    "arch": "gcc pkgconf qt6-base qt6-declarative wayland libxkbcommon",
-    "fedora": "gcc-c++ pkgconf-pkg-config qt6-qtbase-devel qt6-qtdeclarative-devel wayland-devel libxkbcommon-devel",
-    "debian": "g++ pkg-config qt6-base-dev qt6-base-dev-tools qt6-declarative-dev libwayland-dev libwayland-bin libxkbcommon-dev",
-}
-THEME_PACKAGES = {
-    "arch": "noto-fonts noto-fonts-emoji ttf-jetbrains-mono adwaita-icon-theme gnome-themes-extra gtk3 fontconfig git",
-    "fedora": "google-noto-sans-fonts google-noto-color-emoji-fonts jetbrains-mono-fonts adwaita-icon-theme gnome-themes-extra gtk3 fontconfig git",
-    "debian": "fonts-noto-core fonts-noto-color-emoji fonts-jetbrains-mono adwaita-icon-theme gnome-themes-extra libgtk-3-bin fontconfig git",
-}
+PACKAGE_DATA = MANAGEMENT["package_data"]()
+INSTALL_OPTIONS = PACKAGE_DATA["installer"]["options"]
+SECTIONS = ("Packages", "Tools", "Appearance")
+OPTIONS = tuple(option["id"] for option in INSTALL_OPTIONS)
+LABELS = {option["id"]: option["label"] for option in INSTALL_OPTIONS}
+DESCRIPTIONS = {option["id"]: option["description"] for option in INSTALL_OPTIONS}
 THEME_REPOSITORY = "https://github.com/vinceliuice/MacTahoe-icon-theme.git"
 ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
@@ -64,38 +49,42 @@ def version(path, default="fresh install"):
 
 
 def groups(family):
-    entries = MANAGEMENT["catalog"]()
-    def tools(*names):
-        return list(dict.fromkeys(token for entry in entries if entry["tool"] in names
-                                  for token in entry[family].split() if token != "-"))
-    return {
-        "input": NATIVE_PACKAGES[family].split(),
-        "audio": tools("cava", "easyeffects", "playerctl"),
-        "brightness": tools("brightnessctl", "wlsunset"),
-        "fish": ["fish", {"arch": "util-linux", "fedora": "util-linux-user", "debian": "passwd"}[family]],
-        "themes": THEME_PACKAGES[family].split(),
-        "login": tools("sddm"),
-        "wallpapers": [],
-    }
+    return MANAGEMENT["installer_packages"](family)
+
+
+def selected_options(selected):
+    selected = set(selected)
+    visiting, resolved = set(), set()
+    by_id = {option["id"]: option for option in INSTALL_OPTIONS}
+    def include(key):
+        if key in visiting:
+            raise ValueError("Circular installer option dependency")
+        if key in resolved:
+            return
+        visiting.add(key)
+        for dependency in by_id[key].get("requires", []):
+            include(dependency)
+        visiting.remove(key)
+        resolved.add(key)
+    for key in selected:
+        if key not in by_id:
+            raise ValueError("Unknown installer option: " + key)
+        include(key)
+    return [key for key in OPTIONS if key in resolved]
 
 
 def make_plan(selected, backup=True, family=None):
     family = MANAGEMENT["family"]() if family is None else family
-    if family not in NATIVE_PACKAGES:
+    if family not in PACKAGE_DATA["distributions"]:
         raise ValueError("This installer supports Arch, Fedora and Debian based distributions.")
-    selected = [key for key in OPTIONS if key in selected]
+    selected = selected_options(selected)
     catalog = MANAGEMENT["catalog"]()
-    required = [token for entry in catalog if entry["kind"] == "required"
-                for token in entry[family].split() if token != "-"]
-    if family == "arch":
-        required += ["base-devel", "git"]
-    missing = [entry["tool"] for entry in catalog if entry["kind"] == "required"
-               and entry[family] == "-" and not MANAGEMENT["available"](entry["tool"])]
+    required = [token for entry in catalog if entry["kind"] == "required" for token in entry[family].split() if token != "-"]
+    missing = [entry["tool"] for entry in catalog if entry["kind"] == "required" and entry[family] == "-" and not MANAGEMENT["available"](entry["tool"])]
     choice = groups(family)
-    packages = required + [name for key in selected if key not in ("themes", "login") for name in choice[key]]
-    appearance = [name for key in ("themes", "login") if key in selected for name in choice[key]]
-    if "login" in selected:
-        packages += choice["input"]
+    appearance_ids = {option["id"] for option in INSTALL_OPTIONS if option["section"] == "Appearance"}
+    packages = required + [name for key in selected if key not in appearance_ids for name in choice[key]]
+    appearance = [name for key in selected if key in appearance_ids for name in choice[key]]
     return dict(family=family, selected=selected, backup=backup,
                 packages=list(dict.fromkeys(packages)),
                 appearance_packages=[name for name in dict.fromkeys(appearance) if name not in packages],
@@ -488,9 +477,7 @@ class TerminalUI:
 class Wizard(TerminalUI):
     def __init__(self, screen):
         super().__init__(screen)
-        self.selected = {"input", "audio", "themes"}
-        if any(Path("/sys/class/backlight").iterdir()):
-            self.selected.add("brightness")
+        self.selected = {option["id"] for option in INSTALL_OPTIONS if option.get("default")}
         self.backup = True
         self.page, self.cursor, self.error = 0, 0, ""
         self.plan = make_plan(self.selected)
@@ -498,23 +485,22 @@ class Wizard(TerminalUI):
 
 
     def navigate(self, page):
-        self.page, self.cursor = page, int(not self.backup) if page == 3 else 0
+        self.page, self.cursor = page, int(not self.backup) if page == 4 else 0
         self.error = ""
 
 
     def render_choices(self, keys):
         available = groups(self.plan["family"])
         width = max(len(LABELS[key]) for key in keys)
+        options = {option["id"]: option for option in INSTALL_OPTIONS}
         rows = []
         for key in keys:
             label = f"{'✓' if key in self.selected else '○'}  {LABELS[key]:<{width}}"
-            names = ", ".join(available[key])
-            if key == "themes":
-                names = "Noto, JetBrains Mono, Adwaita, MacTahoe"
-            elif key == "wallpapers":
-                names = "optional download"
-            names = textwrap.shorten(names, max(2, self.content_width() - len(label) - 6), placeholder="…")
-            rows.append((label, "(" + names + ")"))
+            summary = options[key].get("summary", ", ".join(available[key]))
+            if options[key]["section"] != "Tools" and summary:
+                summary = "(" + summary + ")"
+            summary = textwrap.shorten(summary, max(2, self.content_width() - len(label) - 4), placeholder="…")
+            rows.append((label, summary))
         return rows
 
 
@@ -538,27 +524,33 @@ class Wizard(TerminalUI):
                     if self.cursor:
                         return 0
                     self.navigate(1)
-            elif self.page in (1, 2):
-                keys = OPTIONS[:4] if self.page == 1 else OPTIONS[4:]
-                y = self.header("Packages" if self.page == 1 else "Appearance")
+            elif self.page in (1, 2, 3):
+                section = SECTIONS[self.page - 1]
+                keys = [option["id"] for option in INSTALL_OPTIONS if option["section"] == section]
+                y = self.header(section)
                 self.choices(y, self.render_choices(keys))
                 for offset, line in enumerate(textwrap.wrap(DESCRIPTIONS[keys[self.cursor]], self.content_width() - 2)):
                     self.put(y + len(keys) + 2 + offset, line, x=3, style=self.curses.A_DIM)
                 self.footer("↑↓ move  Space toggle  Enter next" +
-                            ("  Tab back" if self.page == 2 else "") + "  Esc cancel")
+                            ("  Tab back" if self.page > 1 else "") + "  Esc cancel")
                 key = self.key()
                 self.move(key, len(keys))
                 if key == " ":
                     option = keys[self.cursor]
-                    self.selected.symmetric_difference_update((option,))
+                    if option in self.selected:
+                        self.selected.remove(option)
+                        while any(set(entry.get("requires", [])) - self.selected for entry in INSTALL_OPTIONS if entry["id"] in self.selected):
+                            self.selected = {entry["id"] for entry in INSTALL_OPTIONS if entry["id"] in self.selected and set(entry.get("requires", [])).issubset(self.selected)}
+                    else:
+                        self.selected = set(selected_options(self.selected | {option}))
                     self.pending = None
                 elif self.enter(key):
                     self.navigate(self.page + 1)
-                elif key == "\t" and self.page == 2:
+                elif key == "\t" and self.page > 1:
                     self.navigate(self.page - 1)
-            elif self.page == 3:
+            elif self.page == 4:
                 y = self.header("Back up", "Back up your current config files?")
-                self.choices(y, ("Back up", "Skip"))
+                self.choices(y, ("Yes", "No"))
                 self.footer("↑↓ select   Enter next   Tab back   Esc cancel")
                 key = self.key()
                 self.move(key, 2)
@@ -566,32 +558,29 @@ class Wizard(TerminalUI):
                     self.backup = self.cursor == 0
                     self.plan = make_plan(self.selected, self.backup)
                     self.pending = pending_packages(self.plan)
-                    self.navigate(4)
+                    self.navigate(5)
                 elif key == "\t":
-                    self.navigate(2)
+                    self.navigate(3)
             else:
                 y = self.header("Ready")
-                summary = [f"Installs {len(self.pending)} packages", "Updates the system"]
-                labels = ["Fish as login shell" if key == "fish" else LABELS[key] for key in self.plan["selected"]]
+                summary = ["Updates the system", f"Installs {len(self.pending)} packages"]
+                labels = [LABELS[key] for key in self.plan["selected"]]
                 summary += labels
-                summary += ["Back up current configs" if self.backup else "Skip config backups"]
                 compact = height < y + len(summary) + 9
                 if compact:
                     enabled = ", ".join(labels) or "none"
-                    summary = summary[:2] + textwrap.wrap("Enabled: " + enabled, self.content_width() - 2) + summary[-1:]
+                    summary = summary[:2] + textwrap.wrap("Enabled: " + enabled, self.content_width() - 2)
                 for offset, line in enumerate(summary):
                     self.put(y + offset, "- " + line)
                 if self.error:
                     self.put(height - 8, self.error, style=self.color)
-                self.choices(height - 6, ("Install", "Edit", "Cancel"))
+                self.choices(height - 5, ("Install", "Edit"))
                 self.footer("↑↓ select   Enter confirm   Esc cancel")
                 key = self.key()
-                self.move(key, 3)
+                self.move(key, 2)
                 if self.enter(key):
                     if self.cursor == 1:
                         self.navigate(1)
-                    elif self.cursor == 2:
-                        return 0
                     else:
                         try:
                             preflight(self.plan)

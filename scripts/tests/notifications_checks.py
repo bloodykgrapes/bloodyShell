@@ -33,7 +33,7 @@ def checks():
         helpers["module"](base, "core")
         helpers["module"](base, "services")
         settings = base / "config/bloodyShell/settings.json"
-        settings.write_text(json.dumps({"notificationsRememberDnd": False, "notificationsDnd": False}))
+        settings.write_text(json.dumps({"notificationsRememberDnd": True, "notificationsDnd": True, "notificationsDndUntil": int(time.time() * 1000) + 3600000}))
         (base / "shell.qml").write_text('''import QtQuick
 import Quickshell
 import "core"
@@ -44,7 +44,7 @@ ShellRoot
     id: tests
     property int stage: parseInt(Quickshell.env("TEST_NOTIFICATIONS_STAGE"), 10)
     function check(ok, message) { if (!ok) throw new Error(message) }
-    Component.onCompleted: if (stage !== 3) void ServiceNotifications.dnd
+    Component.onCompleted: void ServiceNotifications.dnd
     Timer
     {
         interval: 80
@@ -70,67 +70,39 @@ ShellRoot
                     const unread = ServiceNotifications.unreadCounter;
                     ServiceNotifications.received(blocked);
                     tests.check(blocked.dismissed && !blocked.tracked && ServiceNotifications.unreadCounter === unread && !ServiceNotifications.receivedAt[99], "Blocked notification was tracked or counted");
-                    ServiceNotifications.dnd = true;
-                    tests.check(!Config.notificationsDnd, "Session-only DND was saved");
-                    Config.set("notificationsRememberDnd", true);
-                    tests.check(Config.notificationsDnd, "Enabling persistence lost the current state");
+                    ServiceNotifications.setDnd(true, 30);
+                    tests.check(ServiceNotifications.dnd && ServiceNotifications.dndMinutes === 30 && ServiceNotifications.dndUntil > Date.now() + 1799000, "Timed DND did not set a deadline");
                 }
                 else if (tests.stage === 1)
                 {
-                    tests.check(ServiceNotifications.dnd, "DND did not survive restart");
+                    tests.check(!ServiceNotifications.dnd && ServiceNotifications.dndUntil === 0, "Timed DND survived restart");
                     tests.check(!ServiceNotifications.enabledFor("org.example.Music") && !ServiceNotifications.enabledFor("one.Terminal"), "App preferences did not survive restart");
                     ServiceNotifications.setEnabledFor("org.example.Music", true);
-                    tests.check(ServiceNotifications.enabledFor("org.example.Music") && !ServiceNotifications.enabledFor("one.Terminal"), "Enabling one app reset another app's preference");
-                    ServiceNotifications.dnd = false;
-                    tests.check(!Config.notificationsDnd, "Turning DND off was not saved");
-                    ServiceNotifications.dnd = true;
-                    Config.set("notificationsRememberDnd", false);
-                    tests.check(ServiceNotifications.dnd && !Config.notificationsDnd, "Disabling persistence changed the session or kept a stale saved state");
-                }
-                else if (tests.stage === 2)
-                {
-                    tests.check(!ServiceNotifications.dnd, "DND survived after disabling persistence");
-                    Config.set("notificationsRememberDnd", true);
-                    tests.check(!Config.notificationsDnd, "Enabling persistence resurrected stale DND");
-                    ServiceNotifications.dnd = true;
-                    ServiceNotifications.dnd = false;
-                }
-                else if (tests.stage === 3) tests.check(!ServiceNotifications.dnd && Config.notificationsRememberDnd, "Saved off state was not restored by a late-loaded service");
-                else if (tests.stage === 4)
-                {
-                    ServiceNotifications.setDnd(true, 30);
-                    tests.check(ServiceNotifications.dnd && ServiceNotifications.dndMinutes === 30 && ServiceNotifications.dndUntil > Date.now() + 1799000, "Timed DND did not set its deadline");
-                    tests.check(Config.notificationsDndUntil === ServiceNotifications.dndUntil, "Timed DND deadline was not saved");
-                }
-                else if (tests.stage === 5)
-                {
-                    tests.check(ServiceNotifications.dnd && ServiceNotifications.dndUntil === Config.notificationsDndUntil && ServiceNotifications.dndUntil > Date.now(), "Timed DND did not survive restart");
-                    ServiceNotifications.expireDnd(ServiceNotifications.dndUntil);
-                    tests.check(!ServiceNotifications.dnd && ServiceNotifications.dndUntil === 0 && !Config.notificationsDnd && Config.notificationsDndUntil === 0, "Expired DND was not cleared");
+                    tests.check(ServiceNotifications.enabledFor("org.example.Music") && !ServiceNotifications.enabledFor("one.Terminal"), "Enabling one app changed another app's preference");
                     ServiceNotifications.setDnd(true, 60);
-                    ServiceNotifications.setDnd(false);
-                    tests.check(ServiceNotifications.dndUntil === 0, "Turning DND off left a pending deadline");
-                    Config.set("notificationsRememberDnd", false);
-                    ServiceNotifications.setDnd(true, 120);
-                    tests.check(ServiceNotifications.dnd && !Config.notificationsDnd && Config.notificationsDndUntil === 0, "Session-only timer was saved");
-                }
-                else if (tests.stage === 6)
-                {
-                    tests.check(!ServiceNotifications.dnd && ServiceNotifications.dndUntil === 0, "Session-only timer survived restart");
-                    Config.set("notificationsRememberDnd", true);
-                    ServiceNotifications.setDnd(true, 120);
+                    ServiceNotifications.expireDnd(ServiceNotifications.dndUntil);
+                    tests.check(!ServiceNotifications.dnd && ServiceNotifications.dndUntil === 0, "Timed DND did not expire");
                     ServiceNotifications.setDnd(true);
-                    tests.check(ServiceNotifications.dnd && ServiceNotifications.dndUntil === 0, "Indefinite DND kept its previous timer");
+                    tests.check(ServiceNotifications.dnd && ServiceNotifications.dndUntil === 0, "Indefinite DND kept an old deadline");
+                }
+                else
+                {
+                    tests.check(!ServiceNotifications.dnd && ServiceNotifications.dndUntil === 0, "Indefinite DND survived restart");
+                    ServiceNotifications.setDnd(true, 120);
+                    const deadline=ServiceNotifications.dndUntil;
+                    for(const duration of [-1, NaN, Infinity]) ServiceNotifications.setDnd(true,duration);
+                    tests.check(ServiceNotifications.dndUntil===deadline,"Invalid duration changed DND");
+                    ServiceNotifications.setDnd(false);
+                    tests.check(!ServiceNotifications.dnd && ServiceNotifications.dndUntil===0,"Disabling DND left a pending deadline");
                     ServiceNotifications.setDnd(true, 0.002);
                 }
-                else tests.check(!ServiceNotifications.dnd && ServiceNotifications.dndUntil === 0 && !Config.notificationsDnd && Config.notificationsDndUntil === 0, "An expired saved deadline was restored");
                 finish.start();
             }
             catch (error) { console.error("NOTIFICATIONS_FAILED", error); Qt.quit() }
         }
     }
-    Timer { id: finish; interval: tests.stage === 6 ? 1500 : 500; onTriggered: {
-        if (tests.stage === 6 && ServiceNotifications.dnd) { console.error("NOTIFICATIONS_FAILED timer did not expire"); Qt.quit(); return; }
+    Timer { id: finish; interval: tests.stage === 2 ? 1500 : 500; onTriggered: {
+        if (tests.stage === 2 && ServiceNotifications.dnd) { console.error("NOTIFICATIONS_FAILED timer did not expire"); Qt.quit(); return; }
         console.log("NOTIFICATIONS_PASSED", tests.stage); Qt.quit();
     } }
 }
@@ -139,18 +111,15 @@ ShellRoot
                    XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"), XDG_RUNTIME_DIR=str(base / "runtime"),
                    DBUS_SESSION_BUS_ADDRESS="unix:path=/tmp/bloodyshell-test-no-session-bus")
         env.pop("WAYLAND_DISPLAY", None)
-        for stage, (remember, dnd) in enumerate(((True, True), (False, False), (True, False), (True, False), (True, True), (False, False), (True, False), (True, False))):
-            if stage == 7:
-                saved = json.loads(settings.read_text())
-                settings.write_text(json.dumps(dict(saved, notificationsDnd=True, notificationsDndUntil=int(time.time() * 1000) - 1000)))
+        for stage in range(3):
             result = subprocess.run(["qs", "-p", str(base), "--no-color"],
                                     env=dict(env, TEST_NOTIFICATIONS_STAGE=str(stage)), capture_output=True, text=True, timeout=5)
             output = result.stdout + result.stderr
             assert result.returncode == 0 and "NOTIFICATIONS_PASSED" in output, output
             assert not re.search(r"NOTIFICATIONS_FAILED|ReferenceError|TypeError|Binding loop|Unable to assign", output), output
             saved = json.loads(settings.read_text())
-            assert (saved["notificationsRememberDnd"], saved["notificationsDnd"]) == (remember, dnd), saved
-    print("Timed and indefinite DND, automatic expiry, remembered/session-only deadlines, restart restoration, expired saved deadlines, and per-app notification preferences passed.")
+            assert not any(key in saved for key in ("notificationsRememberDnd", "notificationsDnd", "notificationsDndUntil")), saved
+    print("Session-only timed/indefinite DND, automatic expiry, restart reset, removed persistence, invalid durations, and per-app preferences passed.")
 
 def ui_checks():
     prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
@@ -185,6 +154,12 @@ ShellRoot {
     function group(item) { if(typeof item.requestToggle==="function")return item;for(const child of item.children||[]){const found=group(child);if(found)return found;}return null; }
     function notificationRow(item) { if(item.n && typeof item.activate==="function")return item;for(const child of item.children||[]){const found=notificationRow(child);if(found)return found;}return null; }
     function click(item) { events.mouseClick(item,item.width/2,item.height/2,Qt.LeftButton,Qt.NoModifier,0); }
+    function swipe(item, y, direction) {
+        const start=item.mapToItem(window.contentItem,direction<0 ? item.width*0.8 : item.width*0.2,y);
+        events.mousePress(window.contentItem,start.x,start.y,Qt.LeftButton);
+        for(let step=1;step<=6;step++) events.mouseMove(window.contentItem,start.x+direction*item.width*step/12,start.y,20);
+        events.mouseRelease(window.contentItem,start.x+direction*item.width/2,start.y,Qt.LeftButton);
+    }
     function fill(count) {
         const list=[];
         for(let i=0;i<count;i++) {
@@ -208,7 +183,6 @@ ShellRoot {
         TestCase {id:events;name:"SidebarTabs";when:false;optional:true}
     }
     Timer {interval:200;running:true;onTriggered:{try {
-        Config.set("barMenu",Enums.MenuFloating);
         for(const mode of [0,1,2]) {
             Config.set("themeAnimations",mode);Config.set("shellLanguage",mode===1?"ru":"en");Config.set("themeStyle",mode===1?0:1);
             sidebar.currentTab="controls";tests.fill(20);ServiceNotifications.unreadCounter=3;
@@ -227,14 +201,41 @@ ShellRoot {
             sidebar.scrollView.contentY=100;events.wait(30);
             check(tabs.mapToItem(window.contentItem,0,0).y===headerY,"Tabs scroll away with history");
             sidebar.scrollView.contentY=0;
+            const duration=tests.find(view,"notificationsDndDuration"),dnd=tests.find(view,"notificationsDnd");
+            check(!duration.visible,"DND duration is visible while disabled");
+            dnd.toggled(true);events.wait(30);
+            check(duration.visible,"Enabling DND did not reveal duration");
+            duration.toggle();events.wait(50);
+            const durationPanel=tests.find(duration,"inlineMenuDropdownPanel");
+            check(durationPanel&&durationPanel.height>0&&durationPanel.width===duration.width&&duration.alternatives.length===3,
+                "DND durations did not expand within the sidebar");
+            duration.choose(0);
+            check(!duration.open&&!OverlayState.settingsPopup&&ServiceNotifications.dndMinutes===30,"DND selection did not close or apply");
             for(const minutes of [30,60,120,0]) {
                 tests.find(view,"notificationsDndDuration").selected(minutes);
                 check(ServiceNotifications.dnd && ServiceNotifications.dndMinutes===minutes,"DND duration did not apply");
             }
             ServiceNotifications.setDnd(false);
             const stack=tests.group(view);check(stack && stack.total===4,"History lost notification grouping");
-            stack.requestToggle();check(stack.expanded,"Group did not expand");
+            const groupToggle=tests.find(stack,"notificationGroupToggle");
+            check(groupToggle.text===Tr.tr("notifications.showMore"),"Collapsed group is missing Show more");
+            tests.click(groupToggle);check(stack.expanded && groupToggle.text===Tr.tr("notifications.showLess"),"Show more did not expand the group");
             if(mode===0)tests.capture("/tmp/bloodyShell-notification-tabs.png");
+            events.wait(Theme.animationDurationControl+40);
+            tests.click(groupToggle);check(!stack.expanded,"Show less did not collapse the group");
+            events.wait(Theme.animationDurationControl+40);
+            if(mode!==1) {
+                const key=stack.model.key;
+                const count=ServiceNotifications.count-stack.total;
+                if(mode===2) {
+                    tests.click(groupToggle);
+                    events.wait(Theme.animationDurationControl+40);
+                    tests.swipe(stack,22,1);
+                } else tests.swipe(tests.notificationRow(stack),20,-1);
+                events.wait(Theme.animationDurationClose+280);
+                check(ServiceNotifications.count===count && ServiceNotifications.groups.every(group=>group.key!==key),
+                    "Sideways swipe did not dismiss exactly one application's notifications");
+            }
             tests.click(tests.find(tabs,"tab-controls"));events.wait(50);
             check(!tests.find(sidebar,"sidebarNotifications") && sidebar.scrollView.contentY===0,"Switching tabs kept inactive history or old scroll offset");
             check(!tabs.visualFocus,"Pointer tab selection kept keyboard hover styling");
@@ -247,7 +248,7 @@ ShellRoot {
             check(tests.activations===mode+1 && !SidebarState.active,"Notification action failed");
             check(!tests.find(sidebar,"sidebarNotifications"),"Closed sidebar retained notification views");
             sidebar.currentTab="notifications";SidebarState.toggle("right",Quickshell.screens[0].name);events.wait(550);
-            view=tests.find(sidebar,"sidebarNotifications");view.clearAll();
+            view=tests.find(sidebar,"sidebarNotifications");tests.click(tests.find(view,"notificationsClearAll"));
             sidebar.currentTab="controls";events.wait(30);
             check(ServiceNotifications.count===0,"Switching tabs interrupted Clear All");
             sidebar.currentTab="notifications";events.wait(550);

@@ -17,7 +17,7 @@ Keyboard.Keyboard
         text: Theme.text1,
         muted: Theme.text3,
         accent: Theme.colorAccent,
-        onAccent: Theme.onAccent
+        onAccent: Theme.accentForeground
     })
     labels: ({
         title: Tr.tr("keyboard.title"),

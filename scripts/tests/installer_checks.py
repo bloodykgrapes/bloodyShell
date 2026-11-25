@@ -31,6 +31,11 @@ def run_checks():
         import shutil
         shutil.copytree(ROOT / "scripts/lib", package / "scripts/lib")
         shutil.copy2(ROOT / "scripts/bloodyShell", package / "scripts/bloodyShell")
+        shutil.copytree(ROOT / "dots/niri", package / "dots/niri")
+        greeter = package / "scripts/lib/system.sh"
+        greeter.write_text(greeter.read_text() + "\nrefresh_greeter() { return 0; }\n")
+        (package / "assets").mkdir()
+        shutil.copy2(ROOT / "assets/packages.json", package / "assets/packages.json")
         for folder in ("tests", "tools"):
             (package / "scripts" / folder).mkdir(parents=True)
         for folder, name in (("images", "new.png"), ("dots/config/kitty", "kitty.conf"), ("dots/sddm", "Main.qml")):
@@ -71,6 +76,14 @@ def run_checks():
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps(dict(wallpaperDirectory=str(pictures), wallpaperCurrent=str(pictures / "personal.png"))))
         original_settings = settings.read_bytes()
+        fragments = base / "config/niri/bloodyShell"
+        fragments.mkdir(parents=True)
+        old_input = 'input { keyboard { xkb { layout "de"; }; }; }\n'
+        old_output = 'output "Personal display" { scale 2.0; }\n'
+        old_user = '// personal override\nlayout { gaps 27; }\n'
+        for name, content in (("06-user-input.kdl", old_input), ("07-user-output.kdl", old_output), ("05-user.kdl", old_user)):
+            (fragments / name).write_text(content)
+        (fragments.parent / "config.kdl").write_text('include "bloodyShell/05-user.kdl"\n')
 
         def invoke(*args):
             return subprocess.run(["bash", str(ROOT / "setup"), *args], env=env, capture_output=True, text=True, timeout=10)
@@ -83,6 +96,10 @@ def run_checks():
         assert not (target / "images").exists() and not (target / "dots").exists()
         assert (pictures / "personal.png").read_bytes() == b"personal wallpaper"
         assert settings.read_bytes() == original_settings, "Updates must preserve shell settings"
+        niri_settings = (fragments / "08-settings.kdl").read_text()
+        assert old_input in niri_settings and old_output in niri_settings
+        assert (fragments / "09-user.kdl").read_text() == old_user
+        assert (fragments / "07-binds.kdl").read_bytes() == (ROOT / "dots/niri/bloodyShell/07-binds.kdl").read_bytes()
         assert not (pictures / "new.png").exists(), "Updates must not import wallpapers without an explicit request"
         untouched = {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in pictures.iterdir()}
         assert not (target / "__pycache__").exists() and not (target / ".private").exists()
@@ -119,6 +136,41 @@ def run_checks():
         assert (target / "shell.qml").read_text() == "release shell\n", "Repairing an installed copy must not move its own source"
         (target / "preserved.marker").write_text("previous installation")
         installed_launcher = (base / "commands/bloodyShell").read_bytes()
+        # A new runtime that cannot start restores both the old files and CLI,
+        # reports failure, and leaves user settings unchanged.
+        qs = binary / "qs"
+        qs.write_text('''#!/usr/bin/env python3
+import pathlib, sys
+if sys.argv[1] == 'list': print('[]')
+elif '--daemonize' in sys.argv:
+    root = pathlib.Path(sys.argv[sys.argv.index('--path') + 1])
+    sys.exit(0 if (root / 'preserved.marker').is_file() else 1)
+''')
+        qs.chmod(0o700)
+        release_cli = package / "scripts/bloodyShell"
+        original_cli = release_cli.read_bytes()
+        broken_cli = original_cli.replace(b"def stop(command, path, quiet=False):\n", b'def stop(command, path, quiet=False):\n    raise RuntimeError("Broken updated CLI")\n', 1)
+        assert broken_cli != original_cli
+        release_cli.write_bytes(broken_cli)
+        (fragments / "04-layout.kdl").write_text("// previous managed config\n")
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(package, arcname="release")
+        env["WAYLAND_DISPLAY"] = "fixture-startup-check"
+        failed_start = invoke("update", "--tag", "v9.8.7", "--force")
+        assert failed_start.returncode != 0, failed_start.stdout + failed_start.stderr
+        assert "restored version 9.8.7" in failed_start.stderr, failed_start.stdout + failed_start.stderr
+        assert (target / "preserved.marker").read_text() == "previous installation"
+        assert (base / "commands/bloodyShell").read_bytes() == installed_launcher
+        assert settings.read_bytes() == original_settings
+        assert (fragments / "04-layout.kdl").read_text() == "// previous managed config\n"
+        assert (fragments / "08-settings.kdl").read_text() == niri_settings
+        assert (base / "status").read_text().startswith("failed Update failed; restored version")
+        recovery = json.loads((base / "cache/bloodyShell/update-recovery.json").read_text())
+        assert recovery == dict(tag="v9.8.7", version="9.8.7", error="Update failed; restored version 9.8.7")
+        assert not list(target.parent.glob(".bloodyShell-*")), "Recovery left temporary runtime folders"
+        env.pop("WAYLAND_DISPLAY")
+        qs.unlink()
+        release_cli.write_bytes(original_cli)
         manager = package / "scripts/lib/management.py"
         original_manager = manager.read_text()
         manager.write_text("def install_main():\n    return 1\n")
@@ -275,7 +327,117 @@ def runtime_transaction_checks():
     print("Runtime replacement restores original folders when interrupted immediately after either rename or during command registration.")
 
 
+def startup_health_checks():
+    """Exercise the readiness handshake through Quickshell's actual IPC transport."""
+    api = runpy.run_path(str(ROOT / "scripts/lib/management.py"))
+    cli = runpy.run_path(str(ROOT / "scripts/bloodyShell"))
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-startup-") as temporary:
+        base = Path(temporary)
+        runtime = base / "runtime"
+        runtime.mkdir(mode=0o700)
+        (base / "version").write_text("1.2.3\n")
+        (base / "shell.qml").write_text('''import QtQuick
+import Quickshell
+import Quickshell.Io
+ShellRoot {
+    property bool initialized: false
+    Timer { interval: 200; running: true; onTriggered: initialized = true }
+    IpcHandler {
+        target: "health"
+        function status(): string { return JSON.stringify({ready: initialized, version: "1.2.3"}); }
+    }
+}
+''')
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", XDG_RUNTIME_DIR=str(runtime))
+        env.pop("WAYLAND_DISPLAY", None)
+        with patch.dict(os.environ, env, clear=True), (base / "shell.log").open("w+") as log:
+            process = subprocess.Popen([cli["quickshell"](), "-p", str(base), "--no-color"], env=env, stdout=log, stderr=log)
+            try:
+                assert api["verify_runtime"](cli, cli["quickshell"](), base, set(), timeout=5, stable=0.2), "New shell did not answer its readiness check"
+                existing = {entry["id"] for entry in cli["instances"](cli["quickshell"](), base)}
+                assert existing
+                assert not api["verify_runtime"](cli, cli["quickshell"](), base, existing, timeout=0.5, stable=0.1), "Old running instance was accepted as the updated shell"
+                (base / "version").write_text("1.2.4\n")
+                assert not api["verify_runtime"](cli, cli["quickshell"](), base, set(), timeout=0.5, stable=0.1), "Wrong version passed the startup check"
+            finally:
+                process.terminate()
+                process.wait(timeout=5)
+                log.seek(0)
+                print(log.read())
+    print("Startup IPC verifies readiness, rejects preexisting instances and checks the running version.")
+
+
+def unstable_startup_checks():
+    api = runpy.run_path(str(ROOT / "scripts/lib/management.py"))
+    verify = api["verify_runtime"]
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-startup-policy-") as temporary:
+        base = Path(temporary)
+        (base / "version").write_text("1.2.3\n")
+        for mode in ("stable", "crash", "not-ready", "crash-loop", "invalid", "timeout"):
+            tick = [0.0]
+            clock = lambda: tick[0]
+            def sleep(delay): tick[0] += delay
+            def instances(command, target):
+                if mode == "crash" and tick[0] > 0.2:
+                    return []
+                return [dict(id=str(int(tick[0] * 10)) if mode == "crash-loop" else "fresh")]
+            def reply(*args, **kwargs):
+                if mode == "timeout":
+                    raise subprocess.TimeoutExpired("qs ipc", 1)
+                return subprocess.CompletedProcess([], 0, "invalid" if mode == "invalid" else json.dumps(dict(ready=mode != "not-ready", version="1.2.3")), "")
+            with patch.dict(verify.__globals__["FILES"], run=reply), patch("time.monotonic", side_effect=clock), patch("time.sleep", side_effect=sleep):
+                result = verify(dict(instances=instances), "qs", base, set(), timeout=1.2, stable=0.5)
+            assert result == (mode == "stable"), mode
+    print("Startup verification rejects short-lived/crash-looping instances, incomplete startup, malformed IPC and timeouts.")
+
+
+def recovery_transaction_checks():
+    api = runpy.run_path(str(ROOT / "scripts/lib/management.py"))
+    restore = api["restore_runtime"]
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-recovery-") as temporary:
+        for boundary in ("success", "first-rename", "second-rename", "launcher", "stop"):
+            base = Path(temporary) / boundary
+            target, binary, backup = base / "shell", base / "bin", base / "backup"
+            for folder in (target, binary, backup / "shell", backup / "launcher"):
+                folder.mkdir(parents=True)
+            (target / "marker").write_text("rejected release")
+            (backup / "shell/marker").write_text("working release")
+            (binary / "bloodyShell").write_text("rejected launcher")
+            (backup / "launcher/command").write_text("working launcher")
+            original_replace = os.replace
+            interrupted = [False]
+            def replace(source, destination):
+                original_replace(source, destination)
+                match = boundary == "first-rename" and Path(source) == target or boundary == "second-rename" and Path(destination) == target
+                if match and not interrupted[0]:
+                    interrupted[0] = True
+                    raise SystemExit(143)
+            def write(*args):
+                if boundary == "launcher":
+                    raise OSError("Launcher write failed")
+                api["write_command"](*args)
+            def stop(command, path, quiet):
+                assert path == target and quiet
+                if boundary == "stop":
+                    raise RuntimeError("Stop failed")
+            with patch("runpy.run_path", return_value=dict(stop=stop, quickshell=lambda: "qs")), patch("os.replace", side_effect=replace), patch.dict(restore.__globals__, write_command=write):
+                try:
+                    restore(target, binary, backup)
+                except (SystemExit, OSError, RuntimeError):
+                    assert boundary != "success", boundary
+                else:
+                    assert boundary == "success", boundary
+            assert (target / "marker").read_text() == ("working release" if boundary == "success" else "rejected release"), boundary
+            assert (backup / "shell/marker").read_text() == "working release"
+            assert (binary / "bloodyShell").read_text() == ("working launcher" if boundary == "success" else "rejected launcher")
+            assert not list(base.glob(".bloodyShell-*")), boundary
+    print("Recovery keeps the previous backup and installed files safe across stop failures, interrupted renames and launcher errors.")
+
+
 if __name__ == "__main__":
     run_checks()
     installation_flow_checks()
     runtime_transaction_checks()
+    unstable_startup_checks()
+    recovery_transaction_checks()
+    startup_health_checks()

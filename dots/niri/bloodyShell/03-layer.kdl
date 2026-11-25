@@ -1,9 +1,21 @@
-// ------------------------------------------------------------
-// Layer rules
-// Places the wallpaper layer behind windows.
-// ------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
+// 03 ─ Layer Rules
+// ─────────────────────────────────────────────────────────────────────────────
+// Docs: https://niri-wm.github.io/niri/Configuration:-Layer-Rules
+//
+// Places the blurred wallpaper behind workspaces in the overview.
+// ─────────────────────────────────────────────────────────────────────────────
 
 layer-rule {
-    match namespace="^awww$"
+    match namespace="^bloodyShell:overview-backdrop$"
     place-within-backdrop true
+}
+
+layer-rule {
+    match namespace="quickshell"
+    match namespace="^bloodyShell:(layout|overlay)$"
+    background-effect {
+        // Include windows in the blur requested by shell surfaces.
+        xray false
+    }
 }

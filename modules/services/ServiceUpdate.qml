@@ -18,6 +18,17 @@ Singleton
     readonly property bool   installed: shellDir === installDir
     readonly property string stateDir: Paths.stateDir
     readonly property string logFile: stateDir + "/update.log"
+    property string pendingLoginVersion: ""
+
+    FileView
+    {
+        path: serviceUpdate.installed ? serviceUpdate.stateDir + "/login-screen-update.pending" : ""
+        watchChanges: serviceUpdate.installed
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: serviceUpdate.pendingLoginVersion = text().trim().replace(/^v/, "")
+        onLoadFailed: serviceUpdate.pendingLoginVersion = ""
+    }
 
     property string version: "0.0.0"
     property bool versionReady: false
@@ -46,9 +57,14 @@ Singleton
         currentNotesVersion = "";
         currentNotesError = "";
         currentNotesMissing = false;
+        showRecovery();
         if (currentNotesRequested) Qt.callLater(loadCurrentRelease);
     }
-    onVersionReadyChanged: if (versionReady && currentNotesRequested) Qt.callLater(loadCurrentRelease)
+    onVersionReadyChanged:
+    {
+        showRecovery();
+        if (versionReady && currentNotesRequested) Qt.callLater(loadCurrentRelease);
+    }
     onCurrentCacheReadyChanged: if (currentCacheReady && currentNotesRequested) Qt.callLater(loadCurrentRelease)
 
     readonly property string releaseTag: latest ? latest.tag : ""
@@ -63,6 +79,41 @@ Singleton
     property bool   installFailed: false
     property double lastChecked: 0
     property double autoAttemptedCheck: 0
+    property var recovery: null
+    property bool recoveryReady: false
+
+    function showRecovery()
+    {
+        if (!versionReady || !recovery || recovery.version !== version) return;
+        installFailed = true;
+        error = recovery.error;
+    }
+
+    FileView
+    {
+        path: serviceUpdate.stateDir + "/update-recovery.json"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded:
+        {
+            try
+            {
+                const data = JSON.parse(text());
+                serviceUpdate.recovery = data && ["tag", "version", "error"].every(key => typeof data[key] === "string" && data[key] !== "") ? data : null;
+            }
+            catch (error) { serviceUpdate.recovery = null; }
+            serviceUpdate.recoveryReady = true;
+            serviceUpdate.showRecovery();
+            Qt.callLater(serviceUpdate.autoUpdate);
+        }
+        onLoadFailed:
+        {
+            serviceUpdate.recovery = null;
+            serviceUpdate.recoveryReady = true;
+            Qt.callLater(serviceUpdate.autoUpdate);
+        }
+    }
 
     property bool   installing: false
     property string statusFile: ""
@@ -274,8 +325,9 @@ Singleton
 
     function autoUpdate()
     {
-        if (!Config.initialized || !Config.updateAuto || !versionReady || !installed || !checked
-            || busy || error !== "" || !availableUpdate || lastChecked <= autoAttemptedCheck) return;
+        if (!Config.initialized || !Config.updateAuto || !versionReady || !recoveryReady || !installed || !checked
+            || busy || error !== "" || !availableUpdate || lastChecked <= autoAttemptedCheck
+            || recovery && recovery.tag.replace(/^v/, "") === versionLatest) return;
 
         autoAttemptedCheck = lastChecked;
         update();

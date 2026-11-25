@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 
 import "../../animations"
+import "../../common"
 import "../../core"
 import "../../services"
 import "components"
@@ -17,7 +18,7 @@ Item
     readonly property alias view: dockView
     readonly property bool hovered: containerHover.hovered
 
-    Rectangle
+    ShellSurface
     {
         id: dockContainer
         objectName: "dockSurface"
@@ -30,7 +31,9 @@ Item
         height: content.host.isHorizontal ? content.host.thickness : length
         radius: Math.min(Theme.dockRadius, content.host.thickness / 2)
 
-        color: content.host.islands ? Theme.frameColor : "transparent"
+        baseColor: content.host.islands ? Theme.frameColor : "transparent"
+        border.width: content.host.islands ? Theme.panelBorderWidth : 0
+        border.color: Theme.colorPanelEdge
 
         readonly property real hidden: content.host.inFrame ? content.host.thickness + content.host.edgeGap + Theme.barRadius
                                                    : content.host.thickness + content.host.edgeGap + 4

@@ -1,13 +1,13 @@
-// ------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 // Niri configuration
-// Loads bloodyShell defaults and personal settings.
-// ------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 
-include "bloodyShell/00-environment.kdl"
-include "bloodyShell/01-layout.kdl"
-include "bloodyShell/02-window.kdl"
+include "bloodyShell/01-environment.kdl"
+include "bloodyShell/02-animations.kdl"
 include "bloodyShell/03-layer.kdl"
-include "bloodyShell/04-binds.kdl"
-include "bloodyShell/05-user.kdl"
-include "bloodyShell/06-user-input.kdl"
-include "bloodyShell/07-user-output.kdl"
+include "bloodyShell/04-layout.kdl"
+include "bloodyShell/05-window.kdl"
+include "bloodyShell/06-input.kdl"
+include "bloodyShell/07-binds.kdl"
+include "bloodyShell/08-settings.kdl"
+include "bloodyShell/09-user.kdl"

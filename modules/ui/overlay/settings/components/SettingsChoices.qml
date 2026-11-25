@@ -22,7 +22,7 @@ Item
     readonly property real preferredWidth: optionWidths.reduce((width, optionWidth) => width + optionWidth, 0) + Math.max(0, options.length - 1) * 2 + inset * 2
     readonly property bool flowing: wrap || preferredWidth > width
 
-    FontMetrics { id: optionMetrics; font.family: Theme.fontText; font.pixelSize: 12; font.weight: Font.DemiBold }
+    FontMetrics { id: optionMetrics; font.family: Theme.fontText; font.pixelSize: Theme.controlTextSize; font.weight: Font.DemiBold }
 
     signal selected(var value)
 
@@ -31,8 +31,7 @@ Item
 
     readonly property int selectedIndex: options.findIndex(option => String(valueOf(option)) === String(current))
     readonly property real inset: 4
-    readonly property real segmentHeight: Theme.settingsControlHeight - inset * 2
-    readonly property color selectedColor: Theme.accentShell ? Theme.colorSelection : Theme.colorRaised
+    readonly property real segmentHeight: Theme.controlHeight - inset * 2
 
     implicitWidth: wrap ? 400 : preferredWidth
     implicitHeight: (flowing ? flow.implicitHeight : segmentHeight) + inset * 2
@@ -80,7 +79,7 @@ Item
         width: target ? target.width : 0
         height: settingsChoices.segmentHeight
         radius: Theme.radiusMedium - 2
-        color: settingsChoices.selectedColor
+        color: Theme.colorSelection
         Tint on color {}
 
         scale: target && target.pressed ? 0.95 : 1
@@ -160,7 +159,7 @@ Item
                 {
                     anchors.fill: parent
                     radius: Theme.radiusMedium - 2
-                    color: settingsChoices.selectedColor
+                    color: Theme.colorSelection
                     visible: settingsChoices.flowing
                     opacity: segment.isCurrent ? 1 : 0
                     scale: Config.animationsFluid ? 0.9 + 0.1 * opacity : 1
@@ -175,6 +174,7 @@ Item
                     width: Math.max(0, parent.width - 20)
                     horizontalAlignment: Text.AlignHCenter
                     label: settingsChoices.labelOf(segment.modelData)
+                    size: Theme.controlTextSize
                     color: segment.isCurrent ? Theme.text1 : Theme.text2
                     font.weight: segment.isCurrent ? Font.DemiBold : Font.Normal
                     scale: area.pressed ? 0.96 : 1

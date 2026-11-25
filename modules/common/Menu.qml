@@ -10,7 +10,7 @@ Item
     property alias spacing: col.spacing
     readonly property bool active: activity.active
     property bool presented: true
-    property bool centerOnWidget: false
+    property bool contentAnimatesHeight: false
 
     RenderActivity { id: activity; target: menu }
 

@@ -20,9 +20,20 @@ Widget
 
     Grid
     {
-        columns: widgetStatus.vertical ? 1 : 5
+        columns: widgetStatus.vertical ? 1 : 6
         horizontalItemAlignment: Grid.AlignHCenter
         verticalItemAlignment: Grid.AlignVCenter
+
+        WidgetButton
+        {
+            objectName: "virtualKeyboardBarButton"
+            Accessible.role: Accessible.Button
+            Accessible.name: Tr.tr("keyboard.title")
+            visible: Config.virtualKeyboardEnabled
+            active: ServiceVirtualKeyboard.visible
+            icon: Icon.keyboard
+            onClicked: ServiceVirtualKeyboard.toggle()
+        }
 
         StatusButton
         {
@@ -67,12 +78,6 @@ Widget
 
             acceptedButtons: Qt.LeftButton | Qt.MiddleButton
             onClicked: mouse => mouse.button === Qt.MiddleButton ? ServiceAudio.toggleMute() : volume.toggleMenu()
-            onWheel: wheel =>
-            {
-                wheel.accepted = true;
-                const steps = widgetStatus.wheelSteps(wheel);
-                if (steps !== 0) ServiceAudio.changeVolume(steps * 0.05);
-            }
         }
 
         StatusButton

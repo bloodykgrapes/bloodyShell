@@ -26,7 +26,9 @@ FocusScope
     readonly property bool regularBar: Config.barEnabled && shown("barScreens")
     readonly property bool sidebarHere: screen && SidebarState.onOutput(screen.name)
     readonly property bool menuHere: (bar && bar.menuHere) || (island && island.menuHere) || false
-    readonly property bool keyboardWanted: sidebarHere || (bar && bar.keyboardWanted) || (dock && dock.keyboardWanted) || (island && island.keyboardWanted) || false
+    readonly property bool popupHere: popupSurface.children.some(item => item.visible)
+    readonly property bool keyboardWanted: popupHere || sidebarHere || (bar && bar.keyboardWanted) || (dock && dock.keyboardWanted) || (island && island.keyboardWanted) || false
+    readonly property alias popupLayer: popupSurface
     readonly property alias inputRegion: inputMask
     readonly property alias surface: surface
     readonly property alias leftSidebar: leftView
@@ -57,9 +59,9 @@ FocusScope
     {
         const empty = Qt.rect(0, 0, 0, 0);
         const bodies = [
-            { rect: bar && bar.inFrame ? bar.bodyRect(0) : empty, side: Config.barSide, filled: bar ? bar.filled : false },
+            { rect: bar && (bar.inFrame || bar.islands) ? bar.bodyRect(0) : empty, side: Config.barSide, filled: bar ? bar.filled : false },
             { rect: island ? island.bodyRect : empty, side: Config.barSide, filled: false },
-            { rect: bar && bar.inFrame ? bar.bodyRect(2) : empty, side: Config.barSide, filled: bar ? bar.filled : false },
+            { rect: bar && (bar.inFrame || bar.islands) ? bar.bodyRect(2) : empty, side: Config.barSide, filled: bar ? bar.filled : false },
             { rect: dock ? dock.bodyRect : empty, side: Config.dockSide, filled: dock ? dock.filled : false }
         ];
         function covers(outer, inner)
@@ -79,7 +81,6 @@ FocusScope
         });
     }
 
-    function panel(index) { return bar ? bar.panelRect(index) : Qt.rect(0, 0, 0, 0) }
     function refreshRegions() { inputMask.changed(); regionsChanged() }
 
     Keys.onEscapePressed:
@@ -88,31 +89,30 @@ FocusScope
         MenuState.close();
         if (dock) dock.popupClose();
     }
-    onKeyboardWantedChanged: if (keyboardWanted) forceActiveFocus()
+    onKeyboardWantedChanged: if (keyboardWanted && !popupHere) forceActiveFocus()
 
     Region
     {
         id: inputMask
-        regions: [dismissInput, frame.bar && !frame.fullscreen ? frame.bar.inputRegion : null, frame.dock && !frame.fullscreen ? frame.dock.inputRegion : null, frame.island ? frame.island.inputRegion : null,
+        regions: [dismissInput, popupInput, frame.bar && !frame.fullscreen ? frame.bar.inputRegion : null, frame.dock && !frame.fullscreen ? frame.dock.inputRegion : null, frame.island ? frame.island.inputRegion : null,
             leftView.inputRegion, rightView.inputRegion].filter(region => region !== null)
     }
     Region { id: dismissInput; item: dismiss.visible ? dismiss : null }
+    Region { id: popupInput; item: frame.popupHere ? popupSurface : null }
 
     FrameSurface
     {
         id: surface
         anchors.fill: parent
         z: -1
+        materialEnabled: true
+        detachedBar: frame.bar?.islands ?? false
         thickness: frame.thickness
         startBody: frame.bodyRects[0]
         centerBody: frame.bodyRects[1]
         endBody: frame.bodyRects[2]
-        startPanel: frame.panel(0)
         centerPanel: frame.island ? frame.island.panelRect : Qt.rect(0, 0, 0, 0)
-        endPanel: frame.panel(2)
         dockBody: frame.bodyRects[3]
-        leftBody: leftView.bodyRect
-        rightBody: rightView.bodyRect
     }
     MouseArea
     {
@@ -173,4 +173,6 @@ FocusScope
     }
 
     Connections { target: frame.bar; function onRegionsChanged() { frame.refreshRegions() } }
+
+    Item { id: popupSurface; anchors.fill: parent; z: 1000 }
 }

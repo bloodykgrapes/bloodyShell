@@ -19,7 +19,7 @@ Column
     SettingsRow
     {
         label: Tr.tr("settings.timeLanguage.shellLanguage")
-        SettingsCombo
+        SettingsDropdown
         {
             objectName: "helperShellLanguage"
             preferredWidth: 300
@@ -33,7 +33,7 @@ Column
     {
         label: Tr.tr("settings.timeLanguage.systemLanguage")
         description: ServiceRegion.notice
-        SettingsCombo
+        SettingsDropdown
         {
             objectName: "helperSystemLanguage"
             preferredWidth: 300
@@ -47,7 +47,7 @@ Column
     SettingsRow
     {
         label: Tr.tr("settings.timeLanguage.timeZone")
-        SettingsCombo
+        SettingsDropdown
         {
             objectName: "helperTimezone"
             preferredWidth: 300

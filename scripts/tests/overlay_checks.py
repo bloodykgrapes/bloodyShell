@@ -22,6 +22,7 @@ def checks():
         (base / "shell.qml").write_text('''import QtQuick
 import QtQuick.Window
 import Quickshell
+import "modules/animations/OverlayMotion.js" as Motion
 import "modules/core"
 import "modules/services"
 import "modules/ui/overlay"
@@ -34,6 +35,16 @@ ShellRoot
     property double requested: 0
     property string pending: ""
     function check(ok, message) { if (!ok) throw new Error(message); }
+    function find(item, name)
+    {
+        if (item.objectName === name) return item;
+        for (const child of item.children)
+        {
+            const found = find(child, name);
+            if (found) return found;
+        }
+        return null;
+    }
     QtObject
     {
         id: probeHost
@@ -42,6 +53,7 @@ ShellRoot
         function dismiss(name) {}
     }
     Component { id: viewProbe; OverlayView { host: probeHost; name: "probe" } }
+    Component { id: panelProbe; OverlayPanel { width: 800; height: 500; fluid: true; shadow: false } }
     Window
     {
         id: window
@@ -68,6 +80,8 @@ ShellRoot
         property int mode: 0
         property int prepared: 0
         property double since: 0
+        property Item rapidView: null
+        property real reversal: 0
         readonly property var names: ["settings", "launcher", "wallpapers", "helper", "power", "desktopMenu"]
         onTriggered:
         {
@@ -82,8 +96,19 @@ ShellRoot
                         tests.check(probe.ready, "Overlay entrance waits for another event-loop turn");
                         probe.arrival = 0.5;
                         tests.check(probe.reveal === 0.5, "Host and view entrances multiply their fades");
-                        probe.destroy();
                         Config.set("themeAnimations", 2);
+                        probe.destroy();
+                        const sample = panelProbe.createObject(window.contentItem, {reveal: 0});
+                        tests.check(sample.surface.width === 0 && sample.surface.height === 0, "Overlay does not start at a point");
+                        sample.reveal = 0.4;
+                        tests.check(sample.surface.width === 320 && sample.surface.height === 320 && sample.contentItem.opacity === 0,
+                            "Overlay edges do not expand at the same speed before content appears");
+                        sample.reveal = 0.75;
+                        tests.check(sample.surface.width === 600 && sample.surface.height === 500
+                            && sample.contentItem.width === 800 && sample.contentItem.height === 500
+                            && sample.contentItem.opacity > 0 && sample.contentItem.opacity < 1,
+                            "The shorter edge does not finish first or content does not fade at its final layout size");
+                        sample.destroy();
                         slot.enter(Qt.resolvedUrl("Probe.qml"), 0);
                         tests.check(slot.opacity === 1 && slot.shift === 0, "First settings page has an extra entrance delay");
                         slot.leave(0); Config.set("themeAnimations", 0);
@@ -111,21 +136,73 @@ ShellRoot
                         step = 5; break;
                     case 5:
                         Config.set("themeAnimations", mode);
+                        if (names[index] === "settings")
+                            OverlayState.settingsPage = Registry.settings.findIndex(entry => entry.id === "appearance");
                         tests.pending = names[index]; tests.requested = Date.now();
                         OverlayState.show(names[index]);
                         step = 6; break;
                     case 6:
                         if (!overlay.testPage.item || overlay.testPage.item.name !== names[index]) return;
                         tests.check(overlay.testPage.item.ready && overlay.testPage.item.active, "Prepared overlay is not ready for input");
+                        const view = overlay.testPage.item;
+                        const panel = view.children.find(child => child.objectName === "centeredOverlayPanel");
+                        if (panel)
+                        {
+                            const center = panel.mapToItem(view, panel.width / 2, panel.height / 2);
+                            tests.check(Math.abs(center.x - (panel.x + panel.width / 2)) < 0.01
+                                && Math.abs(center.y - (panel.y + panel.height / 2)) < 0.01, "Overlay panel drifts during its entrance: " + view.name);
+                        }
+                        if (view.name === "settings" && mode === 2)
+                        {
+                            if (view.reveal === 0) return;
+                            const extent = Math.max(panel.width, panel.height) * view.reveal;
+                            const center = panel.surface.mapToItem(panel, panel.surface.width / 2, panel.surface.height / 2);
+                            tests.check(panel.surface.width === Math.min(panel.width, extent)
+                                && panel.surface.height === Math.min(panel.height, extent) && panel.scale === 1
+                                && Math.abs(center.x - panel.width / 2) < 0.01 && Math.abs(center.y - panel.height / 2) < 0.01,
+                                "Settings is not growing the visible bounds around a fixed center");
+                            tests.check(panel.contentItem.opacity === Motion.contentOpacity(view.reveal),
+                                "Settings content does not follow the delayed fade");
+                            tests.check(Math.abs(tests.find(overlay, "overlayScrim").opacity - Motion.scrimOpacity(view.reveal, true)) < 0.001,
+                                "Settings backdrop fades on a separate timeline");
+                            let child = tests.find(panel, "currentWallpaperPreview");
+                            tests.check(child !== null, "Settings wallpaper preview is missing during its entrance");
+                            for (; child && child !== panel.contentItem; child = child.parent)
+                                tests.check(child.opacity === 1, "Settings content fades separately from its panel");
+                        }
                         OverlayState.close(); step = 7; break;
                     case 7:
                         if (overlay.testPage.item || OverlayState.mounted !== "") return;
                         index++;
                         if (index >= names.length) { index = 0; mode++; }
                         if (mode < 3) { step = 5; break; }
+                        OverlayState.show("settings"); step = 8; break;
+                    case 8:
+                        rapidView = overlay.testPage.item;
+                        if (!rapidView || rapidView.reveal < 0.25) return;
+                        tests.check(rapidView.reveal < 1, "Rapid-toggle fixture missed the opening animation");
+                        reversal = rapidView.reveal;
+                        OverlayState.toggle("settings");
+                        tests.check(rapidView.reveal === reversal, "Closing jumped away from the current position");
+                        step = 9; break;
+                    case 9:
+                        if (rapidView.reveal >= reversal) return;
+                        tests.check(rapidView.reveal > 0, "Rapid-toggle fixture missed the closing animation");
+                        reversal = rapidView.reveal;
+                        OverlayState.toggle("settings");
+                        tests.check(overlay.testPage.item === rapidView && rapidView.reveal === reversal,
+                            "Reopening reset or replaced the moving panel");
+                        step = 10; break;
+                    case 10:
+                        if (rapidView.reveal < 1) return;
+                        tests.check(overlay.testPage.item === rapidView && OverlayState.current === "settings",
+                            "A stale close unloaded the reopened overlay");
+                        OverlayState.close(); step = 11; break;
+                    case 11:
+                        if (overlay.testPage.item || OverlayState.mounted !== "") return;
                         tests.check(ServiceApplications.autostartClients.length === 0 && ServiceMedia.positionUsers === 0 && ServiceMedia.visualizerUsers === 0, "Closing overlays retained resource subscriptions");
                         console.log("OVERLAY_TIMINGS", JSON.stringify(tests.timings));
-                        console.log("OVERLAYS_PASSED single entrance, first settings page, background preparation, modal/lock guards, opening and cleanup in every animation mode");
+                        console.log("OVERLAYS_PASSED centered expansion, rapid reversals, first settings page, preparation, guards and cleanup in every animation mode");
                         Qt.quit(); break;
                 }
             }
@@ -139,6 +216,108 @@ ShellRoot
         print(output)
         assert result.returncode == 0 and "OVERLAYS_PASSED" in output, output
         assert not re.search(r"OVERLAYS_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|is not a type|Failed to load configuration", output), output
+
+
+def launcher_checks(preview=False):
+    prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
+    with tempfile.TemporaryDirectory(prefix="bloodyShell-launcher-") as temporary:
+        base = Path(temporary)
+        env = prepare(base)
+        env.pop("WAYLAND_DISPLAY", None)
+        service = base / "modules/services/ServiceApplications.qml"
+        source = service.read_text().replace("readonly property var applications: DesktopEntries.applications.values || []", "property var applications: []\n    property var launchLog: []")
+        source = source.replace("function launchEntry(entry)\n    {", "function launchEntry(entry)\n    {\n        if (entry) launchLog = launchLog.concat([entry.id]);\n        return;")
+        service.write_text(source)
+        (base / "shell.qml").write_text('''import QtQuick
+import QtQuick.Window
+import QtTest
+import Quickshell
+import "modules/core"
+import "modules/services"
+import "modules/ui/overlay/launcher"
+
+ShellRoot {
+    Window {
+        id: window; visible: true; width: 800; height: 800; color: Theme.settingsColorSidebar
+        QtObject {
+            id: launcherHost
+            function activeFor(name) { return OverlayState.current === name; }
+            function revealFor(name) { return activeFor(name) ? 1 : 0; }
+            function dismiss(name) { OverlayState.hide(name); }
+        }
+        Launcher { id: launcher; anchors.fill: parent; host: launcherHost }
+        TestCase {
+            id: input; when: false; optional: true
+            function check(ok, message) { if (!ok) throw new Error(message); }
+            function find(item, name) {
+                if (item.objectName === name) return item;
+                for (const child of item.children || []) { const found = find(child, name); if (found) return found; }
+                return null;
+            }
+            function exercise() {
+                const names = ["Calculator", "Files", "Music & <Tools>", "Terminal", "Web Browser"];
+                for (let i=0; i<19; i++) names.push("Application " + String(i+1).padStart(2,"0"));
+                ServiceApplications.applications = names.map((name,i)=>({id:"fixture-"+i,name:name,icon:String(Icon.settingsApplications)}));
+                OverlayState.show("launcher"); wait(250);
+                const content=find(launcher,"launcherContent"), search=find(content,"launcherSearchInput"), list=find(content,"launcherResults");
+                for (const scenario of [{w:800,h:800,theme:1,lang:"en",motion:0},{w:400,h:430,theme:0,lang:"ru",motion:0},{w:800,h:800,theme:1,lang:"en",motion:2}]) {
+                    window.width=scenario.w;window.height=scenario.h;
+                    Config.set("themeStyle",scenario.theme);Config.set("shellLanguage",scenario.lang);Config.set("themeAnimations",scenario.motion);
+                    OverlayState.show("launcher");search.text="";search.forceActiveFocus();wait(400);
+                    const surface=find(content,"launcherResultsPanel"), label=find(list,"launcherResultName");
+                    check(content.apps.length===24 && label.font.pixelSize===13 && search.font.pixelSize===14,"Launcher typography or app catalog changed");
+                    const p=content.mapToItem(window.contentItem,0,0);
+                    check(p.x>=0 && p.y>=0 && p.x+content.width<=window.width && p.y+content.height<=window.height,"Launcher extends outside a small screen");
+                    check(list.height>0 && surface.y+surface.height<content.height && list.width<surface.width,"Result panel or footer overlaps");
+                    keyClick(Qt.Key_Down);check(content.selectedID===1,"Arrow navigation failed");
+                    keyClick(Qt.Key_K,Qt.ControlModifier);check(content.selectedID===0,"Control-K navigation failed");
+                    content.move(23);wait(600);
+                    check(content.selectedID===23 && list.contentY>0,"Last keyboard result did not scroll into view: " + JSON.stringify({selected:content.selectedID,y:list.contentY,height:list.height,contentHeight:list.contentHeight,scenario:scenario}));
+                    const selected=list.currentItem;
+                    check(selected.y>=list.contentY-1 && selected.y+selected.height<=list.contentY+list.height+1,"Selected result is clipped");
+                    search.text="calculator";wait(400);
+                    check(content.apps.length===1 && content.selectedID===0 && list.contentY===0,"Search leaves stale selection or scroll position");
+                    keyClick(Qt.Key_Escape);wait(400);
+                    check(search.text==="" && OverlayState.current==="launcher","Escape did not clear search before closing");
+                    search.text="not-a-real-application";wait(400);
+                    check(list.count===0 && list.height>0,"No-results state has invalid geometry");
+                    search.text="terminal";wait(400);
+                    const clear=find(content,"launcherClear");mouseClick(clear,clear.width/2,clear.height/2);wait(400);
+                    check(search.text==="" && search.activeFocus,"Clear lost keyboard focus");
+                    search.text="music";wait(400);
+                    check(content.marked("Music & <Tools>").includes("&amp; &lt;Tools&gt;"),"Application names are not escaped");
+                    keyClick(Qt.Key_Return);wait(30);
+                    check(ServiceApplications.launchLog.slice(-1)[0]==="fixture-2" && OverlayState.current==="","Enter launched the wrong result or kept the launcher open");
+                }
+                OverlayState.show("launcher");search.text="";wait(400);
+                mouseMove(window.contentItem,0,0);wait(10);
+                const first=list.itemAtIndex(0);mouseMove(first,20,first.height/2);wait(20);
+                const indicator=list.highlightItem, startY=indicator.y;
+                const second=list.itemAtIndex(1);mouseMove(second,20,second.height/2);wait(55);
+                check(content.selectedID===1,"Pointer selection is wrong inside the inset results panel");
+                check(indicator.y>startY && indicator.y<second.y,"Launcher highlight snaps on mouse hover");
+                wait(240);
+                check(indicator.y===second.y,"Launcher highlight did not settle on the hovered result");
+                mouseClick(second,20,second.height/2);wait(30);
+                check(ServiceApplications.launchLog.slice(-1)[0]===content.apps[1].id,"Pointer click launched the wrong application");
+                if (PREVIEW) {
+                    OverlayState.show("launcher");search.text="";Config.set("themeAnimations",0);wait(100);
+                    content.grabToImage(result=>{result.saveToFile("/tmp/bloodyShell-launcher-dark.png");});wait(100);
+                    Config.set("themeStyle",0);Config.set("shellLanguage","ru");window.width=400;window.height=430;wait(100);
+                    content.grabToImage(result=>{result.saveToFile("/tmp/bloodyShell-launcher-light.png");});wait(100);
+                }
+                console.log("LAUNCHER_PASSED themes, localization, small screens, keyboard/pointer launch, filtering, scrolling, clear and empty results");Qt.quit();
+            }
+        }
+        Timer {interval:150;running:Config.initialized;onTriggered:{try{input.exercise();}catch(error){console.error("LAUNCHER_FAILED",error);Qt.quit();}}}
+    }
+}
+'''.replace("PREVIEW", "true" if preview else "false"))
+        result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, capture_output=True, text=True, timeout=16)
+        output = result.stdout + result.stderr
+        print(output)
+        assert result.returncode == 0 and "LAUNCHER_PASSED" in output, output
+        assert not re.search(r"LAUNCHER_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|is not a type|Failed to load configuration", output), output
 
 
 def desktop_menu_checks():
@@ -265,7 +444,7 @@ ShellRoot {
             function picker() { return overlay.testPage.item ? findChild(overlay.testPage.item,"wallpapersContent") : null; }
             function open() {
                 OverlayState.show("wallpapers");
-                until(()=>picker() && !picker().loading && picker().images.length===9 && picker().rise===1,"Wallpaper picker did not open");
+                until(()=>picker() && !picker().loading && picker().images.length===9 && picker().galleryReveal===1,"Wallpaper picker did not open");
                 return picker();
             }
             function closed() { until(()=>!OverlayState.active && !overlay.testPage.item,"Empty-space click did not dismiss the overlay"); }
@@ -273,7 +452,30 @@ ShellRoot {
                 const initial=Config.wallpaperCurrent;
                 for(const mode of [0,1,2]) {
                     Config.set("themeAnimations",mode);
+                    if (mode===2) {
+                        OverlayState.show("wallpapers");
+                        until(()=>picker() && picker().reveal>0,"Wallpaper picker did not start opening");
+                        check(picker().reveal<0.9,"Dismiss fixture missed the opening transition");
+                        mouseClick(window.contentItem,4,4,Qt.RightButton,Qt.NoModifier,0); closed();
+                    }
                     let content=open();
+                    if (mode===2) {
+                        const view=overlay.testPage.item;
+                        const center=findChild(content,"wallpaperCard-4"), inner=findChild(content,"wallpaperCard-5"), outer=findChild(content,"wallpaperCard-6");
+                        const caption=findChild(content,"wallpaperCaptionBackground"), finalY=center.y, captionY=caption.y;
+                        content.reveal=0.12;
+                        check(center.y>finalY && center.opacity>0 && inner.opacity===0 && outer.opacity===0,
+                            "Fluid picker did not start with only the center card");
+                        content.reveal=0.30;
+                        check(inner.y>finalY && inner.opacity>0 && outer.opacity===0 && caption.opacity===0,
+                            "Inner cards did not rise before the outer cards");
+                        content.reveal=0.75;
+                        check(outer.y>finalY && outer.opacity>0 && caption.opacity>0 && caption.y>captionY,
+                            "Outer cards and controls did not rise into view");
+                        content.reveal=Qt.binding(()=>view.reveal);
+                        check(center.y===finalY && inner.y===finalY && outer.y===finalY && caption.opacity===1,
+                            "Fluid picker did not settle into its final layout");
+                    }
                     mouseClick(window.contentItem,4,4,Qt.LeftButton,Qt.NoModifier,0); closed();
                     content=open();
                     mouseClick(window.contentItem,window.width-4,window.height-4,Qt.RightButton,Qt.NoModifier,0); closed();
@@ -554,6 +756,7 @@ if __name__ == "__main__":
     if "--wayland" in sys.argv:
         wayland_checks()
     else:
+        launcher_checks()
         checks()
         desktop_menu_checks()
         wallpaper_dismiss_checks()

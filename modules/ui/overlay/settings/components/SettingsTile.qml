@@ -21,7 +21,7 @@ Rectangle
         return true;
     }
 
-    readonly property real outer: Theme.radiusLarge + 2
+    readonly property real outer: Theme.radiusLarge
     readonly property real inner: 0
 
     anchors.fill: parent

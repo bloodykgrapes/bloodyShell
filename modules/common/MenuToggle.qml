@@ -1,0 +1,96 @@
+import QtQuick
+
+import "../animations"
+import "../core"
+
+InteractiveControl
+{
+    id: control
+
+    property string text: ""
+    property string subtitle: ""
+    property string icon: ""
+    property bool checked: false
+    property bool available: true
+    readonly property color surfaceColor: checked ? Theme.colorAccent : Theme.menuControlBackground
+    readonly property color foreground: Theme.lightForeground(surface.color) ? "#ffffff" : "#000000"
+    readonly property int iconTileSize: 38
+    signal toggled(bool checked)
+
+    implicitWidth: 160
+    implicitHeight: 64
+    enabled: available
+    opacity: available ? 1 : 0.4
+    activeFocusOnTab: true
+
+    function toggle() { if (enabled) toggled(!checked) }
+    Keys.onSpacePressed: event => { if (!event.isAutoRepeat) toggle(); event.accepted = true }
+    Keys.onReturnPressed: event => { if (!event.isAutoRepeat) toggle(); event.accepted = true }
+    Keys.onEnterPressed: event => { if (!event.isAutoRepeat) toggle(); event.accepted = true }
+
+    Rectangle
+    {
+        id: surface
+        anchors.fill: parent
+        radius: Config.animationsFluid && control.hovered ? 16 : Theme.menuControlRadius
+        color: control.surfaceColor
+        scale: area.pressed ? 0.96 : control.hovered && Config.animationsFluid ? 1.02 : 1
+        Tint on color {}
+        Glide on radius { duration: Theme.animationDurationControl }
+        Spring on scale {}
+
+        Rectangle
+        {
+            anchors.fill: parent
+            radius: parent.radius
+            color: area.pressed ? Theme.colorPressed : Theme.colorHoverStrong
+            opacity: area.pressed || control.hovered || control.visualFocus ? 1 : 0
+            Smooth on opacity {}
+        }
+        Rectangle
+        {
+            x: 12; y: (parent.height - height) / 2
+            width: control.iconTileSize; height: width; radius: Math.min(14, width / 2)
+            color: Qt.rgba(control.foreground.r, control.foreground.g, control.foreground.b, 0.12)
+            Tint on color {}
+            ShellIcon
+            {
+                anchors.centerIn: parent
+                icon: control.icon
+                size: 21
+                layer.enabled: true
+                layer.textureSize: sourceSize
+                layer.smooth: true
+                layer.effect: Monochrome { tint: control.foreground }
+                scale: control.checked ? 1 : 0.9
+                Spring on scale {}
+            }
+        }
+        Column
+        {
+            x: 12 + control.iconTileSize + 10
+            width: Math.max(0, parent.width - x - 12)
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 4
+            ShellText { width: parent.width; label: control.text; size: 12; color: control.foreground; font.weight: Font.DemiBold }
+            ShellText { width: parent.width; label: control.subtitle; size: 10; color: control.foreground; opacity: 0.7; textFormat: Text.PlainText }
+        }
+    }
+    MouseArea
+    {
+        id: area
+        objectName: "controlTogglePointer"
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: { control.focusFor(Qt.MouseFocusReason); control.toggle() }
+    }
+
+    Accessible.role: Accessible.CheckBox
+    Accessible.name: text
+    Accessible.description: subtitle
+    Accessible.checkable: true
+    Accessible.checked: checked
+    Accessible.onPressAction: toggle()
+    Accessible.onToggleAction: toggle()
+}

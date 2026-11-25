@@ -33,7 +33,7 @@ SettingsPage
         onRejected: ServiceStorage.cancelMount()
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("settings.storage.volumes")
 
@@ -98,7 +98,7 @@ SettingsPage
                         }
                     }
 
-                    SettingsButton
+                    Button
                     {
                         id: open
                         anchors { right: parent.right; verticalCenter: parent.verticalCenter }
@@ -129,7 +129,7 @@ SettingsPage
                 implicitWidth: diskChoice.preferredWidth + refresh.implicitWidth + 8
                 implicitHeight: Math.max(diskChoice.height, refresh.height)
                 width: Theme.controlWidth(diskControls, implicitWidth)
-                SettingsCombo
+                SettingsDropdown
                 {
                     id: diskChoice
                     anchors.verticalCenter: parent.verticalCenter
@@ -141,8 +141,9 @@ SettingsPage
                     placeholderText: Tr.tr("settings.storage.selectDisk")
                     onSelected: value => ServiceStorage.selectDevice(value)
                 }
-                SettingsIconButton
+                Button
                 {
+                    iconOnly: true
                     id: refresh
                     anchors { right: parent.right; verticalCenter: parent.verticalCenter }
                     icon: Icon.reload
@@ -192,7 +193,7 @@ SettingsPage
         {
             visible: !ServiceStorage.confirming
             label: ServiceStorage.busy ? Tr.tr("common.working") : Tr.tr("settings.storage.readyToMount")
-            SettingsButton
+            Button
             {
                 text: Tr.tr("settings.storage.mount")
                 enabled: ServiceStorage.selectedDevice !== null && !ServiceStorage.selectedDevice.mounted && !ServiceStorage.busy && !ServiceStorage.loading

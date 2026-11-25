@@ -9,18 +9,20 @@ import "../../../services"
 Rectangle
 {
     id: launcherContent
+    objectName: "launcherContent"
 
     readonly property int  maxRows: 8
     readonly property real rowH: Theme.launcherRow
     readonly property real footerH: width < 440 ? 48 : 34
     readonly property real footerGap: Theme.launcherSpacing
     readonly property real rowSpacing: Theme.launcherSpacing / 2
+    readonly property real listInset: 6
     readonly property real chrome: Theme.launcherPadding * 2 + Theme.launcherSearch + Theme.launcherSpacing + footerGap + footerH
 
     readonly property int  rows: Math.min(apps.length, maxRows)
-    readonly property real listH: apps.length > 0 ? rows * rowH + Math.max(0, rows - 1) * rowSpacing : rowH * 2
+    readonly property real listH: listInset * 2 + (apps.length > 0 ? rows * rowH + Math.max(0, rows - 1) * rowSpacing : rowH * 2)
 
-    readonly property real fullHeight: chrome + maxRows * rowH + (maxRows - 1) * rowSpacing
+    readonly property real fullHeight: chrome + listInset * 2 + maxRows * rowH + (maxRows - 1) * rowSpacing
 
     property int selectedID: 0
     readonly property string query: input.text.trim().toLocaleLowerCase()
@@ -37,14 +39,11 @@ Rectangle
         Qt.callLater(() => launcherContent.instant = false);
     }
 
-    property bool introDone: false
-    Timer { interval: 600; running: true; onTriggered: launcherContent.introDone = true }
-
     implicitHeight: chrome + listH
 
     radius: Theme.launcherRadius
-    color: Theme.colorSolid
-    border.width: 1
+    color: Theme.settingsColorBackground
+    border.width: Theme.panelBorderWidth
     border.color: Theme.colorPanelEdge
     clip: true
 
@@ -66,6 +65,14 @@ Rectangle
         const next = selectedID + offset;
         selectedID = Math.max(0, Math.min(apps.length - 1, next));
         reveal(selectedID);
+    }
+
+    Timer
+    {
+        id: resizeReveal
+        interval: 0
+        onTriggered: if (!launcherContent.instant && !launcherContent.mouseMode && launcherContent.apps.length > 0)
+            launcherContent.reveal(launcherContent.selectedID)
     }
 
     property point pointer: Qt.point(NaN, NaN)
@@ -127,7 +134,7 @@ Rectangle
         height: Theme.launcherSearch
 
         radius: Theme.radiusLarge
-        color: Theme.colorField
+        color: Theme.settingsColorSidebar
         border.width: 1
         border.color: input.activeFocus ? Theme.colorFocus : Theme.colorHairline
         Tint on border.color {}
@@ -138,7 +145,7 @@ Rectangle
 
             anchors { left: parent.left; leftMargin: 16; verticalCenter: parent.verticalCenter }
             icon: Icon.search
-            size: 18
+            size: 20
             opacity: 0.85
         }
 
@@ -161,7 +168,7 @@ Rectangle
             selectionColor: Theme.colorSelection
             selectedTextColor: Theme.text1
             font.family: Theme.fontText
-            font.pixelSize: 16
+            font.pixelSize: 14
             selectByMouse: true
             clip: true
             Accessible.name: Tr.tr("launcher.searchApplications")
@@ -192,8 +199,8 @@ Rectangle
                 width: parent.width
                 visible: input.text === ""
                 label: Tr.tr("launcher.searchApplications")
-                size: 16
-                color: Theme.text4
+                size: 14
+                color: Theme.text3
             }
         }
 
@@ -204,21 +211,25 @@ Rectangle
             anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
             spacing: 8
 
-            ShellText
+            Rectangle
             {
                 anchors.verticalCenter: parent.verticalCenter
-                label: launcherContent.query !== "" ? String(launcherContent.apps.length) : ""
-                size: 12
-                color: Theme.text3
-                font.family: Theme.fontMono
+                width: 32
+                height: 24
+                radius: 7
+                visible: input.text === ""
+                color: Theme.colorField
+                border.width: 1
+                border.color: Theme.settingsColorLine
+                ShellText { anchors.centerIn: parent; label: "Esc"; size: 10; color: Theme.text3 }
             }
 
-            ActionButton
+            Button
             {
                 objectName: "launcherClear"
                 anchors.verticalCenter: parent.verticalCenter
-                width: 28
-                height: 28
+                width: 32
+                height: 32
                 visible: opacity > 0.01
                 enabled: input.text !== ""
                 opacity: input.text !== "" ? 1 : 0
@@ -234,172 +245,177 @@ Rectangle
         }
     }
 
-    ListView
+    Rectangle
     {
-        id: list
-        objectName: "launcherResults"
-
+        id: results
+        objectName: "launcherResultsPanel"
         x: Theme.launcherPadding
         y: search.y + search.height + Theme.launcherSpacing
         width: parent.width - Theme.launcherPadding * 2
         height: Math.max(0, launcherContent.height - y - launcherContent.footerH - launcherContent.footerGap - Theme.launcherPadding)
-        spacing: launcherContent.rowSpacing
+        radius: Theme.radiusLarge + 2
+        color: Theme.settingsColorCard
+        border.width: 1
+        border.color: Theme.settingsColorLine
 
-        onContentYChanged: launcherContent.selectAtPointer()
-
-        model: launcherContent.apps
-        currentIndex: launcherContent.selectedID
-        clip: true
-
-        interactive: contentHeight > height
-        boundsBehavior: Flickable.StopAtBounds
-        flickDeceleration: 2400
-
-        highlightFollowsCurrentItem: false
-        highlight: Rectangle
+        ListView
         {
-            width: list.width
-            height: launcherContent.rowH
-            radius: Theme.radiusLarge
-            gradient: Gradient
+            id: list
+            objectName: "launcherResults"
+            anchors { fill: parent; margins: launcherContent.listInset }
+            spacing: launcherContent.rowSpacing
+
+            onContentYChanged: launcherContent.selectAtPointer()
+            onHeightChanged: resizeReveal.restart()
+
+            model: launcherContent.apps
+            currentIndex: launcherContent.selectedID
+            clip: true
+
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+            flickDeceleration: 2400
+
+            highlightFollowsCurrentItem: false
+            highlight: Rectangle
             {
-                GradientStop { position: 0; color: Qt.tint(Theme.colorSelection, Theme.inkAlpha(0.035)) }
-                GradientStop { position: 1; color: Theme.colorSelection }
+                width: list.width
+                height: launcherContent.rowH
+                radius: Theme.radiusLarge - 3
+                color: Theme.accentShell ? Theme.accentAlpha(0.22) : Theme.inkAlpha(0.1)
+                border.width: 1
+                border.color: Theme.accentShell ? Theme.accentAlpha(0.16) : Theme.colorHairline
+
+                y: list.currentItem ? list.currentItem.y : 0
+                Glide on y { enabled: Config.animationsEnabled && !launcherContent.instant; duration: 240 }
             }
 
-            y: list.currentItem ? list.currentItem.y : 0
-            Glide on y { enabled: Config.animationsEnabled && !launcherContent.instant && !launcherContent.mouseMode; duration: 240 }
-        }
-
-        SmoothScroll
-        {
-            id: scroll
-            view: list
-            onScrolled:
+            SmoothScroll
             {
-                launcherContent.mouseMode = true;
-                launcherContent.selectAtPointer();
-            }
-        }
-
-        delegate: Item
-        {
-            id: row
-
-            required property var modelData
-            required property int index
-
-            readonly property bool selected: index === launcherContent.selectedID
-
-            width: list.width
-            height: launcherContent.rowH
-
-            property real rise: launcherContent.introDone || !Config.animationsFluid || index >= launcherContent.maxRows ? 1 : 0
-            opacity: rise
-            transform: Translate { y: (1 - row.rise) * 10 }
-            Component.onCompleted: if (rise < 1) intro.start()
-            SequentialAnimation
-            {
-                id: intro
-                PauseAnimation { duration: Math.max(0, row.index) * 16 }
-                NumberAnimation { target: row; property: "rise"; to: 1; duration: 240; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized }
+                id: scroll
+                view: list
+                onScrolled:
+                {
+                    launcherContent.mouseMode = true;
+                    launcherContent.selectAtPointer();
+                }
             }
 
-            Rectangle
+            delegate: Item
             {
-                anchors.fill: parent
-                radius: Theme.radiusLarge
-                color: Theme.colorPressed
-                opacity: rowArea.pressed ? 1 : 0
-                Smooth on opacity { duration: 80 }
-            }
+                id: row
 
-            IconImage
-            {
-                id: appIcon
+                required property var modelData
+                required property int index
 
-                anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
-                width: 32
-                height: 32
-                source: ServiceApplications.iconSource(row.modelData.icon)
-                mipmap: true
+                readonly property bool selected: index === launcherContent.selectedID
 
-                scale: row.selected ? 1 : 0.94
-                Glide on scale { duration: 220 }
+                width: list.width
+                height: launcherContent.rowH
+
+                Rectangle
+                {
+                    anchors.fill: parent
+                    radius: Theme.radiusLarge - 3
+                    color: Theme.colorPressed
+                    opacity: rowArea.pressed ? 1 : 0
+                    Smooth on opacity { duration: 80 }
+                }
+
+                Rectangle
+                {
+                    id: appIcon
+                    anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
+                    width: 40
+                    height: 40
+                    radius: 11
+                    color: Theme.colorField
+                    scale: rowArea.pressed ? 0.94 : row.selected ? 1.03 : 1
+                    Spring on scale {}
+                    IconImage
+                    {
+                        anchors.centerIn: parent
+                        width: 30
+                        height: 30
+                        source: ServiceApplications.iconSource(row.modelData.icon)
+                        mipmap: true
+                    }
+                }
+
+                Column
+                {
+                    anchors
+                    {
+                        left: appIcon.right
+                        leftMargin: 12
+                        right: enter.left
+                        rightMargin: 10
+                        verticalCenter: parent.verticalCenter
+                    }
+                    spacing: 1
+
+                    ShellText
+                    {
+                        objectName: "launcherResultName"
+                        width: parent.width
+                        label: launcherContent.marked(row.modelData.name)
+                        textFormat: Text.StyledText
+                        size: 13
+                        font.weight: row.selected ? Font.DemiBold : Font.Medium
+                        color: row.selected ? Theme.text1 : Theme.text2
+                        Tint on color {}
+                    }
+                }
+
+                Rectangle
+                {
+                    id: enter
+
+                    anchors { right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
+                    width: 30
+                    height: 24
+                    radius: 7
+                    color: Theme.colorField
+                    border.color: Theme.settingsColorLine
+                    border.width: 1
+
+                    opacity: row.selected ? 1 : 0
+                    Smooth on opacity { duration: 160 }
+
+                    ShellText { anchors.centerIn: parent; label: "↵"; size: 12; color: Theme.text2 }
+                }
+
+                MouseArea
+                {
+                    id: rowArea
+
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+
+                    onClicked: { launcherContent.selectedID = row.index; launcherContent.launchSelected(); }
+                }
             }
 
             Column
             {
-                anchors
-                {
-                    left: appIcon.right
-                    leftMargin: 12
-                    right: enter.left
-                    rightMargin: 10
-                    verticalCenter: parent.verticalCenter
-                }
-                spacing: 1
+                anchors.centerIn: parent
+                width: Math.max(0, parent.width - 32)
+                visible: launcherContent.apps.length === 0
+                spacing: 10
 
+                ShellIcon { anchors.horizontalCenter: parent.horizontalCenter; icon: Icon.search; size: 28; opacity: 0.35 }
                 ShellText
                 {
+                    anchors.horizontalCenter: parent.horizontalCenter
                     width: parent.width
-                    label: launcherContent.marked(row.modelData.name)
-                    textFormat: Text.StyledText
-                    size: 14
-                    font.weight: row.selected ? Font.DemiBold : Font.Medium
-                    color: row.selected ? Theme.text1 : Theme.text2
-                    Tint on color {}
+                    horizontalAlignment: Text.AlignHCenter
+                    label: launcherContent.query !== "" ? Tr.tr("launcher.noAppsMatch").arg(input.text.trim()) : Tr.tr("launcher.noApplications")
+                    size: 12
+                    color: Theme.text3
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
                 }
-            }
-
-            Rectangle
-            {
-                id: enter
-
-                anchors { right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
-                width: 28
-                height: 22
-                radius: 7
-                color: Theme.colorField
-                border.color: Theme.settingsColorLine
-                border.width: 1
-
-                opacity: row.selected ? 1 : 0
-                Smooth on opacity { duration: 160 }
-
-                ShellText { anchors.centerIn: parent; label: "↵"; size: 12; color: Theme.text2 }
-            }
-
-            MouseArea
-            {
-                id: rowArea
-
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-
-                onClicked: { launcherContent.selectedID = row.index; launcherContent.launchSelected(); }
-            }
-        }
-
-        Column
-        {
-            anchors.centerIn: parent
-            width: Math.max(0, parent.width - 32)
-            visible: launcherContent.apps.length === 0
-            spacing: 10
-
-            ShellIcon { anchors.horizontalCenter: parent.horizontalCenter; icon: Icon.search; size: 28; opacity: 0.35 }
-            ShellText
-            {
-                anchors.horizontalCenter: parent.horizontalCenter
-                width: parent.width
-                horizontalAlignment: Text.AlignHCenter
-                label: launcherContent.query !== "" ? Tr.tr("launcher.noAppsMatch").arg(input.text.trim()) : Tr.tr("launcher.noApplications")
-                size: 13
-                color: Theme.text3
-                wrapMode: Text.Wrap
-                maximumLineCount: 2
             }
         }
     }
@@ -411,25 +427,36 @@ Rectangle
         width: parent.width - Theme.launcherPadding * 2
         height: launcherContent.footerH
 
-        Rectangle { width: parent.width; height: 1; color: Theme.colorHairline }
-
         ShellText
         {
-            anchors { left: parent.left; leftMargin: 6; right: resultCount.left; rightMargin: 12; verticalCenter: parent.verticalCenter; verticalCenterOffset: 2 }
+            x: 6
+            y: launcherContent.width < 440 ? 0 : Math.round((parent.height - height) / 2) + 2
+            width: launcherContent.width < 440 ? parent.width - 12 : Math.max(0, resultCount.x - x - 12)
             label: Tr.tr(launcherContent.query !== "" ? "launcher.navigationSearch" : "launcher.navigation")
             size: 11
             color: Theme.text3
             wrapMode: Text.WordWrap
             maximumLineCount: 2
         }
-        ShellText
+        Rectangle
         {
             id: resultCount
-            anchors { right: parent.right; rightMargin: 6; verticalCenter: parent.verticalCenter; verticalCenterOffset: 2 }
-            width: Math.min(implicitWidth, parent.width * 0.3)
-            label: Tr.tr("launcher.count").arg(launcherContent.apps.length)
-            size: 11
-            color: Theme.text3
+            x: parent.width - width - 6
+            y: launcherContent.width < 440 ? parent.height - height : Math.round((parent.height - height) / 2) + 2
+            width: Math.min(countLabel.implicitWidth + 16, parent.width * 0.35)
+            height: 24
+            radius: 8
+            color: Theme.colorField
+            ShellText
+            {
+                id: countLabel
+                anchors { fill: parent; leftMargin: 8; rightMargin: 8 }
+                verticalAlignment: Text.AlignVCenter
+                horizontalAlignment: Text.AlignHCenter
+                label: Tr.tr("launcher.count").arg(launcherContent.apps.length)
+                size: 11
+                color: Theme.text3
+            }
         }
     }
 }

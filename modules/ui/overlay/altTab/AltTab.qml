@@ -1,8 +1,8 @@
 import QtQuick
 import Quickshell
 
-import "../../../core"
 import "../../../services"
+import ".."
 
 Item
 {
@@ -10,23 +10,30 @@ Item
 
     required property var host
     readonly property alias inputRegion: inputMask
+    readonly property real reveal: content.positioned ? host.altTabReveal : 0
 
-    Region { id: inputMask; item: ServiceAltTab.presented ? content : null }
+    Region { id: inputMask; item: ServiceAltTab.presented ? panel.surface : null }
 
-    AltTabContent
+    OverlayPanel
     {
-        id: content
+        id: panel
         anchors.centerIn: parent
         width: Math.max(1, Math.min(parent.width - 64, 1200))
         height: Math.max(1, Math.min(parent.height - 100, 280))
-        opacity: positioned ? altTab.host.altTabReveal : 0
-        transform: Translate { y: Config.animationsFluid ? (1 - altTab.host.altTabReveal) * 24 : 0 }
-        focus: ServiceAltTab.active
-        Component.onCompleted: if (ServiceAltTab.active) forceActiveFocus()
-        Connections
+        decorated: false
+        reveal: altTab.reveal
+
+        AltTabContent
         {
-            target: ServiceAltTab
-            function onActiveChanged() { if (ServiceAltTab.active) content.forceActiveFocus() }
+            id: content
+            anchors.fill: parent
+            focus: ServiceAltTab.active
+            Component.onCompleted: if (ServiceAltTab.active) forceActiveFocus()
+            Connections
+            {
+                target: ServiceAltTab
+                function onActiveChanged() { if (ServiceAltTab.active) content.forceActiveFocus() }
+            }
         }
     }
 }

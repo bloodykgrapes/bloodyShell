@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 
 Image
 {
@@ -14,11 +15,12 @@ Image
     width: size
     height: size
 
-    sourceSize.width:  Math.round(width * zoom)
-    sourceSize.height: Math.round(height * zoom)
+    // Keep spare resolution for parent hover transforms without reloading each frame.
+    sourceSize.width: Math.ceil(width * Math.max(2, zoom) * Screen.devicePixelRatio)
+    sourceSize.height: Math.ceil(height * Math.max(2, zoom) * Screen.devicePixelRatio)
 
     smooth: true
-    mipmap: zoom > 1
+    mipmap: true
     asynchronous: true
 
     fillMode: Image.PreserveAspectFit

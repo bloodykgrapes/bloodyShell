@@ -116,10 +116,14 @@ ShellRoot {
                 keyboard.animations=false;
                 click("virtualKey30"); window.check(field.text === "a" && field.activeFocus, "Typing stole focus or failed");
                 keyboard.shifted = true; click("virtualKey30"); window.check(field.text === "aA" && !keyboard.shifted, "One-shot Shift failed");
-                keyboard.caps = true; click("virtualKey30"); keyboard.caps = false;
+                const shift=window.find(keyboard,"virtualKey0");
+                mouseDoubleClickSequence(shift,shift.width/2,shift.height/2);wait(30);
+                window.check(keyboard.caps && !keyboard.shifted,"Double-tap Shift does not lock capitals");
+                click("virtualKey30"); keyboard.caps = false;
                 window.check(field.text === "aAA", "Caps Lock failed");
                 field.select(0, field.text.length); click("virtualKey16"); window.check(field.text === "q", "Selected text was not replaced");
                 click("virtualKeyboardLayout"); click("virtualKey30"); window.check(field.text === "qф", "Russian layout mismatch");
+                window.check(engine.typeSymbol(",") && engine.typeSymbol(".") && field.text.endsWith(",."),"Punctuation is not typed in the selected layout");
                 click("virtualKeyboardLayout"); window.check(engine.label(21,false,false) === "z", "German XKB positions ignored: " + engine.layout + "/" + keyboard.layoutIndex);
                 click("virtualKeyboardSymbols"); click("virtualKey3Shift"); window.check(field.text.endsWith("@"), "Symbol page used wrong keymap");
                 click("virtualKeyboardSymbols"); window.check(engine.layout === "de" && !engine.symbols, "Symbol mode lost layout");
@@ -134,14 +138,29 @@ ShellRoot {
                 field.text=""; engine.layout="fr"; engine.variant="";
                 window.check(engine.tap(26) && field.text === "", "Dead key committed prematurely"); engine.tap(18);
                 window.check(field.text === "ê", "Local dead-key composition failed: " + field.text);
+                window.check(keyboard.caption(keyboard.rows[0][0])==="1","French number row is not numeric");
+                click("virtualKey2"); window.check(field.text.endsWith("1"),"French number row types punctuation");
+                engine.layout="ar";wait(20);
+                window.check(keyboard.letterRows[0].length>=10,"Letter filtering loses uncased scripts");
                 engine.layout="us";
                 for (const width of [320,480,840]) {
                     keyboard.width=width; wait(30);
                     const allKeys=[];
                     function walk(item) { if (item.objectName && item.objectName.startsWith("virtualKey")) allKeys.push(item); for(const child of item.children || []) walk(child); }
                     walk(keyboard);
+                    const letters=[16,30,44].map(code=>window.find(keyboard,"virtualKey"+code));
+                    window.check(letters.every(key=>key && Math.abs(key.width-letters[0].width)<0.01),"Letter key widths differ between rows at " + width);
+                    window.check(allKeys.filter(key=>key.iconName==="shift").length===1,"Keyboard has duplicate Shift keys");
+                    window.check(window.find(keyboard,"virtualKey0").width<letters[0].width*2 && window.find(keyboard,"virtualKey14").width<letters[0].width*2,"Shift or Backspace is oversized");
+                    const rows=letters.map(key=>key.parent);
+                    for(const row of rows){
+                        const keys=row.children.filter(child=>child.iconName!==undefined);
+                        const first=keys[0], last=keys[keys.length-1];
+                        window.check(Math.abs(first.x)<0.01 && Math.abs(last.x+last.width-row.width)<0.01,"Keyboard row does not fill its available width");
+                    }
                     for(const key of allKeys) { const pos=key.mapToItem(keyboard,0,0); window.check(key.width>0 && pos.x>=0 && pos.x+key.width<=width+1, "Keyboard overflow at " + width); }
                 }
+                window.check(keyboard.rows[1].length===10 && keyboard.rows[2].length===9 && keyboard.rows[3].length===9,"Android letter rows are not arranged as QWERTY/ASDF/Shift-Z-Backspace");
                 const loadedHeight=keyboard.implicitHeight;
                 keyboard.engine=null; wait(30);
                 window.check(!keyboard.hasLayout && keyboard.rows.length===0 && window.find(keyboard,"virtualKey14")===null,"Missing backend stretched action buttons across the rows");
@@ -154,7 +173,7 @@ ShellRoot {
                 window.check(keyboard.hasLayout && !window.find(keyboard,"virtualKeyboardStatus").visible,"Rebuilt plugin did not restore character keys");
                 click("virtualKey30"); window.check(field.text==="a","Rebuilt plugin could not type alongside the previous loaded module");
                 keyboard.width=840; field.text="bloodyShell"; wait(30);
-                window.contentItem.grabToImage(result => result.saveToFile("/tmp/bloodyShell-keyboard-preview.png")); wait(80);
+                keyboard.grabToImage(result => result.saveToFile("/tmp/bloodyShell-keyboard-preview.png")); wait(80);
                 keyboard.shifted=true; keyboard.caps=true; keyboard.visible=false;
                 window.check(!keyboard.shifted && !keyboard.caps && !keyboard.symbols, "Hidden keyboard retained modifiers");
                 engine.local=false; engine.connectDisplay(); window.check(!engine.ready && engine.error!=="", "Missing Wayland backend was not reported");
@@ -210,6 +229,7 @@ import "modules/core"
 import "modules/services"
 import "modules/ui/keyboard"
 import "modules/ui/lock"
+import "modules/ui/bar/widgets" as Bar
 import "greeter" as Greeter
 
 ShellRoot {
@@ -220,6 +240,7 @@ ShellRoot {
         Lock { id:lock; anchors.fill:parent; visible:ServiceLock.locked && !greeter.visible }
         TextInput { id:desktopField; x:20; y:20; width:500; height:40; color:"white"; visible:!ServiceLock.locked }
         KeyboardContent { id:desktop; anchors { horizontalCenter:parent.horizontalCenter; bottom:parent.bottom } width:840; height:implicitHeight; visible:!ServiceLock.locked && ServiceVirtualKeyboard.visible }
+        Bar.WidgetStatus { id:keyboardBar; visible:true }
         Loader { id:engine; source:ENGINE; onLoaded:item.local=true }
         Greeter.Main { id:greeter; anchors.fill:parent; visible:false; keyboardEngine:engine.item }
         TestCase {
@@ -230,6 +251,11 @@ ShellRoot {
                 const panel=Qt.createComponent(Qt.resolvedUrl("modules/ui/keyboard/VirtualKeyboardFixture.qml"));
                 window.check(panel.status===Component.Ready,"Keyboard panel does not compile: " + panel.errorString());
                 Config.set("virtualKeyboardEnabled",true); ServiceKeyboard.layouts=[{layout:"us",variant:""},{layout:"ru",variant:""}];
+                const barButton=window.find(keyboardBar,"virtualKeyboardBarButton");
+                window.check(barButton && barButton.visible,"Enabled keyboard is absent from the bar");
+                Config.set("virtualKeyboardEnabled",false);window.check(!barButton.visible,"Show in bar does not hide the keyboard button");
+                Config.set("virtualKeyboardEnabled",true);window.check(barButton.visible,"Show in bar does not restore the keyboard button");
+                keyboardBar.visible=false;
                 ServiceVirtualKeyboard.show(); tryVerify(()=>ServiceVirtualKeyboard.ready,8000); wait(60);
                 window.check(ServiceLock.promptVisible && lock.keyboardOpened,"Keyboard request did not reveal sign-in");
                 ServiceLock.hidePrompt(); wait(60);

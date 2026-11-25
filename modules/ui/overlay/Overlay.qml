@@ -9,6 +9,8 @@ import Quickshell.Services.Polkit
 import Quickshell.Wayland
 
 import "../../animations"
+import "../../animations/OverlayMotion.js" as Motion
+import "../../common"
 import "../../core"
 import "../../services"
 import "altTab"
@@ -29,29 +31,28 @@ PanelWindow
     readonly property bool switching: ServiceAltTab.active
     readonly property bool modal: authenticating || ServiceScreenshot.active || switching || OverlayState.active
     readonly property bool shown: !ServiceLock.locked && (modal || contentReveal > 0.001 || stackedReveal > 0.001 || altTabReveal > 0.001 || polkitReveal > 0.001)
+    readonly property bool showingStacked: OverlayState.stacked !== "" && OverlayState.current === OverlayState.stacked
+
+    component RevealEase: Ease
+    {
+        required property bool opening
+        property string name: ""
+        property var standardCloseCurve: Theme.easingAccelerate
+
+        duration: opening ? (Config.animationsFluid ? Motion.openDuration(name) : Theme.animationDurationOpen) : OverlayState.closeDuration
+        curve: Config.animationsFluid ? (opening ? Motion.openCurve(name) : Motion.fluidCloseCurve)
+            : (opening ? Theme.easingEmphasized : standardCloseCurve)
+        durationByDistance: true
+    }
 
     property real contentReveal: OverlayState.active ? 1 : 0
-    Ease on contentReveal
-    {
-        duration: OverlayState.active ? Theme.animationDurationOpen : Theme.animationDurationClose
-        curve: OverlayState.active ? Theme.easingEmphasized : Theme.easingAccelerate
-    }
-    property real stackedReveal: OverlayState.stacked !== "" && OverlayState.current === OverlayState.stacked ? 1 : 0
-    Ease on stackedReveal
-    {
-        duration: OverlayState.current === OverlayState.stacked ? Theme.animationDurationOpen : Theme.animationDurationClose
-        curve: OverlayState.current === OverlayState.stacked ? Theme.easingEmphasized : Theme.easingAccelerate
-    }
+    RevealEase on contentReveal { opening: OverlayState.active; name: OverlayState.mounted }
+    property real stackedReveal: showingStacked ? 1 : 0
+    RevealEase on stackedReveal { opening: overlay.showingStacked; name: OverlayState.stacked }
     property real altTabReveal: ServiceAltTab.presented ? 1 : 0
-    Ease on altTabReveal
-    {
-        duration: ServiceAltTab.presented ? Theme.animationDurationOpen : Theme.animationDurationClose
-    }
+    RevealEase on altTabReveal { opening: ServiceAltTab.presented; standardCloseCurve: Theme.easingEmphasized }
     property real polkitReveal: authenticating ? 1 : 0
-    Ease on polkitReveal
-    {
-        duration: overlay.authenticating ? Theme.animationDurationOpen : Theme.animationDurationClose
-    }
+    RevealEase on polkitReveal { opening: overlay.authenticating; standardCloseCurve: Theme.easingEmphasized }
 
     function activeFor(name)
     {
@@ -136,12 +137,14 @@ PanelWindow
     anchors { top: true; bottom: true; left: true; right: true }
     exclusionMode: ExclusionMode.Ignore
     mask: authenticating || ServiceScreenshot.active || OverlayState.active ? null : switching ? switcherInput : transientInput
+    BackgroundEffect.blurRegion: ShellMaterial.blur ? shellBlur : null
 
     WlrLayershell.namespace: "bloodyShell:overlay"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: modal ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     Region { id: transientInput }
+    Region { id: shellBlur; regions: ShellMaterial.blur ? ShellMaterial.regionsFor(overlay.contentItem.Window.window) : [] }
     Region { id: switcherInput; regions: switcher.item && ServiceAltTab.presented ? [switcher.item.inputRegion] : [] }
 
     PolkitAgent { id: authAgent }
@@ -269,12 +272,13 @@ PanelWindow
         loadStackedContent();
     }
 
-    Rectangle
+    SurfaceCutout
     {
+        objectName: "overlayScrim"
         anchors.fill: parent
-        color: "#000000"
-        opacity: Math.max(OverlayState.mounted === "desktopMenu" ? 0 : overlay.contentReveal * 0.6,
-            overlay.altTabReveal * 0.6, overlay.polkitReveal * 0.6)
+        cutout: ShellMaterial.blur ? polkitView.item?.scrimCutout || page.item?.scrimCutout || null : null
+        opacity: Motion.scrimOpacity(Math.max(OverlayState.mounted === "desktopMenu" ? 0 : page.item?.reveal ?? 0,
+            switcher.item?.reveal ?? 0, polkitView.item?.reveal ?? 0), Config.animationsFluid)
     }
     MouseArea
     {
@@ -295,7 +299,7 @@ PanelWindow
         anchors.fill: parent
         visible: stackedPage.item !== null && !overlay.switching
         color: "#000000"
-        opacity: overlay.stackedReveal * 0.6
+        opacity: Motion.scrimOpacity(stackedPage.item?.reveal ?? 0, Config.animationsFluid)
         MouseArea { anchors.fill: parent }
     }
     Loader
@@ -323,14 +327,15 @@ PanelWindow
         enabled: !overlay.authenticating
         sourceComponent: Screenshot { }
     }
-    Rectangle
+    SurfaceCutout
     {
         anchors.fill: parent
-        color: "#000000"
-        opacity: OverlayState.mounted !== "" ? overlay.polkitReveal * 0.6 : 0
+        cutout: ShellMaterial.blur ? polkitView.item?.scrimCutout ?? null : null
+        opacity: OverlayState.mounted !== "" ? Motion.scrimOpacity(polkitView.item?.reveal ?? 0, Config.animationsFluid) : 0
     }
     Loader
     {
+        id: polkitView
         anchors.fill: parent
         active: overlay.authenticating || overlay.polkitReveal > 0.001
         enabled: overlay.authenticating

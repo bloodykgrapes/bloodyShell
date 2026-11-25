@@ -25,8 +25,10 @@ Singleton
     property int  updateCheck: 4
 
     property int  themeStyle: 1
+    property int  shellSurface: Enums.SurfaceSolid
     property int  themeAnimations: 1
     property bool themeAccent: false
+    property bool kittyColorsEnabled: false
 
     property int frameThickness: 8
 
@@ -35,7 +37,6 @@ Singleton
     property string wallpaperTransition: "grow"
 
     property int equalizerStyle: 0
-    property bool desktopEqualizer: true
     property real desktopEqualizerOpacity: 1
     property int desktopBlur: 0
 
@@ -43,7 +44,6 @@ Singleton
     property var  barScreens: []
     property int  barSide: 0
     property int  barType: 0
-    property int  barMenu: 0
 
     property bool barHideAuto: false
     property bool barHideSmart: true
@@ -84,9 +84,6 @@ Singleton
     property bool notificationsEnabled: true
     property var notificationsBlockedApps: []
     property int  notificationsDuration: 5000
-    property bool notificationsRememberDnd: false
-    property bool notificationsDnd: false
-    property double notificationsDndUntil: 0
 
     property int screenshotMode: 0
     property string screenshotsPath: screenshotsDefault()
@@ -185,15 +182,14 @@ Singleton
         if (typeof v !== typeof d) return false;
         if (typeof v !== "number") return true;
         if (!Number.isFinite(v)) return false;
-        if (!["scrollSpeed", "desktopEqualizerOpacity", "notificationsDndUntil"].includes(key) && !Number.isInteger(v)) return false;
+        if (!["scrollSpeed", "desktopEqualizerOpacity"].includes(key) && !Number.isInteger(v)) return false;
         const ranges = {
-            themeStyle: [0, 1], themeAnimations: [0, 2], desktopBlur: [0, 2], desktopEqualizerOpacity: [0.25, 1],
+            themeStyle: [0, 2], shellSurface: [0, 2], themeAnimations: [0, 2], desktopBlur: [0, 2], desktopEqualizerOpacity: [0.25, 1],
             barSide: [0, 3], dockSide: [0, 3], barType: [0, 3], dockType: [0, 3],
-            updateCheck: [0, 4], equalizerStyle: [0, 1], barMenu: [0, 1], barWidgetWindowMode: [0, 2],
+            updateCheck: [0, 4], equalizerStyle: [0, 1], barWidgetWindowMode: [0, 2],
             powerProfileBattery: [0, 2], powerProfilePlugged: [0, 2],
             frameThickness: [0, 8], scrollSpeed: [1, 4], dockIconSize: [16, 128],
             osdDuration: [0, 60000], notificationsDuration: [0, 600000],
-            notificationsDndUntil: [0, 8640000000000000],
             idleLock: [0, 86400], idleDisplay: [0, 86400], idleSuspend: [0, 86400],
             nightLightTemperature: [1000, 10000], nightLightMode: [0, 2]
         };
@@ -217,6 +213,8 @@ Singleton
     function applyObject(obj)
     {
         if (obj === null || typeof obj !== "object" || Array.isArray(obj)) return;
+        if (obj.kittyColorsEnabled === undefined && ["default", "wallpaper", "custom"].includes(obj.kittyColorMode))
+            kittyColorsEnabled = obj.kittyColorMode !== "default";
         for (const key of Object.keys(obj))
         {
             if (!valid(key, obj[key])) continue;

@@ -1,0 +1,26 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// 09 ─ User overrides
+// ─────────────────────────────────────────────────────────────────────────────
+// Docs: https://niri-wm.github.io/niri
+//
+// Add manual Niri settings here. Niri loads this file after the shell settings.
+// Updates preserve this file.
+//
+// Examples:
+//
+//   // Named workspaces (sticky, always present)
+//   workspace "browser"
+//   workspace "code"
+//
+//   // Per-app workspace assignment
+//   window-rule {
+//       match app-id="firefox"
+//       open-on-workspace "browser"
+//   }
+//
+//   // Extra keybind
+//   binds {
+//       Mod+P { spawn "rofi" "-show" "drun"; }
+//   }
+//
+// ─────────────────────────────────────────────────────────────────────────────

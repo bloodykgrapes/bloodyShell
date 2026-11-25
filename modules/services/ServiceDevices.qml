@@ -43,7 +43,8 @@ Singleton
     }
 
     property var mouse: ({speed: 0, profile: "adaptive", naturalScroll: false, leftHanded: false,
-        scrollHorizontal: 1, scrollVertical: 1, middleEmulation: false})
+        scrollHorizontal: 1, scrollVertical: 1, middleEmulation: false,
+        scrollMethod: "", scrollButton: -1, scrollButtonLock: false})
     property bool mouseLoaded: false
     property bool mouseAvailable: false
     property string mouseError: ""

@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Window
 import Quickshell
 import Quickshell.Wayland
 
@@ -35,6 +36,7 @@ Scope
         implicitHeight: isCanvas ? 0 : 1
         exclusionMode: isCanvas ? ExclusionMode.Ignore : ExclusionMode.Normal
         mask: isCanvas && scene ? scene.inputRegion : emptyInput
+        BackgroundEffect.blurRegion: ShellMaterial.blur && isCanvas && scene ? shellBlur : null
 
         WlrLayershell.namespace: isCanvas ? "bloodyShell:layout" : "bloodyShell:reserve-" + edge
         WlrLayershell.layer: isCanvas ? WlrLayer.Overlay : WlrLayer.Top
@@ -43,6 +45,12 @@ Scope
             : scene.keyboardWanted ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
         Region { id: emptyInput }
+        Region
+        {
+            id: shellBlur
+            regions: ShellMaterial.blur && windowSurface.scene
+                ? [windowSurface.scene.surface.blurMask].concat(ShellMaterial.regionsFor(windowSurface.scene.Window.window)) : []
+        }
         Binding
         {
             target: windowSurface

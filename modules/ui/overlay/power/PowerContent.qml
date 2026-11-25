@@ -26,7 +26,7 @@ Rectangle
     readonly property int tileWidth: 112
     radius: 30
     color: Theme.colorSolid
-    border.width: 1
+    border.width: Theme.panelBorderWidth
     border.color: Theme.colorPanelEdge
 
     property int index: 0
@@ -127,7 +127,6 @@ Rectangle
                 width: powerContent.tileWidth
                 danger: modelData.danger === true
                 hold: modelData.hold === true
-                order: index
                 current: powerContent.lit && powerContent.index === index
                 enabled: powerContent.active && ServicePower.pendingAction === ""
 

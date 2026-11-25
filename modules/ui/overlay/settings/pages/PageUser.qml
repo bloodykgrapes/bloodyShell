@@ -29,7 +29,7 @@ SettingsPage
         onTextEdited: value => ServiceUser.edit(field, value)
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("settings.user.profile")
 
@@ -80,7 +80,7 @@ SettingsPage
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 8
 
-                    SettingsButton
+                    Button
                     {
                         objectName: "chooseUserPicture"
                         text: ServiceUser.avatarBusy ? Tr.tr("common.working") : Tr.tr("settings.user.choosePicture")
@@ -89,7 +89,7 @@ SettingsPage
                         onClicked: avatarDialog.open()
                     }
 
-                    SettingsButton
+                    Button
                     {
                         text: Tr.tr("settings.user.resetPicture")
                         icon: Icon.reload
@@ -113,7 +113,7 @@ SettingsPage
         }
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("settings.user.accountDetails")
 
@@ -128,7 +128,7 @@ SettingsPage
         SettingsRow
         {
             label: Tr.tr("settings.user.loginShell")
-            SettingsCombo
+            SettingsDropdown
             {
                 preferredWidth: 300
                 enabled: ServiceUser.loaded && !ServiceUser.busy && !ServiceUser.confirming
@@ -154,13 +154,13 @@ SettingsPage
         Row
         {
             spacing: 8
-            SettingsButton
+            Button
             {
                 text: Tr.tr("settings.user.discard")
                 enabled: ServiceUser.loaded && ServiceUser.hasChanges && !ServiceUser.busy
                 onClicked: ServiceUser.resetDraft()
             }
-            SettingsButton
+            Button
             {
                 objectName: "applyUserChanges"
                 text: Tr.tr("common.apply")

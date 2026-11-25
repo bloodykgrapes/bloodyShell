@@ -14,6 +14,7 @@ OverlayView
     readonly property var flow: agent.flow
 
     name: "polkit"
+    scrimCutout: panel.blurSurface
     onFlowChanged: field.text = ""
     onActiveChanged: if (!active) field.text = ""
 
@@ -33,19 +34,15 @@ OverlayView
     }
     Component.onCompleted: Qt.callLater(() => { if (active) field.grabFocus(); })
 
-    Rectangle
+    OverlayPanel
     {
-        id: card
-
+        id: panel
         anchors.centerIn: parent
-        width: Math.min(440, parent.width - 48)
+        width: Math.max(0, Math.min(440, parent.width - 48))
         height: column.implicitHeight + 48
-        radius: Theme.settingsRadius
-        color: Theme.settingsColorBackground
-
-        opacity: polkit.reveal
-        scale: 1 - 0.05 * polkit.settle
-        transform: Translate { y: polkit.lift }
+        reveal: polkit.reveal
+        shadow: false
+        borderWidth: 0
 
         MouseArea { anchors.fill: parent }
 
@@ -128,8 +125,8 @@ OverlayView
                     anchors.right: parent.right
                     spacing: 8
 
-                    SettingsButton { text: Tr.tr("common.cancel"); onClicked: polkit.hide() }
-                    SettingsButton
+                    Button { text: Tr.tr("common.cancel"); onClicked: polkit.hide() }
+                    Button
                     {
                         text: polkit.waiting ? Tr.tr("common.checking") : Tr.tr("polkit.authenticate")
                         icon: Icon.userLock

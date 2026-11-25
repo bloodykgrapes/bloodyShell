@@ -11,29 +11,49 @@ Singleton
 {
     id: serviceDependencies
 
-    property var entries: []
-    readonly property var packages: entries.filter(entry => !entry.required)
-    readonly property var dependencies: entries.filter(entry => entry.required)
+    property var packages: []
+    property var dependencies: []
+    readonly property var entries: packages.concat(dependencies)
     property var terminal: []
-    property string error: ""
+    property string packagesError: ""
+    property string dependenciesError: ""
+    property string actionError: ""
+    readonly property string error: actionError || packagesError || dependenciesError
     property string operation: ""
+    property bool operationRequired: false
     property var pending: null
-    readonly property bool busy: probe.busy || command.busy
+    readonly property bool packagesChecking: packagesProbe.busy
+    readonly property bool dependenciesChecking: dependenciesProbe.busy
+    readonly property bool busy: packagesChecking || dependenciesChecking || command.busy
     readonly property var helper: Paths.commandFor("dependencies")
 
-    function refresh(clearError = true)
+    function checking(required) { return required ? dependenciesChecking : packagesChecking }
+    function listError(required) { return required ? dependenciesError : packagesError }
+    function setListError(required, message)
     {
-        if (busy) return;
-        if (clearError) error = "";
-        probe.run(helper.concat(["status"]));
+        if (required) dependenciesError = message;
+        else packagesError = message;
+    }
+
+    function refresh(required = null)
+    {
+        if (command.busy) return;
+        for (const group of required === null ? [false, true] : [required])
+        {
+            if (checking(group)) continue;
+            setListError(group, "");
+            const probe = group ? dependenciesProbe : packagesProbe;
+            probe.run(helper.concat(["status", group ? "required" : "optional"]));
+        }
     }
 
     function request(tool, remove)
     {
-        if (busy) return;
         const entry = entries.find(item => item.tool === tool);
-        if (!entry || !entry.supported || (remove && (entry.required || !entry.removable || !entry.installed))) return;
-        pending = { tool: tool, name: entry.packages.length ? entry.packages.join(", ") : tool, remove: remove };
+        if (command.busy || !entry || checking(entry.required) || !entry.supported
+            || (remove && (entry.required || !entry.removable || !entry.installed))) return;
+        actionError = "";
+        pending = { tool: tool, name: entry.packages.length ? entry.packages.join(", ") : tool, remove: remove, required: entry.required };
     }
 
     function description(entry)
@@ -45,43 +65,63 @@ Singleton
 
     function apply()
     {
-        if (!pending || busy) return;
+        if (!pending || command.busy || checking(pending.required)) return;
         if (terminal.length === 0)
         {
-            error = Tr.tr("settings.dependencies.noTerminal");
+            actionError = Tr.tr("settings.dependencies.noTerminal");
             return;
         }
         const change = pending;
         pending = null;
         operation = change.tool;
-        error = "";
+        operationRequired = change.required;
+        actionError = "";
         command.run(terminal.concat(helper.concat([change.remove ? "remove" : "install", change.tool])));
+    }
+
+    function completeCheck(required, code, text, message)
+    {
+        if (code !== 0)
+        {
+            setListError(required, message);
+            return;
+        }
+        try
+        {
+            const status = JSON.parse(text);
+            if (!Array.isArray(status.entries) || !Array.isArray(status.terminal)) throw new Error("Invalid package status");
+            if (required) dependencies = status.entries;
+            else packages = status.entries;
+            terminal = status.terminal;
+        }
+        catch (error) { setListError(required, String(error)) }
     }
 
     CommandProcess
     {
-        id: probe
-        stdout: StdioCollector { id: result }
-        onCompleted: code =>
-        {
-            if (code !== 0) { serviceDependencies.error = errorMessage(Tr.tr("settings.dependencies.checkFailed")); return; }
-            try
-            {
-                const status = JSON.parse(result.text);
-                serviceDependencies.entries = status.entries;
-                serviceDependencies.terminal = status.terminal;
-            }
-            catch (error) { serviceDependencies.error = String(error) }
-        }
+        id: packagesProbe
+        stdout: StdioCollector { id: packagesResult }
+        onCompleted: code => serviceDependencies.completeCheck(false, code, packagesResult.text,
+            errorMessage(Tr.tr("settings.dependencies.checkFailed")))
     }
+
+    CommandProcess
+    {
+        id: dependenciesProbe
+        stdout: StdioCollector { id: dependenciesResult }
+        onCompleted: code => serviceDependencies.completeCheck(true, code, dependenciesResult.text,
+            errorMessage(Tr.tr("settings.dependencies.checkFailed")))
+    }
+
     CommandProcess
     {
         id: command
         onCompleted: code =>
         {
             serviceDependencies.operation = "";
-            if (code !== 0) serviceDependencies.error = errorMessage(Tr.tr("settings.dependencies.actionFailed"));
-            Qt.callLater(() => serviceDependencies.refresh(false));
+            if (code !== 0) serviceDependencies.actionError = errorMessage(Tr.tr("settings.dependencies.actionFailed"));
+            const required = serviceDependencies.operationRequired;
+            Qt.callLater(() => serviceDependencies.refresh(required));
         }
     }
 }

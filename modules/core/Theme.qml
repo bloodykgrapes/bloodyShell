@@ -27,22 +27,24 @@ Singleton
     }
 
     readonly property var styles: neutralStyles.map(palette => palette.map(color => tinted(color, 0.24)))
-    readonly property var  style: styles[light ? Enums.ThemeLight : Enums.ThemeDark]
+    readonly property var style: styles[light ? Enums.ThemeLight : Enums.ThemeDark]
     readonly property bool light: Config.themeStyle === Enums.ThemeLight
+        || Config.themeStyle === Enums.ThemeAuto && ServiceAppearance.effectiveThemeStyle === Enums.ThemeLight
 
     function inkAlpha(a) { return Qt.rgba(text1.r, text1.g, text1.b, a) }
 
     readonly property color colorSolid: style[0]
-    readonly property color colorLine:  tinted(light ? "#ababB5" : "#47474a", 0.16)
+    readonly property color colorLine: tinted(light ? "#ababB5" : "#47474a", 0.16)
 
     function textFor(lightMode) { return tinted(lightMode ? "#1d1d1f" : "#f5f5f7", 0.10); }
+    readonly property bool frostedText: Config.shellSurface === Enums.SurfaceBlur && ShellMaterial.blur
     readonly property color text1: textFor(light)
-    readonly property color text2: tinted(light ? "#34343a" : "#aeaeb2", 0.10)
-    readonly property color text3: tinted(light ? "#414147" : "#9a9a9a", 0.10)
+    readonly property color text2: tinted(frostedText ? (light ? "#232329" : "#ececf0") : (light ? "#34343a" : "#aeaeb2"), 0.10)
+    readonly property color text3: tinted(frostedText ? (light ? "#2c2c32" : "#dcdce1") : (light ? "#414147" : "#9a9a9a"), 0.10)
     readonly property color text4: inkAlpha(0.5)
 
-    readonly property bool  accentShell: Config.themeAccent
-    readonly property color accentBase:  ServiceAppearance.accent
+    readonly property bool accentShell: Config.themeAccent && !!ServiceColors.sourceColor
+    readonly property color accentBase: ServiceColors.sourceColor || "#8ecbff"
     function accentFor(lightMode) { return Qt.hsla(Math.max(0, accentBase.hslHue), Math.min(0.7, accentBase.hslSaturation), lightMode ? 0.36 : 0.72, 1); }
     readonly property color accent: accentFor(light)
     function accentAlpha(a) { return Qt.rgba(accent.r, accent.g, accent.b, a) }
@@ -53,6 +55,7 @@ Singleton
     readonly property color colorPressed:     tone(0.14)
     readonly property color colorRaised: tinted(light ? "#ffffff" : "#343438", 0.18)
     readonly property color colorHairline: inkAlpha(light ? 0.10 : 0.09)
+    readonly property int panelBorderWidth: 1
     readonly property color colorPanelEdge: inkAlpha(light ? 0.14 : 0.16)
     readonly property color colorShadow: Qt.rgba(0, 0, 0, light ? 0.18 : 0.42)
     readonly property color colorFocus: accentShell ? accentAlpha(0.65) : inkAlpha(0.42)
@@ -60,28 +63,36 @@ Singleton
     readonly property color colorField:       inkAlpha(0.07)
     readonly property color colorAccent:      accentShell ? accent : text1
     readonly property color colorSelection:   accentShell ? accentAlpha(0.3) : inkAlpha(light ? 0.14 : 0.22)
+    readonly property color colorFieldFocus:  Qt.tint(colorField, colorSelection)
     readonly property color colorChosen:      accentShell ? accentAlpha(0.3) : (light ? "#e2e2e6" : colorLine)
     readonly property color colorCurrent:     accentShell ? accentAlpha(0.16) : inkAlpha(0.07)
 
-    function lightForeground(background: color): bool
+    function luminance(color: color): real
     {
-        const c = [background.r, background.g, background.b].map(v => v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
-        return c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722 < 0.179;
+        const channels = [color.r, color.g, color.b].map(v => v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+        return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
     }
-    readonly property color onAccent: lightForeground(colorAccent) ? "#ffffff" : "#000000"
+    function lightForeground(background: color): bool { return luminance(background) < 0.179; }
+    readonly property color accentForeground: lightForeground(colorAccent) ? "#ffffff" : "#000000"
     readonly property color onCritical: lightForeground(colorCritical) ? "#ffffff" : "#000000"
 
     readonly property color colorWarning:   light ? "#805000" : "#ffb340"
-    readonly property color colorCritical:  light ? "#b42332" : "#ff6b6b"
+    readonly property color colorCritical: light ? "#b42332" : "#ff6b6b"
+    function criticalAlpha(a) { return Qt.rgba(colorCritical.r, colorCritical.g, colorCritical.b, a) }
     readonly property color colorAttention: light ? "#874500" : "#ff9f0a"
 
     function frameFor(lightMode) { return tinted(lightMode ? "#f5f5f7" : accentShell ? "#08080a" : "#000000", 0.24); }
     readonly property color frameColor: frameFor(light)
     readonly property int frameThickness: Math.max(0, Math.min(8, Config.frameThickness))
     readonly property int frameRadius: 24
-    readonly property int frameSmoothing: 24
+    readonly property int frameSmoothing: frameRadius
+    readonly property int panelGap: 10
     readonly property int sidebarWidth: 380
     readonly property int sidebarCorner: 28
+    readonly property int controlRadius: 14
+    readonly property color controlColorBackground: popupColorCard
+    readonly property color controlColorBorder: inkAlpha(light ? 0.12 : 0.10)
+    readonly property color controlColorActive: Qt.tint(controlColorBackground, accentShell ? accentAlpha(0.20) : inkAlpha(0.13))
 
     readonly property int radiusSmall:  8
     readonly property int radiusMedium: 10
@@ -90,7 +101,7 @@ Singleton
     readonly property real barThickness:     44
     readonly property real barVerticalWidth: 38
     readonly property int  barPadding:       10
-    readonly property int  barRadius:        22
+    readonly property int  barRadius:        frameRadius
     readonly property int  barSpacing:       10
     readonly property int  barReveal:        4
     readonly property int  barHideDelay:     450
@@ -109,6 +120,15 @@ Singleton
     readonly property int   menuWidth:      280
     readonly property int   menuPadding:    10
     readonly property color menuColorHover: colorHover
+    readonly property int menuControlRadius: 18
+    readonly property color menuControlBackground: Qt.tint(frameColor, colorField)
+    readonly property color menuControlSelected: colorSelection
+    readonly property color popupColorBackground: light ? colorSolid : style[1]
+    readonly property color popupColorCard: style[2]
+    readonly property color popupColorSelected: Qt.tint(popupColorCard, accentShell ? accentAlpha(0.16) : inkAlpha(0.12))
+    readonly property int popupPadding: 20
+    readonly property int popupTitleSize: 17
+    readonly property int popupRadius: 22
 
     readonly property int dockPadding:       10
     readonly property int dockMargin:        12
@@ -119,22 +139,24 @@ Singleton
     readonly property int dockHideDelay:     300
 
     readonly property int launcherWidth:   660
-    readonly property int launcherSearch:  54
-    readonly property int launcherRow:     52
-    readonly property int launcherPadding: 18
+    readonly property int launcherSearch:  52
+    readonly property int launcherRow:     56
+    readonly property int launcherPadding: 12
     readonly property int launcherRadius:  24
     readonly property int launcherSpacing: 8
 
     readonly property int settingsWidth:   1080
     readonly property int settingsHeight:  720
-    readonly property int settingsSidebar: 224
+    readonly property int settingsSidebar: 212
     readonly property int settingsRadius:  24
-    readonly property int settingsControlHeight: 38
+    readonly property int controlHeight: 38
     readonly property int settingsRowHeight: 64
     readonly property int settingsRowInset: 20
-    readonly property int settingsRowGap: 24
-    readonly property int settingsSectionGap: 26
+    readonly property int settingsRowGap: 22
+    readonly property int settingsSectionGap: 24
     readonly property int settingsTabHeight: 38
+    readonly property int settingsLabelSize: 13
+    readonly property int controlTextSize: 12
 
     function controlWidth(item, preferred)
     {
@@ -143,10 +165,10 @@ Singleton
         return preferred;
     }
 
-    readonly property color settingsColorBackground: colorSolid
-    readonly property color settingsColorSidebar:    style[1]
-    readonly property color settingsColorCard:       style[2]
-    readonly property color settingsColorLine:       inkAlpha(0.06)
+    readonly property color settingsColorBackground: popupColorBackground
+    readonly property color settingsColorSidebar: Qt.tint(light ? style[2] : colorSolid, inkAlpha(light ? 0.025 : 0.035))
+    readonly property color settingsColorCard:       popupColorCard
+    readonly property color settingsColorLine:      inkAlpha(light ? 0.09 : 0.075)
     readonly property color settingsColorHover: light
         ? Qt.tint(Qt.tint(settingsColorCard, inkAlpha(0.14)), accentShell ? accentAlpha(0.04) : "transparent")
         : Qt.tint(settingsColorCard, colorHover)

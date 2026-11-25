@@ -13,6 +13,7 @@ Item
     property string valueText: ""
 
     property bool stacked: false
+    property bool wrapText: true
     property bool pending: false
     property bool highlighted: false
 
@@ -22,7 +23,7 @@ Item
     default property alias control: slot.data
 
     readonly property int inset: Theme.settingsRowInset
-    readonly property real lead: icon !== "" ? 34 : 0
+    readonly property real lead: icon !== "" ? 36 : 0
     readonly property real controlAvailableWidth: Math.max(0, width - inset * 2)
     readonly property real preferredControlWidth: slot.children.reduce((width, child) => child.visible ? Math.max(width, child.implicitWidth || child.width) : width, 0)
     readonly property real valueWidth: valueText !== "" ? Math.min(value.implicitWidth, width * 0.4) : 0
@@ -31,8 +32,8 @@ Item
 
     width: parent ? parent.width : 400
     height: vertical
-        ? 16 + header.implicitHeight + 12 + slot.height + 16
-        : Math.max(Theme.settingsRowHeight, header.implicitHeight + 28, slot.height + 24)
+        ? 14 + header.implicitHeight + 12 + slot.height + 14
+        : Math.max(Theme.settingsRowHeight, header.implicitHeight + 24, slot.height + 20)
 
     HoverHandler { id: hover }
     SettingsTile { row: settingsRow; hovered: settingsRow.highlighted || (hover.hovered && !OverlayState.settingsPopup) }
@@ -42,7 +43,7 @@ Item
         id: header
 
         x: settingsRow.inset + settingsRow.lead
-        y: settingsRow.vertical ? 16 : Math.round((settingsRow.height - implicitHeight) / 2)
+        y: settingsRow.vertical ? 14 : Math.round((settingsRow.height - implicitHeight) / 2)
         width: Math.max(0, settingsRow.controlAvailableWidth - settingsRow.lead - (settingsRow.sideWidth > 0 ? settingsRow.sideWidth + Theme.settingsRowGap : 0))
         spacing: 4
 
@@ -56,8 +57,8 @@ Item
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.max(0, parent.width - (badge.visible ? badge.width + parent.spacing : 0))
                 label: settingsRow.label
-                wrapMode: Text.Wrap
-                size: 13
+                wrapMode: settingsRow.wrapText ? Text.Wrap : Text.NoWrap
+                size: Theme.settingsLabelSize
                 font.weight: Font.Medium
                 color: Theme.text1
             }
@@ -92,7 +93,7 @@ Item
             label: settingsRow.description
             size: 12
             color: Theme.text3
-            wrapMode: Text.Wrap
+            wrapMode: settingsRow.wrapText ? Text.Wrap : Text.NoWrap
         }
         ShellText
         {
@@ -111,7 +112,7 @@ Item
         x: settingsRow.inset
         y: header.y + Math.round((Math.min(header.implicitHeight, 40) - height) / 2)
         icon: settingsRow.icon
-        size: 22
+        size: 24
     }
 
     ShellText

@@ -87,7 +87,6 @@ Singleton
     property var autostartEntries: []
     property var autostartClients: []
     property string autostartError: ""
-    property string autostartSession: "unknown"
     property bool autostartRefreshPending: false
     readonly property bool autostartWatching: autostartClients.length > 0
     readonly property bool autostartBusy: autostartCommand.busy
@@ -96,12 +95,6 @@ Singleton
     function setAutostartActive(client, active)
     {
         autostartClients = Clients.update(autostartClients, client, active);
-    }
-
-    function hasAutostart(appId)
-    {
-        const id = String(appId || "").replace(/\.desktop$/, "");
-        return autostartEntries.some(entry => entry.appId === id || entry.id === id + ".desktop");
     }
 
     function refreshAutostart(clearError = true)
@@ -157,7 +150,6 @@ Singleton
                 {
                     const result = JSON.parse(autostartResult.text);
                     serviceApplications.autostartEntries = result.entries;
-                    serviceApplications.autostartSession = result.session;
                 }
                 catch (error) { serviceApplications.autostartError = String(error) }
             }

@@ -14,7 +14,7 @@ Column
     width: parent ? parent.width : 600
     spacing: Theme.settingsSectionGap
 
-    SettingsGroup
+    SettingsRowGroup
     {
         SettingsRow
         {
@@ -51,7 +51,7 @@ Column
         }
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("common.hiding")
         SettingsRow

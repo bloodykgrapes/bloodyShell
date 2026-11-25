@@ -10,12 +10,16 @@ Loader
     property bool presented: false
     enabled: presented
 
-    function enter(url, direction)
+    property string pageIcon: ""
+    onLoaded: if (item.pageIcon !== undefined) item.pageIcon = pageIcon
+
+    function enter(url, direction, icon = "")
     {
         leaving.stop();
         entering.stop();
         presented = true;
         z = 1;
+        pageIcon = icon;
         source = url;
 
         if (!Config.animationsEnabled || direction === 0) { opacity = 1; shift = 0; return; }

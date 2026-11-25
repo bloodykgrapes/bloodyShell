@@ -2,7 +2,6 @@ import QtQuick
 
 import "." as Content
 import "../../../core"
-import "../../../common"
 import ".."
 
 OverlayView
@@ -10,20 +9,26 @@ OverlayView
     id: settings
 
     name: "settings"
+    scrimCutout: content.navigationSurface.blurActive ? content.navigationSurface : null
 
-    Item
+    OverlayPanel
     {
+        id: panel
         anchors.centerIn: parent
         width: Math.max(0, Math.min(Theme.settingsWidth, parent.width - 64))
         height: Math.max(0, Math.min(Theme.settingsHeight, parent.height - 64))
-
-        opacity: settings.reveal
-        scale: 1 - 0.05 * settings.settle
-        transform: Translate { y: settings.lift }
+        reveal: settings.reveal
+        surfaceCutout: content.navigationSurface
+        useSurfaceMaterial: false
 
         MouseArea { anchors.fill: parent }
 
-        SurfaceShadow { surface: card; cornerRadius: Theme.settingsRadius }
-        Content.SettingsContent { id: card; anchors.fill: parent }
+        Content.SettingsContent
+        {
+            id: content
+            anchors.fill: parent
+            paintBackground: false
+            navigationMaterialEnabled: !panel.partiallyRevealed && panel.reveal >= 0.96
+        }
     }
 }

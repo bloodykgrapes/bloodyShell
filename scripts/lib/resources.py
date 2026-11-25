@@ -1,6 +1,6 @@
 """Versioned resource imports, CLI refresh and login-screen appearance export."""
 
-from contextlib import contextmanager, ExitStack
+from contextlib import contextmanager, ExitStack, nullcontext
 from datetime import datetime
 from pathlib import Path
 import argparse
@@ -215,14 +215,17 @@ def config_change(source, program):
     destination = config_home() / program
     destination.parent.mkdir(parents=True, exist_ok=True)
     backup = None
-    original = destination.exists() or destination.is_symlink()
-    with tempfile.TemporaryDirectory(prefix=".bloodyShell-config-", dir=destination.parent) as temporary, \
+    backend = COMPOSITORS["load"](program) if program in COMPOSITORS["BACKENDS"] else {}
+    lock = backend.get("configuration_lock", lambda _: nullcontext())
+    with lock(destination.parent), \
+            tempfile.TemporaryDirectory(prefix=".bloodyShell-config-", dir=destination.parent) as temporary, \
             tempfile.TemporaryDirectory(prefix=".bloodyShell-rollback-", dir=destination.parent) as rollback:
+        original = destination.exists() or destination.is_symlink()
         # Keep compositor configs at their original depth so relative includes
         # and symlinks also resolve correctly during staged validation.
-        staged = Path(temporary) if program in COMPOSITORS["BACKENDS"] else Path(temporary) / program
-        if program in COMPOSITORS["BACKENDS"]:
-            COMPOSITORS["load"](program)["prepare"](source, destination, staged)
+        staged = Path(temporary) if backend else Path(temporary) / program
+        if backend:
+            backend["prepare"](source, destination, staged)
         else:
             shutil.copytree(source, staged, symlinks=True)
         previous = Path(rollback) / program
@@ -365,10 +368,15 @@ def resources_main():
                 pass
 
 
-def write_export(source, directory, keyboard_layouts=None):
+def greeter_wallpaper_target(directory, image, content):
+    return directory / ("wallpaper-" + hashlib.sha256(content).hexdigest() + image.suffix.lower())
+
+
+def write_export(source, directory, keyboard_layouts=None, *, initialize_wallpaper=False):
     data = json.loads(source.read_text()) if source.is_file() else {}
+    config_file = directory / "theme.conf"
     existing = configparser.ConfigParser(interpolation=None)
-    existing.read(directory / "theme.conf")
+    existing.read(config_file)
     if keyboard_layouts is None:
         try:
             keyboard_layouts = json.loads(existing.get("General", "keyboardLayouts", fallback="null"))
@@ -390,7 +398,13 @@ def write_export(source, directory, keyboard_layouts=None):
             raise ValueError("Invalid login-screen keyboard layouts")
         settings["keyboardLayouts"] = json.dumps([{key: entry.get(key, "") for key in ("layout", "variant")} for entry in keyboard_layouts])
     wallpaper = existing.get("General", "wallpaperCurrent", fallback="")
-    if wallpaper:
+    if initialize_wallpaper and not wallpaper:
+        default_image = ROOT / "assets/wallpapers/default.png"
+        content = default_image.read_bytes()
+        target = greeter_wallpaper_target(directory, default_image, content)
+        FILES["atomic_write"](target, content)
+        settings["wallpaperCurrent"] = str(target)
+    elif wallpaper:
         settings["wallpaperCurrent"] = wallpaper
         selection = existing.get("General", "wallpaperSource", fallback="")
         if selection:
@@ -411,7 +425,7 @@ def write_export(source, directory, keyboard_layouts=None):
     configuration["General"] = settings
     output = io.StringIO()
     configuration.write(output)
-    FILES["atomic_write"](directory / "theme.conf", output.getvalue().encode())
+    FILES["atomic_write"](config_file, output.getvalue().encode())
 
 
 @contextmanager
@@ -426,9 +440,9 @@ def greeter_lock(directory, create=False):
         yield
 
 
-def export(source, directory, keyboard_layouts=None):
+def export(source, directory, keyboard_layouts=None, *, initialize_wallpaper=False):
     with greeter_lock(directory, create=True):
-        write_export(source, directory, keyboard_layouts)
+        write_export(source, directory, keyboard_layouts, initialize_wallpaper=initialize_wallpaper)
 
 
 def greeter_main():
@@ -437,11 +451,12 @@ def greeter_main():
     parser.add_argument("directory", type=Path)
     parser.add_argument("--if-configured", action="store_true")
     parser.add_argument("--keyboard-layouts", type=json.loads)
+    parser.add_argument("--initialize-wallpaper", action="store_true")
     args = parser.parse_args()
     if args.if_configured and (not args.directory.is_dir() or not os.access(args.directory, os.W_OK)):
         sys.exit(0)
     try:
-        export(args.source, args.directory, args.keyboard_layouts)
+        export(args.source, args.directory, args.keyboard_layouts, initialize_wallpaper=args.initialize_wallpaper)
     except (OSError, ValueError) as error:
         print("Greeter appearance: " + str(error), file=sys.stderr)
         sys.exit(1)
@@ -477,7 +492,7 @@ def set_greeter_wallpaper(value, directory=GREETER_STATE):
         configuration.optionxform = str
         configuration.read(directory / "theme.conf")
         content = image.read_bytes()
-        target = directory / ("wallpaper-" + hashlib.sha256(content).hexdigest() + image.suffix.lower())
+        target = greeter_wallpaper_target(directory, image, content)
         previous = Path(configuration.get("General", "wallpaperCurrent", fallback=""))
         configuration["General"]["wallpaperCurrent"] = str(target)
         configuration["General"]["wallpaperSource"] = str(image)
@@ -593,20 +608,11 @@ def wallpaper_info(value):
 
 def wallpaper_main():
     parser = argparse.ArgumentParser(description="Wallpaper selection and previews")
-    parser.add_argument("action", choices=("list", "preview", "apply", "inspect", "colors"))
+    parser.add_argument("action", choices=("list", "preview", "apply", "inspect"))
     parser.add_argument("path", nargs="?", default="")
     parser.add_argument("--transition", choices=sorted(TRANSITIONS), default="grow")
     args = parser.parse_args()
     try:
-        if args.action == "colors":
-            path = wallpaper_file(args.path)
-            result = FILES["run"](["setpriv", "--pdeathsig", "TERM", "ffmpeg", "-nostdin", "-v", "error", "-threads", "1", "-filter_threads", "1",
-                                     "-protocol_whitelist", "file,pipe", "-i", str(path), "-frames:v", "1", "-vf", "scale=24:24:flags=area", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"],
-                                    capture_output=True, timeout=10)
-            if result.returncode:
-                raise ValueError("Could not read wallpaper colors")
-            print(json.dumps(list(result.stdout)))
-            return 0
         if args.action == "list":
             directory = Path(args.path).expanduser()
             found = []

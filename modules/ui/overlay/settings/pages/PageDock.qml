@@ -17,8 +17,9 @@ SettingsPage
 
     Parts.SettingsPanelControls { prefix: "dock" }
 
-    SettingsGroup
+    SettingsRowGroup
     {
+        objectName: "dockStyleOptions"
         title: Tr.tr("common.style")
 
         SettingsRow
@@ -34,6 +35,11 @@ SettingsPage
                 current: Config.dockType
                 onSelected: value => Config.set("dockType", value)
             }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.dock.notificationBadges")
+            Toggle { objectName: "dockNotificationBadges"; checked: Config.dockBadges; onToggled: value => Config.set("dockBadges", value) }
         }
         SettingsRow
         {
@@ -68,7 +74,7 @@ SettingsPage
                 label: ServiceApplications.appName(modelData, modelData)
                 description: modelData
 
-                SettingsButton
+                Button
                 {
                     text: Tr.tr("common.unpin")
                     icon: Icon.unpin

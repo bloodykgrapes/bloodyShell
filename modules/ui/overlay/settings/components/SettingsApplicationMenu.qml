@@ -16,17 +16,42 @@ SettingsPopup
     readonly property string appId: application ? application.id : ""
     signal deleteRequested(var application)
 
+    component Action: ButtonList
+    {
+        id: action
+        height: 42
+        filled: true
+        onActiveFocusChanged: if (activeFocus) body.revealBodyItem(action)
+    }
+
+    component ToggleAction: Action
+    {
+        id: toggleAction
+        property alias checked: toggle.checked
+        property alias toggleName: toggle.objectName
+        signal toggled(bool value)
+
+        persistentActions: true
+        Accessible.role: Accessible.CheckBox
+        Accessible.checkable: true
+        Accessible.checked: checked
+        Accessible.onToggleAction: if (enabled) toggled(!checked)
+        onClicked: toggled(!checked)
+        Toggle
+        {
+            id: toggle
+            activeFocusOnTab: false
+            Accessible.name: toggleAction.text
+            onToggled: value => toggleAction.toggled(value)
+        }
+    }
+
     objectName: "applicationContextMenu"
     width: Math.min(300, Math.max(0, parent.width - 16))
     implicitHeight: body.implicitHeight + 16
-    padding: 0
     dim: false
-    background: null
-    opacity: suspended ? 0 : 1
-    scale: 1
     x: Math.max(8, Math.min(origin.x, parent.width - width - 8))
     y: Math.max(8, Math.min(origin.y, parent.height - height - 8))
-    transformOrigin: Item.TopLeft
 
     function openFor(app, item, localX, localY)
     {
@@ -47,97 +72,100 @@ SettingsPopup
         objectName: "applicationMenuReveal"
         progress: Config.animationsEnabled ? menu.reveal : menu.presenting ? 1 : 0
         origin: Qt.point((menu.origin.x - menu.x) / Math.max(1, menu.width), (menu.origin.y - menu.y) / Math.max(1, menu.height))
-        color: Theme.settingsColorCard
-        borderWidth: 1
+        color: Theme.popupColorBackground
+        useSurfaceMaterial: false
 
-        Column
+        SettingsPopupLayout
         {
             id: body
             x: 8; y: 8
             width: parent.width - 16
+            height: parent.height - 16
             spacing: 2
+            contentSpacing: 2
+            bodyInset: 5
+            Accessible.role: Accessible.PopupMenu
+            Accessible.name: menu.application ? menu.application.name : ""
 
-            Item
+            header: Item
             {
                 width: parent.width
-                height: 58
-                Image
+                height: 64
+                Rectangle
                 {
                     id: appIcon
                     x: 10
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 32; height: 32
-                    source: menu.appId ? ServiceApplications.iconFor(menu.appId) || Icon.settingsApplications : ""
-                    fillMode: Image.PreserveAspectFit
-                    sourceSize: Qt.size(64, 64)
+                    width: 40; height: 40; radius: 12
+                    color: Theme.colorField
+                    Image
+                    {
+                        anchors.centerIn: parent
+                        width: 28; height: 28
+                        source: menu.appId ? ServiceApplications.iconFor(menu.appId) || Icon.settingsApplications : ""
+                        fillMode: Image.PreserveAspectFit
+                        sourceSize: Qt.size(56, 56)
+                    }
                 }
                 Column
                 {
                     anchors { left: appIcon.right; leftMargin: 12; right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
                     spacing: 3
                     ShellText { width: parent.width; label: menu.application ? menu.application.name : ""; font.weight: Font.DemiBold; size: 13; color: Theme.text1 }
-                    ShellText { width: parent.width; label: menu.appId; size: 10; color: Theme.text3 }
+                    ShellText { width: parent.width; label: menu.appId; size: 11; color: Theme.text3 }
                 }
             }
             MenuSeparator {}
-            MenuItem
+            ToggleAction
             {
                 id: pinItem
                 objectName: "applicationPin"
                 text: Tr.tr("settings.applications.dockPin")
                 icon: Icon.pin
-                height: 42
-                trailingInset: 56
-                onClicked: ServiceDock.togglePin(menu.appId)
+                checked: ServiceDock.isPinned(menu.appId)
+                toggleName: "applicationPinToggle"
+                onToggled: ServiceDock.togglePin(menu.appId)
                 KeyNavigation.down: notificationsItem
                 KeyNavigation.up: deleteItem
-                Accessible.role: Accessible.CheckBox
-                Accessible.checkable: true
-                Accessible.checked: ServiceDock.isPinned(menu.appId)
-                Accessible.onToggleAction: ServiceDock.togglePin(menu.appId)
-                Toggle
-                {
-                    objectName: "applicationPinToggle"
-                    anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
-                    checked: ServiceDock.isPinned(menu.appId)
-                    Accessible.name: pinItem.text
-                    onToggled: ServiceDock.togglePin(menu.appId)
-                }
             }
-            MenuItem
+            ToggleAction
             {
                 id: notificationsItem
                 objectName: "applicationNotifications"
                 text: Tr.tr("common.notifications")
                 icon: Icon.bellON
-                height: 42
-                trailingInset: 56
-                onClicked: ServiceNotifications.setEnabledFor(menu.appId, !ServiceNotifications.enabledFor(menu.appId))
+                checked: ServiceNotifications.enabledFor(menu.appId)
+                toggleName: "applicationNotificationsToggle"
+                onToggled: value => ServiceNotifications.setEnabledFor(menu.appId, value)
                 KeyNavigation.up: pinItem
-                KeyNavigation.down: deleteItem
-                Accessible.role: Accessible.CheckBox
-                Accessible.checkable: true
-                Accessible.checked: ServiceNotifications.enabledFor(menu.appId)
-                Accessible.onToggleAction: ServiceNotifications.setEnabledFor(menu.appId, !ServiceNotifications.enabledFor(menu.appId))
-                Toggle
-                {
-                    objectName: "applicationNotificationsToggle"
-                    anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
-                    checked: ServiceNotifications.enabledFor(menu.appId)
-                    Accessible.name: notificationsItem.text
-                    onToggled: value => ServiceNotifications.setEnabledFor(menu.appId, value)
-                }
+                KeyNavigation.down: launchItem
             }
             MenuSeparator {}
-            MenuItem
+            Action
+            {
+                id: launchItem
+                objectName: "applicationLaunch"
+                text: Tr.tr("settings.applications.launch")
+                icon: Icon.mediaPlay
+                enabled: menu.application !== null
+                KeyNavigation.up: notificationsItem
+                KeyNavigation.down: deleteItem
+                onClicked:
+                {
+                    const app = menu.application;
+                    menu.close();
+                    ServiceApplications.launchEntry(app);
+                    OverlayState.hide("settings");
+                }
+            }
+            Action
             {
                 id: deleteItem
                 objectName: "applicationDelete"
                 text: Tr.tr("settings.applications.delete")
                 icon: Icon.trash
                 danger: true
-                height: 42
-                KeyNavigation.up: notificationsItem
+                KeyNavigation.up: launchItem
                 KeyNavigation.down: pinItem
                 onClicked:
                 {

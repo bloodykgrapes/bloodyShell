@@ -160,7 +160,6 @@ ShellRoot
     id: tests
     property var savedPage: null
     property var savedInput: null
-    property var autostart: null
     property var paths: []
     property int completions: 0
     property int popupRejections: 0
@@ -187,6 +186,12 @@ ShellRoot
             id: dialog; host: overlay
             title: "Pending setting"; description: "Screenshot must preserve this confirmation."; acceptText: "Apply"
             onRejected: tests.popupRejections++
+        }
+        SettingsPopup {
+            id: searchPopup
+            host: overlay.testPage.item || overlay
+            preferredHeight: popupInput.height + 2 * Theme.popupPadding
+            panelContent: SettingsInput { id: popupInput; width: parent?.width ?? implicitWidth }
         }
         TestCase { id: events; name: "ScreenshotInput"; when: false; optional: true }
     }
@@ -215,11 +220,30 @@ ShellRoot
                         if (waitFor(ServiceScreenshot.phase === "ready" && tests.shot() && tests.shot().ready)) return;
                         tests.check(OverlayState.current === "settings" && overlay.testPage.item === tests.savedPage && !overlay.activeFor("settings"), "Settings was replaced instead of suspended");
                         tests.check(dialog.suspended && dialog.opacity === 0 && !dialog.modal && !dialog.enabled && !OverlayState.settingsPopup && tests.popupRejections === 0, "Popup remained above the screenshot or cancelled its pending confirmation: " + JSON.stringify([dialog.visible, dialog.suspended, dialog.opacity, dialog.modal, dialog.enabled, OverlayState.settingsPopup, tests.popupRejections]));
-                        const modes = tests.find(tests.shot(), "screenshotModes"), destination = tests.find(tests.shot(), "screenshotDestination");
+                        const shot = tests.shot(), toolbar = tests.find(shot, "screenshotToolbar");
+                        shot.progress = 0.10;
+                        Config.set("themeAnimations", Enums.AnimationsFluid);
+                        tests.check(shot.selectionItem.enabled && shot.selectionItem.shadeOpacity > 0 && toolbar.opacity === 0,
+                            "Fluid entrance delayed selection or revealed the toolbar before the dimmer");
+                        Config.set("themeAnimations", 0);
+                        shot.progress = 0.70;
+                        Config.set("themeAnimations", Enums.AnimationsFluid);
+                        tests.check(toolbar.opacity > 0 && toolbar.y < shot.margin, "Screenshot toolbar did not slide down into view");
+                        Config.set("themeAnimations", 0);
+                        shot.progress = Qt.binding(() => shot.mounted && shot.ready ? 1 : 0);
+                        const modes = tests.find(toolbar, "screenshotModes"), destination = tests.find(toolbar, "screenshotDestination");
+                        tests.check(toolbar.y === shot.margin && toolbar.height < 70 && tests.find(toolbar, "screenshotConfirm")
+                            && tests.find(toolbar, "screenshotCancel"), "Screenshot controls do not fit in one compact top bar");
                         modes.selected(Enums.ScreenshotScreen); destination.selected("save");
                         tests.check(Config.screenshotMode === Enums.ScreenshotScreen && Config.screenshotsAction === "save" && tests.shot().selectionItem.region.width === 800, "Screenshot selectors do not persist or update geometry");
                         modes.selected(Enums.ScreenshotArea);
                         const pointer = tests.find(tests.shot(), "screenshotPointer");
+                        events.mousePress(pointer, 400, 530, Qt.LeftButton, Qt.NoModifier, 0);
+                        events.mouseMove(pointer, 520, 580, 0);
+                        events.mouseRelease(pointer, 520, 580, Qt.LeftButton, Qt.NoModifier, 0);
+                        const dimensions = tests.find(shot, "screenshotDimensions");
+                        tests.check(shot.selectionItem.region.y === 530 && shot.selectionItem.region.height === 50
+                            && dimensions.y + dimensions.height < 530, "Selection near the bottom was blocked or its size badge did not stay above it");
                         events.mousePress(pointer, 100, 120, Qt.LeftButton, Qt.NoModifier, 0);
                         events.mouseMove(pointer, 300, 240, 0);
                         events.mouseRelease(pointer, 300, 240, Qt.LeftButton, Qt.NoModifier, 0);
@@ -239,8 +263,7 @@ ShellRoot
                         modes.selected(Enums.ScreenshotScreen);
                         modes.selected(Enums.ScreenshotArea);
                         tests.check(tests.shot().selectionItem.region.x === 120 && tests.shot().selectionItem.region.width === 220 && tests.shot().selectionItem.region.height === 140, "Mode switch lost the selected area");
-                        const panel = tests.find(tests.shot(), "screenshotModePanel");
-                        events.mouseClick(panel, 2, 2, Qt.LeftButton, Qt.NoModifier, 0);
+                        events.mouseClick(toolbar, 2, 2, Qt.LeftButton, Qt.NoModifier, 0);
                         tests.check(tests.shot().selectionItem.region.x === 120 && tests.shot().selectionItem.region.width === 220, "Toolbar padding changed selection");
                         tests.shot().selectionItem.nudge(-1000, -1000, false);
                         tests.check(tests.shot().selectionItem.region.x === 0 && tests.shot().selectionItem.region.y === 0, "Keyboard move escaped screen bounds");
@@ -330,33 +353,28 @@ ShellRoot
                         tests.check(overlay.testPage.item === tests.savedPage && OverlayState.current === "launcher", "Launcher was not restored");
                         events.keyClick(Qt.Key_X);
                         tests.check(tests.savedInput.text === "screenshot statex", "Keyboard focus did not return to the launcher input");
-                        OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "applications");
                         OverlayState.show("settings"); break;
                     case 19:
-                        tests.autostart = tests.find(overlay.testPage.item, "autostartSection");
-                        if (waitFor(tests.autostart !== null)) return;
-                        tests.autostart.expanded = true;
-                        tests.autostart.picker.open(); break;
+                        if (waitFor(overlay.testPage.item?.name === "settings")) return;
+                        searchPopup.open(); break;
                     case 20:
-                        if (waitFor(tests.autostart.picker.opened)) return;
-                        const search = tests.find(tests.autostart.picker.contentItem, "autostartSearch");
-                        search.text = "pending search";
-                        tests.autostart.query = search.text;
-                        tests.savedInput = tests.input(search);
+                        if (waitFor(searchPopup.opened)) return;
+                        popupInput.text = "pending search";
+                        tests.savedInput = tests.input(popupInput);
                         tests.savedInput.cursorPosition = tests.savedInput.text.length;
                         tests.savedInput.forceActiveFocus(); break;
                     case 21: overlay.takeScreenshot(); break;
                     case 22:
                         if (waitFor(ServiceScreenshot.phase === "ready" && tests.shot() && tests.shot().ready)) return;
-                        tests.check(tests.autostart.picker.suspended && tests.autostart.picker.opacity === 0 && !OverlayState.settingsPopup, "Autostart popup remained active over the screenshot");
-                        tests.check(tests.autostart.query === "pending search", "Screenshot reset the popup search");
+                        tests.check(searchPopup.suspended && searchPopup.opacity === 0 && !OverlayState.settingsPopup, "Search popup remained active over the screenshot");
+                        tests.check(popupInput.text === "pending search", "Screenshot reset the popup search");
                         events.keyClick(Qt.Key_Escape); break;
                     case 23:
                         if (waitFor(ServiceScreenshot.phase === "idle")) return;
-                        tests.check(tests.autostart.picker.visible && tests.autostart.picker.modal && OverlayState.settingsPopup, "Screenshot Escape dismissed the autostart popup");
+                        tests.check(searchPopup.visible && searchPopup.modal && OverlayState.settingsPopup, "Screenshot Escape dismissed the search popup");
                         events.keyClick(Qt.Key_X);
-                        tests.check(tests.savedInput.text === "pending searchx" && tests.autostart.query === "pending searchx", "Popup search or keyboard focus was not restored");
-                        tests.autostart.picker.close(); break;
+                        tests.check(popupInput.text === "pending searchx", "Popup search or keyboard focus was not restored");
+                        searchPopup.close(); break;
                     case 24:
                         if (waitFor(!OverlayState.settingsPopup)) return;
                         console.log("SCREENSHOT_PATHS", JSON.stringify(tests.paths));

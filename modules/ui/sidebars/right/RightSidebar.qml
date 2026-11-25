@@ -19,7 +19,7 @@ Sidebar
         scrollView.contentY = 0;
     }
 
-    header: TabRow
+    header: MenuTabs
     {
         objectName: "rightSidebarTabs"
         options: [

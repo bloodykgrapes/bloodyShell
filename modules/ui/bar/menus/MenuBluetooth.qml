@@ -93,7 +93,7 @@ Menu
         shown: menuBluetooth.presented
         order: 0
 
-        ControlToggle
+        MenuToggle
         {
             objectName: "bluetoothRadio"
             width: parent.width
@@ -129,8 +129,8 @@ Menu
             delegate: DeviceRow
             {
                 id: connectedRow
-                MenuRowAction { enabled: !connectedRow.working; icon: Icon.linkOff; label: Tr.tr("common.disconnect"); onClicked: ServiceBluetooth.disconnect(connectedRow.address) }
-                MenuRowAction { enabled: !connectedRow.working; icon: Icon.trash; label: Tr.tr("common.forget"); danger: true; onClicked: ServiceBluetooth.forget(connectedRow.address) }
+                Button { compact: true; enabled: !connectedRow.working; icon: Icon.linkOff; text: Tr.tr("common.disconnect"); onClicked: ServiceBluetooth.disconnect(connectedRow.address) }
+                Button { compact: true; enabled: !connectedRow.working; icon: Icon.trash; text: Tr.tr("common.forget"); danger: true; onClicked: ServiceBluetooth.forget(connectedRow.address) }
             }
         }
     }
@@ -155,7 +155,7 @@ Menu
             delegate: DeviceRow
             {
                 id: pairedRow
-                MenuRowAction { enabled: !pairedRow.working; icon: Icon.trash; label: Tr.tr("common.forget"); danger: true; onClicked: ServiceBluetooth.forget(pairedRow.address) }
+                Button { compact: true; enabled: !pairedRow.working; icon: Icon.trash; text: Tr.tr("common.forget"); danger: true; onClicked: ServiceBluetooth.forget(pairedRow.address) }
             }
         }
     }
@@ -195,7 +195,7 @@ Menu
             maxHeight: 3 * 48
             spacing: 4
 
-            delegate: MenuRow
+            delegate: ButtonList
             {
                 required property string address
                 required property string name
@@ -213,7 +213,7 @@ Menu
         }
     }
 
-    component DeviceRow: MenuRow
+    component DeviceRow: ButtonList
     {
         required property string address
         required property string name

@@ -19,58 +19,49 @@ FocusScope
     default property alias content: body.data
 
     readonly property bool opened: SidebarState.current === side && screen && SidebarState.onOutput(screen.name)
-    readonly property bool floating: Config.barMenu === Enums.MenuFloating
-    readonly property real edgeGap: floating ? 10 : 0
     readonly property alias scrollView: viewport
     readonly property alias contentBody: body
     readonly property alias panel: card
     readonly property alias inputRegion: inputMask
-    readonly property rect bodyRect: !floating && progress > 0.001 ? Qt.rect(card.x, card.y, card.width, card.height) : Qt.rect(0, 0, 0, 0)
-    readonly property real barGap: Math.max(14, Theme.frameSmoothing)
-    readonly property real leftInset: Theme.frameThickness + (barSide === Enums.EdgeLeft ? barThickness + barGap : edgeGap)
-    readonly property real rightInset: Theme.frameThickness + (barSide === Enums.EdgeRight ? barThickness + barGap : edgeGap)
-    readonly property real topInset: Theme.frameThickness + (barSide === Enums.EdgeTop ? barThickness + barGap : verticalBar ? edgeGap : 14)
-    readonly property real bottomInset: Theme.frameThickness + (barSide === Enums.EdgeBottom ? barThickness + barGap : verticalBar ? edgeGap : 12)
+    readonly property alias popupLayer: popupSurface
+    readonly property real frameInset: Theme.frameThickness + Theme.panelGap
+    readonly property real leftInset: frameInset + (barSide === Enums.EdgeLeft ? barThickness : 0)
+    readonly property real rightInset: frameInset + (barSide === Enums.EdgeRight ? barThickness : 0)
+    readonly property real topInset: frameInset + (barSide === Enums.EdgeTop ? barThickness : 0)
+    readonly property real bottomInset: frameInset + (barSide === Enums.EdgeBottom ? barThickness : 0)
     readonly property bool verticalBar: barSide === Enums.EdgeLeft || barSide === Enums.EdgeRight
     readonly property bool atRight: verticalBar ? barSide === Enums.EdgeRight : side === "right"
     readonly property bool atBottom: barSide === Enums.EdgeBottom || (verticalBar && side === "right")
     readonly property real panelWidth: Math.max(0, Math.min(Theme.sidebarWidth, width - leftInset - rightInset - 24))
     readonly property real headerHeight: headerLoader.item ? headerLoader.item.implicitHeight + 14 : 0
     readonly property real panelHeight: Math.max(0, Math.min(body.implicitHeight + headerHeight + 36, height - topInset - bottomInset))
-    property real progress: opened ? 1 : 0
-    Glide on progress {}
-    visible: opened || progress > 0.001
+    readonly property real progress: reveal.progress
+    readonly property real crossProgress: progress * (1.5 - 0.5 * progress)
+    visible: opened || progress > 0
     enabled: opened
     onOpenedChanged: if (opened) Qt.callLater(() => sidebar.forceActiveFocus())
     Keys.onEscapePressed: SidebarState.close()
 
     Region { id: inputMask; item: sidebar.opened ? sidebar : null }
 
-    SurfaceShadow
+    EdgeReveal { id: reveal; opened: sidebar.opened }
+
+    FloatingPanelSurface
     {
-        surface: card
-        cornerRadius: Theme.barRadius
-        visible: sidebar.floating && sidebar.progress > 0.001
+        anchors.fill: card
+        visible: card.visible
+        reveal: sidebar.progress
     }
 
     Item
     {
         id: card
-        width: sidebar.panelWidth * (sidebar.verticalBar ? 1 : Math.max(0, Math.min(1, sidebar.progress)))
-        height: sidebar.panelHeight * (sidebar.verticalBar ? Math.max(0, Math.min(1, sidebar.progress)) : 1)
+        width: sidebar.panelWidth * (sidebar.verticalBar ? sidebar.crossProgress : sidebar.progress)
+        height: sidebar.panelHeight * (sidebar.verticalBar ? sidebar.progress : sidebar.crossProgress)
         x: sidebar.atRight ? sidebar.width - sidebar.rightInset - width : sidebar.leftInset
         y: sidebar.atBottom ? sidebar.height - sidebar.bottomInset - height : sidebar.topInset
+        visible: width > 1 && height > 1
         clip: true
-
-        Rectangle
-        {
-            anchors.fill: parent
-            visible: sidebar.floating
-            radius: Theme.barRadius
-            color: Theme.frameColor
-            border.width: 1
-            border.color: Theme.colorPanelEdge
-        }
 
         MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }
 
@@ -78,16 +69,9 @@ FocusScope
         {
             width: sidebar.panelWidth
             height: sidebar.panelHeight
-            x: !sidebar.verticalBar && sidebar.atRight ? parent.width - width : 0
-            y: sidebar.verticalBar && sidebar.atBottom ? parent.height - height : 0
-            opacity: sidebar.opened ? 1 : 0
-            Appear on opacity {}
-
-            property real expansion: sidebar.opened ? 1 : 0
-            Spring on expansion {}
-            scale: Config.animationsFluid ? 0.92 + 0.08 * expansion : 1
-            transformOrigin: sidebar.atBottom ? (sidebar.atRight ? Item.BottomRight : Item.BottomLeft)
-                : (sidebar.atRight ? Item.TopRight : Item.TopLeft)
+            x: sidebar.atRight ? parent.width - width : 0
+            y: sidebar.atBottom ? parent.height - height : 0
+            opacity: reveal.contentOpacity
 
             Loader
             {
@@ -114,4 +98,6 @@ FocusScope
             }
         }
     }
+
+    Item { id: popupSurface; anchors.fill: parent }
 }

@@ -19,7 +19,7 @@ Common.InteractiveControl
     readonly property bool highlighted: enabled && (hovered || visualFocus)
 
     width: parent ? parent.width : 200
-    height: Math.max(Theme.settingsTabHeight, titleText.implicitHeight + 16)
+    height: Math.max(Theme.settingsTabHeight, titleText.implicitHeight + 12)
     activeFocusOnTab: enabled
     Keys.onSpacePressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
     Keys.onReturnPressed: event => { if (!event.isAutoRepeat) clicked(); event.accepted = true }
@@ -36,29 +36,37 @@ Common.InteractiveControl
     Rectangle
     {
         anchors.fill: parent
-        radius: Theme.radiusLarge - 2
+        radius: 9
 
-        color: Theme.colorHover
+        color: Qt.tint(Theme.settingsColorSidebar, Theme.colorHover)
         opacity: settingsTab.highlighted && !settingsTab.selected ? 1 : 0
         Smooth on opacity { duration: 160 }
     }
 
     Row
     {
-        x: 12
-        width: parent.width - 24
+        x: 8
+        width: parent.width - 16
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 11
+        spacing: 9
 
-        ShellIcon
+        Rectangle
         {
             id: glyph
             anchors.verticalCenter: parent.verticalCenter
-            icon: settingsTab.icon
-            size: 16
-            zoom: 1.05
-            opacity: settingsTab.selected ? 1 : 0.85
-            Smooth on opacity { duration: 200 }
+            width: 24
+            height: 24
+            radius: 7
+            color: settingsTab.selected ? Theme.inkAlpha(0.1) : Theme.colorField
+            Tint on color {}
+            ShellIcon
+            {
+                anchors.centerIn: parent
+                icon: settingsTab.icon
+                size: 16
+                opacity: settingsTab.selected ? 1 : 0.8
+                Smooth on opacity { duration: 200 }
+            }
         }
         ShellText
         {

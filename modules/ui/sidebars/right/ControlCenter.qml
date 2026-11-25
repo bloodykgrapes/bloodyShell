@@ -15,7 +15,7 @@ Column
     required property Item host
     property bool active: false
     width: parent ? parent.width : implicitWidth
-    spacing: 14
+    spacing: 8
 
     SidebarSection
     {
@@ -24,20 +24,19 @@ Column
         Row
         {
             width: parent.width
-            spacing: 12
-            ControlToggle
+            spacing: 6
+            MenuToggle
             {
                 objectName: "controlWifi"
                 width: (parent.width - parent.spacing) / 2
                 height: implicitHeight
-                text: Tr.tr("sidebar.wifi")
+                text: ServiceNetwork.connectedWiFi && ServiceNetwork.ssid !== "" ? ServiceNetwork.ssid : Tr.tr("sidebar.wifi")
                 icon: checked ? Icon.networkWiFiON : Icon.networkWiFiOFF
                 checked: ServiceNetwork.enabledWiFi
                 available: ServiceNetwork.hasWiFi && ServiceNetwork.enabledWiFiHardware
-                subtitle: checked ? (ServiceNetwork.connectedWiFi ? ServiceNetwork.ssid : Tr.tr("common.enabled")) : Tr.tr("common.off")
                 onToggled: value => ServiceNetwork.setWifiEnabled(value)
             }
-            ControlToggle
+            MenuToggle
             {
                 objectName: "controlBluetooth"
                 width: (parent.width - parent.spacing) / 2
@@ -46,7 +45,6 @@ Column
                 icon: Icon.bluetooth
                 checked: ServiceBluetooth.enabled
                 available: ServiceBluetooth.available
-                subtitle: checked ? Tr.tr(ServiceBluetooth.connected ? "common.connected" : "common.enabled") : Tr.tr("common.off")
                 onToggled: value => ServiceBluetooth.setEnabled(value)
             }
         }
@@ -58,13 +56,12 @@ Column
         Row
         {
             width: parent.width
-            spacing: 12
-            height: 36
-            ControlSlider
+            spacing: 6
+            MenuSlider
             {
                 objectName: "controlVolume"
                 width: (parent.width - parent.spacing) / 2
-                height: parent.height
+                height: implicitHeight
                 text: Tr.tr("common.volume")
                 icon: Icon.volume
                 value: ServiceAudio.pendingVolume >= 0 ? ServiceAudio.pendingVolume : ServiceAudio.volume
@@ -73,11 +70,11 @@ Column
                 onMoved: value => ServiceAudio.setVolume(value)
                 onIconClicked: ServiceAudio.toggleMute()
             }
-            ControlSlider
+            MenuSlider
             {
                 objectName: "controlMicrophone"
                 width: (parent.width - parent.spacing) / 2
-                height: parent.height
+                height: implicitHeight
                 text: Tr.tr("sidebar.microphone")
                 icon: muted ? Icon.microphoneOff : Icon.microphone
                 value: ServiceAudio.pendingMicVolume >= 0 ? ServiceAudio.pendingMicVolume : ServiceAudio.micVolume
@@ -92,7 +89,8 @@ Column
     {
         host: controlCenter.host
         order: 2
-        ControlSlider
+        visible: ServiceDisplay.brightnessAvailable
+        MenuSlider
         {
             objectName: "controlBrightness"
             width: parent.width
@@ -102,7 +100,6 @@ Column
             icon: Icon.brightness
             value: ServiceDisplay.brightnessPending >= 0 ? ServiceDisplay.brightnessPending / 100
                  : ServiceDisplay.brightnessRunning >= 0 ? ServiceDisplay.brightnessRunning / 100 : ServiceDisplay.brightness
-            available: ServiceDisplay.brightnessAvailable
             onMoved: value => ServiceDisplay.setBrightness(value)
         }
     }
@@ -111,6 +108,7 @@ Column
         id: mediaSection
         host: controlCenter.host
         order: 3
+        topPadding: 6
         readonly property bool hasPlayer: ServiceMedia.available
         visible: hasPlayer || mediaCard.height > 0.5
         ClippingRectangle
@@ -119,8 +117,8 @@ Column
             objectName: "controlMedia"
             width: parent.width
             height: mediaSection.hasPlayer && media.item ? media.item.implicitHeight + 16 : 0
-            radius: 22
-            color: Theme.colorField
+            radius: Theme.menuControlRadius
+            color: Theme.menuControlBackground
             opacity: mediaSection.hasPlayer ? 1 : 0
             Glide on height { duration: Theme.animationDurationMorph }
             Smooth on opacity {}

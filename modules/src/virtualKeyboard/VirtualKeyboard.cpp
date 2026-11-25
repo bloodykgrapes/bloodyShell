@@ -145,6 +145,21 @@ public:
         return {};
     }
 
+    Q_INVOKABLE bool isLetter(int key) const
+    {
+        const auto text = label(key, false, false);
+        return !text.isEmpty() && text.front().isLetter();
+    }
+    Q_INVOKABLE bool typeSymbol(const QString &symbol)
+    {
+        for (bool alternate : {false, true})
+            for (bool shifted : {false, true})
+                for (int key = 1; key < 256; ++key)
+                    if (label(key, shifted, false, alternate) == symbol)
+                        return tap(key, shifted, false, alternate);
+        return false;
+    }
+
     Q_INVOKABLE bool tap(int key, bool shifted = false, bool caps = false, bool alternate = false)
     {
         if (key < 1 || key > 255 || !ready()) return false;

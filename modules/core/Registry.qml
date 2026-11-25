@@ -26,11 +26,13 @@ Singleton
     ]
     readonly property var themeOptions: [
         {label: Tr.tr("settings.appearance.light"), value: Enums.ThemeLight},
-        {label: Tr.tr("settings.appearance.dark"), value: Enums.ThemeDark}
+        {label: Tr.tr("settings.appearance.dark"), value: Enums.ThemeDark},
+        {label: Tr.tr("settings.appearance.autoTheme"), value: Enums.ThemeAuto}
     ]
-    readonly property var menuOptions: [
-        {label: Tr.tr("common.default"), value: Enums.MenuDefault},
-        {label: Tr.tr("common.floating"), value: Enums.MenuFloating}
+    readonly property var surfaceOptions: [
+        {label: Tr.tr("settings.appearance.surfaceSolid"), value: Enums.SurfaceSolid},
+        {label: Tr.tr("settings.appearance.surfaceBackdrop"), value: Enums.SurfaceBackdrop},
+        {label: Tr.tr("settings.appearance.surfaceBlur"), value: Enums.SurfaceBlur}
     ]
     readonly property var layoutShortcutOptions: [
         {label: Tr.tr("settings.timeLanguage.superSpace"), value: "grp:win_space_toggle"},
@@ -73,30 +75,26 @@ Singleton
         workspaces:    { title: Tr.tr("shell.workspaces"),      url: Qt.resolvedUrl("../ui/bar/widgets/WidgetWorkspaces.qml"),    collapse: false },
     })
 
-    readonly property var settingsGroups: ["", Tr.tr("common.system"), Tr.tr("common.shell"), Tr.tr("shell.other")]
+    readonly property var settingsGroups: [Tr.tr("common.system"), Tr.tr("common.shell"), Tr.tr("shell.other")]
     readonly property var settings:
     [
-        { id: "general",       group: 0, title: Tr.tr("common.general"),            icon: Icon.settingsGeneral,      page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageGeneral.qml") },
+        { id: "display",       group: 0, title: Tr.tr("common.display"),            icon: Icon.settingsDisplay,      page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageDisplay.qml") },
+        { id: "sound",         group: 0, title: Tr.tr("common.sound"),              icon: Icon.settingsSound,        page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageSound.qml") },
+        { id: "power",         group: 0, title: Tr.tr("common.power"),              icon: Icon.settingsPower,        page: Qt.resolvedUrl("../ui/overlay/settings/pages/PagePower.qml") },
+        { id: "storage",       group: 0, title: Tr.tr("common.storage"),            icon: Icon.settingsStorage,      page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageStorage.qml") },
+        { id: "devices",       group: 0, title: Tr.tr("menu.bluetooth.devices"),    icon: Icon.settingsDevices,      page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageDevices.qml") },
+        { id: "applications",  group: 0, title: Tr.tr("common.applications"),       icon: Icon.settingsApplications, page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageApplications.qml") },
+        { id: "timeLanguage",  group: 0, title: Tr.tr("common.timeLanguage"),       icon: Icon.settingsTimeLanguage, page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageTimeLanguage.qml") },
+        { id: "user",          group: 0, title: Tr.tr("common.user"),               icon: Icon.user,                 page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageUser.qml") },
 
-        { id: "display",       group: 1, title: Tr.tr("common.display"),            icon: Icon.settingsDisplay,      page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageDisplay.qml") },
-        { id: "sound",         group: 1, title: Tr.tr("common.sound"),              icon: Icon.settingsSound,        page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageSound.qml") },
-        { id: "networks",      group: 1, title: Tr.tr("menu.network.networks"),     icon: Icon.networkWiFiON,         page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageNetworks.qml") },
-        { id: "power",         group: 1, title: Tr.tr("common.power"),              icon: Icon.settingsPower,        page: Qt.resolvedUrl("../ui/overlay/settings/pages/PagePower.qml") },
-        { id: "storage",       group: 1, title: Tr.tr("common.storage"),            icon: Icon.settingsStorage,      page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageStorage.qml") },
-        { id: "devices",       group: 1, title: Tr.tr("menu.bluetooth.devices"),    icon: Icon.settingsDevices,      page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageDevices.qml") },
-        { id: "notifications", group: 1, title: Tr.tr("common.notifications"),      icon: Icon.bellON,               page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageNotifications.qml") },
-        { id: "applications",  group: 1, title: Tr.tr("common.applications"),       icon: Icon.settingsApplications, page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageApplications.qml") },
-        { id: "timeLanguage",  group: 1, title: Tr.tr("common.timeLanguage"),       icon: Icon.settingsTimeLanguage, page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageTimeLanguage.qml") },
-        { id: "user",          group: 1, title: Tr.tr("common.user"),               icon: Icon.user,                 page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageUser.qml") },
+        { id: "appearance",    group: 1, title: Tr.tr("common.appearance"),         icon: Icon.settingsAppearance,   page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageAppearance.qml") },
+        { id: "desktop",       group: 1, title: Tr.tr("common.desktop"),            icon: Icon.settingsDesktop,      page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageDesktop.qml") },
+        { id: "bar",           group: 1, title: Tr.tr("common.bar"),                icon: Icon.settingsBar,          page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageBar.qml") },
+        { id: "dock",          group: 1, title: Tr.tr("common.dock"),               icon: Icon.settingsDock,         page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageDock.qml") },
+        { id: "components",    group: 1, title: Tr.tr("settings.components.title"), icon: Icon.widgets,              page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageComponents.qml") },
+        { id: "shortcuts",     group: 1, title: Tr.tr("settings.shortcuts.title"), icon: Icon.shortcuts,            page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageShortcuts.qml") },
 
-        { id: "appearance",    group: 2, title: Tr.tr("common.appearance"),         icon: Icon.settingsAppearance,   page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageAppearance.qml") },
-        { id: "desktop",       group: 2, title: Tr.tr("common.desktop"),            icon: Icon.settingsDesktop,      page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageDesktop.qml") },
-        { id: "bar",           group: 2, title: Tr.tr("common.bar"),                icon: Icon.settingsBar,          page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageBar.qml") },
-        { id: "dock",          group: 2, title: Tr.tr("common.dock"),               icon: Icon.settingsDock,         page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageDock.qml") },
-        { id: "components",    group: 2, title: Tr.tr("settings.components.title"), icon: Icon.widgets,              page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageComponents.qml") },
-        { id: "shortcuts",     group: 2, title: Tr.tr("settings.shortcuts.title"), icon: Icon.shortcuts,            page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageShortcuts.qml") },
-
-        { id: "updates",       group: 3, title: Tr.tr("common.updates"),            icon: Icon.settingsUpdates,      page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageUpdates.qml") },
-        { id: "about",         group: 3, title: Tr.tr("common.about"),              icon: Icon.settingsAbout,        page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageAbout.qml") },
+        { id: "updates",       group: 2, title: Tr.tr("common.updates"),            icon: Icon.settingsUpdates,      page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageUpdates.qml") },
+        { id: "about",         group: 2, title: Tr.tr("common.about"),              icon: Icon.settingsAbout,        page: Qt.resolvedUrl("../ui/overlay/settings/pages/PageAbout.qml") },
     ]
 }

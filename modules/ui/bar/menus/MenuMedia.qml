@@ -15,7 +15,6 @@ Menu
     id: menuMedia
 
     implicitWidth: 360
-    centerOnWidget: true
     spacing: 10
 
     Item
@@ -43,15 +42,7 @@ Menu
 
     function focusControl(item)
     {
-        if (MenuState.menuActive)
-        {
-            for (let owner = menuMedia; owner; owner = owner.parent)
-            {
-                if (owner !== MenuState.menuOwner) continue;
-                MenuState.menuKeyboard = true;
-                break;
-            }
-        }
+        MenuState.requestKeyboard(menuMedia);
         if (typeof item.focusFor === "function") item.focusFor(Qt.MouseFocusReason);
         else item.forceActiveFocus(Qt.MouseFocusReason);
     }
@@ -80,8 +71,9 @@ Menu
         {
             width: parent.width
             height: Math.max(112, info.implicitHeight + 32)
-            radius: Theme.radiusLarge
-            color: Theme.colorField
+            radius: Theme.menuControlRadius
+            color: Qt.tint(Theme.menuControlBackground, Theme.colorField)
+            contentInsideBorder: false
 
             Equalizer
             {
@@ -437,15 +429,15 @@ Menu
             width: parent.width
             height: 64
 
-            Control
+            TransportButton
             {
                 anchors.verticalCenter: parent.verticalCenter
                 x: 6
                 visible: ServiceMedia.player !== null && ServiceMedia.player.shuffleSupported
                 icon: Icon.mediaShuffle
                 size: 34
-                on: ServiceMedia.player !== null && ServiceMedia.player.shuffle
-                label: Tr.tr("menu.media.shuffle")
+                checked: ServiceMedia.player !== null && ServiceMedia.player.shuffle
+                text: Tr.tr("menu.media.shuffle")
                 onClicked: ServiceMedia.toggleShuffle()
             }
 
@@ -454,15 +446,15 @@ Menu
                 anchors.centerIn: parent
                 spacing: 8
 
-                Control
+                TransportButton
                 {
                     anchors.verticalCenter: parent.verticalCenter
                     icon: Icon.mediaPrevious
                     enabled: ServiceMedia.player !== null && ServiceMedia.player.canGoPrevious
-                    label: Tr.tr("menu.media.previousTrack")
+                    text: Tr.tr("menu.media.previousTrack")
                     onClicked: ServiceMedia.previous()
                 }
-                Control
+                TransportButton
                 {
                     anchors.verticalCenter: parent.verticalCenter
                     icon: Icon.mediaPlay
@@ -473,20 +465,20 @@ Menu
                     iconSize: 24
                     primary: true
                     enabled: ServiceMedia.player !== null && ServiceMedia.player.canTogglePlaying
-                    label: ServiceMedia.playing ? Tr.tr("menu.media.pause") : Tr.tr("menu.media.play")
+                    text: ServiceMedia.playing ? Tr.tr("menu.media.pause") : Tr.tr("menu.media.play")
                     onClicked: ServiceMedia.toggle()
                 }
-                Control
+                TransportButton
                 {
                     anchors.verticalCenter: parent.verticalCenter
                     icon: Icon.mediaNext
                     enabled: ServiceMedia.player !== null && ServiceMedia.player.canGoNext
-                    label: Tr.tr("menu.media.nextTrack")
+                    text: Tr.tr("menu.media.nextTrack")
                     onClicked: ServiceMedia.next()
                 }
             }
 
-            Control
+            TransportButton
             {
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.right: parent.right
@@ -494,9 +486,9 @@ Menu
                 visible: ServiceMedia.player !== null && ServiceMedia.player.loopSupported
                 icon: Icon.mediaRepeat
                 size: 34
-                on: ServiceMedia.player !== null && ServiceMedia.player.loopState !== MprisLoopState.None
+                checked: ServiceMedia.player !== null && ServiceMedia.player.loopState !== MprisLoopState.None
                 dot: ServiceMedia.player !== null && ServiceMedia.player.loopState === MprisLoopState.Track
-                label: Tr.tr("menu.media.repeat")
+                text: Tr.tr("menu.media.repeat")
                 onClicked: ServiceMedia.cycleLoop()
             }
         }
@@ -511,7 +503,7 @@ Menu
         {
             model: ServiceMedia.players.length > 1 ? ServiceMedia.players : []
 
-            MenuRow
+            ButtonList
             {
                 required property var modelData
 
@@ -526,53 +518,27 @@ Menu
         MenuLabel { hint: true; text: Tr.tr("common.noMedia"); visible: !ServiceMedia.available }
     }
 
-    component Control: Common.InteractiveControl
+    component TransportButton: MenuButton
     {
         id: control
-        property alias color: surface.color
-        property alias radius: surface.radius
-        property alias border: surface.border
-        background: Rectangle { id: surface }
 
-        property string icon: ""
         property string altIcon: ""
-        property bool   alt: false
-        property string label: ""
-        property int    size: 40
-        property int    iconSize: 16
-        property bool   primary: false
-        property bool   on: false
-        property bool   dot: false
-
-        signal clicked()
+        property bool alt: false
+        property int size: 40
+        property bool dot: false
 
         width: size
         height: size
-        radius: primary ? Theme.radiusLarge : size / 2
-        activeFocusOnTab: enabled
-        border.width: visualFocus ? 2 : 0
-        border.color: Theme.colorAccent
-        Keys.onSpacePressed: clicked()
-        Keys.onReturnPressed: clicked()
-        Keys.onEnterPressed: clicked()
-        opacity: enabled ? 1 : 0.35
+        iconOnly: true
+        iconSize: 16
+        hoverScale: 1.06
+        pressScale: 0.92
+        disabledOpacity: 0.35
+        onPressedChanged: if (pressed) menuMedia.focusControl(control)
 
-        color: area.pressed ? Theme.colorPressed
-             : primary ? (control.hovered ? Qt.tint(Theme.colorSelection, Theme.inkAlpha(0.1)) : Theme.colorSelection)
-             : on ? Theme.colorSelection
-             : control.hovered ? Theme.colorHover : Theme.colorField
-        Tint on color {}
-
-        scale: area.pressed ? 0.92 : control.hovered ? 1.06 : 1
-        Spring on scale {}
-
-        Item
+        iconContent: Item
         {
-            anchors.centerIn: parent
-            width: control.iconSize
-            height: control.iconSize
-            opacity: control.on || control.primary || control.hovered ? 1 : 0.75
-
+            opacity: control.checked || control.primary || control.hovered ? 1 : 0.75
             property real morph: control.alt ? 1 : 0
             Ease on morph { duration: Theme.animationDurationControl }
 
@@ -588,7 +554,6 @@ Menu
             ShellIcon
             {
                 anchors.centerIn: parent
-                visible: control.altIcon !== ""
                 icon: control.altIcon
                 size: control.iconSize
                 opacity: parent.morph
@@ -605,19 +570,5 @@ Menu
             width: 4; height: 4; radius: 2
             color: Theme.text1
         }
-
-        MouseArea
-        {
-            id: area
-            anchors.fill: parent
-            hoverEnabled: true
-            enabled: control.enabled
-            cursorShape: Qt.PointingHandCursor
-            onClicked: { menuMedia.focusControl(control); control.clicked() }
-        }
-
-        Accessible.role: Accessible.Button
-        Accessible.name: control.label
-        Accessible.onPressAction: clicked()
     }
 }

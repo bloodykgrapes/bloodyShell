@@ -171,6 +171,35 @@ def run_defaults(base):
     print("Shortcut application discovery, category filtering, XDG precedence, saved choices, literal launches, missing apps and unchanged system associations passed.")
 
 
+def run_associations(base):
+    env = fixture(base)
+    default_entries(base)
+    put(base / "data/applications/mimeinfo.cache", "[MIME Cache]\ninode/directory=file-managerA.desktop;file-managerB.desktop;directory-editor.desktop;\ntext/plain=directory-editor.desktop;\n")
+    mime = base / "config/mimeapps.list"
+    put(mime, "[Default Applications]\ninode/directory=file-managerA.desktop;\nimage/png=keep.desktop;\n")
+    settings = base / "config/bloodyShell/settings.json"
+    put(settings, '{"applicationFileManager":"file-managerA.desktop"}')
+    original_settings = settings.read_bytes()
+    def command(*args, success=True):
+        result = subprocess.run([sys.executable, str(HELPER), "internal", "applications", "associations", *args], env=env, text=True, capture_output=True, timeout=6)
+        assert (result.returncode == 0) == success, result.stdout + result.stderr
+        return json.loads(result.stdout) if success else None
+    listing = command("status")
+    assert len(listing["entries"]) == 30
+    folders = next(entry for entry in listing["entries"] if entry["id"] == "folders")
+    assert folders["current"] == "file-managerA.desktop"
+    assert "file-managerB.desktop" in [app["id"] for app in folders["applications"]]
+    result = command("set", "folders", "file-managerB.desktop")
+    assert next(entry for entry in result["entries"] if entry["id"] == "folders")["current"] == "file-managerB.desktop"
+    assert "image/png=keep.desktop;" in mime.read_text()
+    before = mime.read_bytes()
+    for args in (("set", "pdf", "file-managerB.desktop"), ("set", "unknown", "file-managerA.desktop"), ("set", "folders", "../../escape.desktop")):
+        command(*args, success=False)
+        assert mime.read_bytes() == before, "Invalid association request changed defaults"
+    assert settings.read_bytes() == original_settings, "File associations changed niri shortcut choices"
+    print("File associations passed: discovery, supported apps, user defaults, unrelated MIME/shortcut preservation and invalid requests.")
+
+
 def ui_environment(base):
     env = fixture(base)
     shutil.copytree(ROOT / "modules", base / "modules")
@@ -243,6 +272,9 @@ def run_ui(base):
     put(base / "config/bloodyShell/settings.json", json.dumps({"helperSeen": True, "themeAnimations": 0}))
     original = "[Desktop Entry]\nType=Application\nName=System fixture\nExec=/bin/true\n"
     put(base / "system/autostart/system.desktop", original)
+    put(base / "system/autostart/override.desktop", original)
+    override = "[Desktop Entry]\nHidden=true\n"
+    put(base / "config/autostart/override.desktop", override)
     put(base / "data/applications/org.example.Autostart.desktop", "[Desktop Entry]\nType=Application\nName=Autostart Fixture\nExec=/bin/true %U\nIcon=application-x-executable\n")
     for index in range(20):
         put(base / f"data/applications/org.example.Extra{index}.desktop", f"[Desktop Entry]\nType=Application\nName=Extra application {index}\nExec=/bin/true\n")
@@ -260,8 +292,6 @@ ShellRoot
     property int phase: 0
     property string appId: ""
     property string entryId: ""
-    property real sectionHeight: 0
-    property real pageHeight: 0
     property int catalogCount: -1
     function check(ok, message) { if (!ok) throw new Error(message) }
     function find(item, name)
@@ -294,107 +324,43 @@ ShellRoot
                     const app = ServiceApplications.search("Autostart Fixture")[0];
                     if (!app || ServiceApplications.autostartEntries.length === 0) return;
                     if (tests.catalogCount !== page.apps.length) { tests.catalogCount = page.apps.length; return; }
-                    if (!section.expanded) { section.expanded = true; return; }
                     tests.appId = app.id;
                     tests.entryId = app.id.endsWith(".desktop") ? app.id : app.id + ".desktop";
-                    tests.sectionHeight = section.height;
-                    tests.pageHeight = page.contentHeight;
-                    const add = tests.find(section, "autostartAdd");
-                    events.mouseClick(add, add.width / 2, add.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
+                    const search = tests.find(page, "applicationsSearch");
+                    search.text = app.name; search.textEdited(search.text);
+                    section.expanded = true;
+                    tests.check(section.summary === "0" && section.entries.length === 0, "The foldout counts system autostart entries");
+                    tests.check(!tests.find(section, "autostartToggle-system.desktop") && !tests.find(section, "autostartToggle-override.desktop"),
+                        "The foldout shows a system entry or its override");
+                    ServiceApplications.addAutostart(tests.appId);
                     tests.phase++;
                 }
                 else if (tests.phase === 1)
                 {
-                    inputTimer.stop();
-                    const picker = section.picker;
-                    let results = tests.find(picker.contentItem, "autostartCandidates");
-                    let pickerSearch = tests.find(picker.contentItem, "autostartSearch");
-                    tests.check(picker.visible && picker.modal && OverlayState.settingsPopup, "Add does not open a modal application picker");
-                    tests.check(results && results.count > 4 && results.interactive, "Application picker is still limited to inline rows");
-                    tests.check(section.height === tests.sectionHeight && page.contentHeight === tests.pageHeight, "Opening the picker inserts rows into the page");
-                    tests.check(picker.x >= 0 && picker.y >= 0 && picker.x + picker.width <= picker.parent.width && picker.y + picker.height <= picker.parent.height, "Application picker exceeds its host");
-                    const pagePosition = page.contentY;
-                    events.mouseWheel(results, results.width / 2, 28, 0, -120, Qt.NoButton, Qt.NoModifier, 0);
-                    events.wait(200);
-                    tests.check(results.contentY > 0 && page.contentY === pagePosition, "Picker scrolling moves the settings page: " + results.contentY + ", " + page.contentY + ", expected " + pagePosition);
-                    events.mouseWheel(pickerSearch, pickerSearch.width / 2, pickerSearch.height / 2, 0, -120, Qt.NoButton, Qt.NoModifier, 0);
-                    events.wait(60);
-                    tests.check(page.contentY === pagePosition, "Search wheel events leak through the modal picker");
-                    window.width = 420; window.height = 360;
-                    events.wait(40);
-                    tests.check(picker.width <= window.width - 32 && picker.height <= window.height - 32 && results.height > 0, "Application picker does not fit a compact window");
-                    window.width = 1080; window.height = 800;
-                    events.wait(40);
-                    pickerSearch.grabFocus();
-                    events.keyClick(Qt.Key_Down);
-                    tests.check(results.activeFocus && results.currentIndex === 0, "Popup results cannot be reached from search with the keyboard");
-                    events.keyClick(Qt.Key_Escape);
-                    tests.check(!picker.visible && !OverlayState.settingsPopup && ServiceApplications.autostartEntries.length === 1, "Escape did not cancel the picker without adding an app");
-                    const add = tests.find(section, "autostartAdd");
-                    tests.check(add.activeFocus, "Closing the picker did not restore focus to Add application");
-                    events.mouseClick(add, add.width / 2, add.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                    const cancel = tests.find(picker.contentItem, "autostartCancel");
-                    events.mouseClick(cancel, cancel.width / 2, cancel.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                    tests.check(!picker.visible && !OverlayState.settingsPopup, "Cancel did not dismiss the picker");
-                    events.mouseClick(add, add.width / 2, add.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                    events.mouseClick(window.contentItem, 2, 2, Qt.LeftButton, Qt.NoModifier, 0);
-                    tests.check(!picker.visible && !OverlayState.settingsPopup, "Outside click did not dismiss the picker");
-                    events.mouseClick(add, add.width / 2, add.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                    section.choose("org.example.DoesNotExist");
-                    for (let i=0;i<100 && (ServiceApplications.autostartBusy || picker.errorText === "");i++) events.wait(20);
-                    tests.check(picker.visible && picker.errorText !== "", "Failed addition closed the picker or hid its error");
-                    pickerSearch.text = "Autostart Fixture"; pickerSearch.textEdited(pickerSearch.text);
-                    tests.check(section.candidates.length === 1 && section.candidates[0].id === tests.appId, "Popup search does not update its results");
-                    events.wait(20);
-                    const choose = tests.find(picker.contentItem, "autostartChoose-" + tests.appId);
-                    tests.check(choose !== null, "Searchable application picker did not load");
-                    events.mouseClick(choose, choose.width / 2, choose.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
+                    if (!entry || !entry.enabled) return;
+                    tests.check(section.summary === "1", "The foldout did not count the user entry");
+                    const toggle = tests.find(section, "autostartToggle-" + tests.entryId);
+                    events.mouseClick(toggle, toggle.width / 2, toggle.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                     tests.phase++;
-                    inputTimer.start();
                 }
                 else if (tests.phase === 2)
                 {
-                    if (!entry) return;
-                    tests.check(entry.enabled && entry.removable, "Adding an application failed");
-                    if (section.picker.visible) return;
-                    tests.check(!OverlayState.settingsPopup && section.pendingApp === "", "Successful addition left popup state behind");
+                    if (!entry || entry.enabled) return;
                     const toggle = tests.find(section, "autostartToggle-" + tests.entryId);
                     events.mouseClick(toggle, toggle.width / 2, toggle.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                     tests.phase++;
                 }
                 else if (tests.phase === 3)
                 {
-                    if (!entry || entry.enabled) return;
-                    Quickshell.execDetached(["python3", Paths.command, "internal", "autostart", "set", tests.entryId, "true"]);
-                    tests.phase++;
-                }
-                else if (tests.phase === 4)
-                {
                     if (!entry || !entry.enabled) return;
                     const remove = tests.find(section, "autostartRemove-" + tests.entryId);
                     events.mouseClick(remove, remove.width / 2, remove.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                     tests.phase++;
                 }
-                else if (tests.phase === 5)
+                else if (tests.phase === 4)
                 {
                     if (entry) return;
-                    const toggle = tests.find(section, "autostartToggle-system.desktop");
-                    events.mouseClick(toggle, toggle.width / 2, toggle.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                    tests.phase++;
-                }
-                else if (tests.phase === 6)
-                {
-                    const system = ServiceApplications.autostartEntries.find(item => item.id === "system.desktop");
-                    if (system.enabled) return;
-                    tests.check(system.system && !system.removable, "System entry lost its override behavior");
-                    const toggle = tests.find(section, "autostartToggle-system.desktop");
-                    events.mouseClick(toggle, toggle.width / 2, toggle.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                    tests.phase++;
-                }
-                else if (tests.phase === 7)
-                {
-                    const system = ServiceApplications.autostartEntries.find(item => item.id === "system.desktop");
-                    if (!system.enabled) return;
+                    tests.check(section.entries.length === 0 && section.summary === "0", "Removed entry still appears in the foldout");
                     tests.check(ServiceApplications.autostartError === "", ServiceApplications.autostartError);
                     ServiceApplications.addAutostart("org.example.DoesNotExist");
                     tests.phase++;
@@ -405,32 +371,15 @@ ShellRoot
                     tests.check(ServiceApplications.autostartError !== "", "Failed operations are not reported");
                     tests.check(ServiceApplications.autostartEntries.some(item => item.id === "system.desktop"), "Failed operation discarded the entries");
                     const search = tests.find(page, "applicationsSearch");
-                    tests.check(search && page.contentHeight > page.height, "Scrolling search fixture did not load");
+                    tests.check(search, "Scrolling search fixture did not load");
+                    search.text = ""; search.textEdited(""); events.wait(30);
                     const position = search.mapToItem(window.contentItem, 0, 0);
                     page.contentY = 120;
                     const scrolled = search.mapToItem(window.contentItem, 0, 0);
-                    tests.check(Math.abs(position.y - scrolled.y) < 0.01, "Applications search moves when the page scrolls");
+                    tests.check(Math.abs(position.y - scrolled.y - 120) < 0.01 && !page.hasHeader, "Applications search is outside the scrolling list");
                     search.text = "Extra application"; search.textEdited(search.text);
-                    tests.check(page.contentY === 0 && page.apps.length > 0, "Typing a query leaves results outside the view");
+                    tests.check(page.contentY === 120 && page.apps.length > 0, "Typing a query scrolls back to unrelated settings");
                     search.text = ""; search.textEdited("");
-                    Config.set("themeAnimations", 2);
-                    const add = tests.find(section, "autostartAdd");
-                    tests.check(String(add.color) === String(Theme.colorField) && add.border.width === 0, "Settings button does not match field controls");
-                    events.mouseMove(add, add.width / 2, add.height / 2, 0);
-                    tests.check(add.hovered && String(add.color) === String(Theme.colorField), "Hover changes the button base color");
-                    events.mousePress(add, add.width / 2, add.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                    tests.check(add.pressed && String(add.color) === String(Theme.colorField), "Press changes the button base color");
-                    add.enabled = false;
-                    events.mouseRelease(add, add.width / 2, add.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                    tests.check(!add.highlighted && !add.pressed && !section.picker.visible, "Disabled button keeps its hover or accepts a click");
-                    add.enabled = true;
-                    page.resetScroll();
-                    events.mouseClick(add, add.width / 2, add.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                    events.wait(Theme.animationDurationControl + 40);
-                    tests.check(section.picker.visible, "Animated popup failed to open");
-                    section.picker.close();
-                    events.wait(Theme.animationDurationClose + 40);
-                    Config.set("themeAnimations", 0);
                     section.expanded = false;
                     search.text = "Autostart Fixture"; search.textEdited(search.text);
                     events.wait(60);
@@ -438,9 +387,17 @@ ShellRoot
                     const row = tests.find(page, "applicationRow-" + tests.appId);
                     const menu = events.findChild(page, "applicationContextMenu");
                     tests.check(row && menu, "Application context menu fixture did not load");
+                    ServiceCompositor.backend.runningVersion = "niri 26.04";
+                    Config.set("shellSurface", Enums.SurfaceBlur);
                     events.mouseClick(row, 30, 30, Qt.RightButton, Qt.NoModifier, 0);
                     events.wait(30);
                     tests.check(menu.visible && menu.application.id === tests.appId && OverlayState.settingsPopup, "Right-click did not open the application menu");
+                    const menuSurface = menu.contentItem.surface.materialSurface;
+                    tests.check(ShellMaterial.blur && menuSurface.color.a === 1 && !menuSurface.blurActive, "Application menu inherits Blur from the shell");
+                    Config.set("shellSurface", Enums.SurfaceBackdrop);
+                    tests.check(ShellMaterial.backdrop && menuSurface.color.a === 1 && !menuSurface.materialEnabled, "Application menu inherits Backdrop from the shell");
+                    Config.set("shellSurface", Enums.SurfaceSolid);
+                    tests.check(!tests.find(menu.contentItem, "applicationAutostart"), "Application menu still contains Start at Login");
                     tests.check(menu.x >= 8 && menu.y >= 8 && menu.x + menu.width <= window.width - 8 && menu.y + menu.height <= window.height - 8, "Application menu exceeds the window");
                     menu.close();
                     for (const mode of [1,2])
@@ -495,6 +452,20 @@ ShellRoot
                     tests.check(menu.visible, "Keyboard context menu shortcut failed");
                     tests.check(pinRow.visualFocus && pinRow.highlighted, "Keyboard application menu has no focused action");
                     const removeApp = tests.find(menu.contentItem, "applicationDelete");
+                    const launchApp = tests.find(menu.contentItem, "applicationLaunch");
+                    tests.check(launchApp && launchApp.y < removeApp.y, "Launch is missing above Delete in the application menu");
+                    events.keyClick(Qt.Key_Down); events.keyClick(Qt.Key_Down);
+                    tests.check(launchApp.activeFocus, "Keyboard navigation does not move from Notifications to Launch");
+                    pinRow.focusFor(Qt.TabFocusReason);
+                    Config.set("themeAnimations", 2);
+                    events.mouseMove(pinRow, 40, pinRow.height / 2, 0);
+                    events.wait(450);
+                    const viewport = tests.find(menu.contentItem, "settingsPopupBody");
+                    const topLeft = pinRow.mapToItem(viewport, 0, 0);
+                    const bottomRight = pinRow.mapToItem(viewport, pinRow.width, pinRow.height);
+                    tests.check(topLeft.x >= 0 && topLeft.y >= 0 && bottomRight.x <= viewport.width && bottomRight.y <= viewport.height,
+                        "Hovered action is clipped by the menu viewport");
+                    Config.set("themeAnimations", 0);
                     events.mouseClick(removeApp, removeApp.width / 2, removeApp.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                     const removal = events.findChild(page, "applicationRemoval");
                     tests.check(!menu.visible && removal.visible && removal.danger, "Delete did not open a confirmation popup");
@@ -511,14 +482,20 @@ ShellRoot
                     events.mouseClick(acceptRemoval, acceptRemoval.width / 2, acceptRemoval.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                     events.wait(150);
                     tests.check(!removal.visible, "Confirmed application removal left its popup open");
-                    window.width = 360; window.height = 480;
+                    window.width = 360; window.height = 245;
                     events.wait(30);
-                    menu.openFor(menu.application, window.contentItem, 359, 479);
+                    menu.openFor(menu.application, window.contentItem, window.width - 1, window.height - 1);
                     events.wait(30);
                     tests.check(menu.x + menu.width <= window.width - 8 && menu.y + menu.height <= window.height - 8, "Context menu does not fit a compact window");
+                    events.keyClick(Qt.Key_Up);
+                    const compactBody = tests.find(menu.contentItem, "settingsPopupBody");
+                    const lastAction = tests.find(menu.contentItem, "applicationDelete");
+                    const lastTop = lastAction.mapToItem(compactBody, 0, 0).y;
+                    tests.check(lastAction.activeFocus && compactBody.contentY > 0 && lastTop >= 0 && lastTop + lastAction.height <= compactBody.height,
+                        "Keyboard focus does not reveal the last action in a short window");
                     page.visible = false;
                     events.wait(Theme.animationDurationClose + 40);
-                    tests.check(!section.picker.visible && !menu.visible && !removal.visible && !OverlayState.settingsPopup, "Hidden Applications page left its popup open");
+                    tests.check(!menu.visible && !removal.visible && !OverlayState.settingsPopup, "Hidden Applications page left its popup open");
                     tests.check(!ServiceApplications.autostartWatching, "Hidden Applications page keeps its file watcher");
                     console.log("AUTOSTART_UI_PASSED"); Qt.quit();
                 }
@@ -538,10 +515,65 @@ ShellRoot
     assert result.returncode == 0 and "AUTOSTART_UI_PASSED" in output, "Autostart UI checks failed"
     assert not re.search(r"AUTOSTART_UI_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|is not a type", output), "Autostart QML error"
     assert (base / "system/autostart/system.desktop").read_text() == original
-    assert "Hidden=false" in (base / "config/autostart/system.desktop").read_text()
+    assert not (base / "config/autostart/system.desktop").exists()
+    assert (base / "config/autostart/override.desktop").read_text() == override
     assert not (base / "config/autostart/org.example.Autostart.desktop").exists()
     assert json.loads((base / "removal-command").read_text()) == ["python3", str(base / "scripts/bloodyShell"), "internal", "applications", "remove", "org.example.Autostart", "pacman:fixture-app"]
-    print("Autostart picker, application context menu, pin/notification toggles, removal confirmation, keyboard/mouse input, compact placement, and popup cleanup passed.")
+    print("Autostart entries, application context menu, pin/notification toggles, removal confirmation, keyboard/mouse input, compact placement, and popup cleanup passed.")
+
+
+def run_associations_ui(base):
+    env = ui_environment(base)
+    default_entries(base)
+    put(base / "data/applications/mimeinfo.cache", "[MIME Cache]\ninode/directory=file-managerA.desktop;file-managerB.desktop;\n")
+    put(base / "config/mimeapps.list", "[Default Applications]\ninode/directory=file-managerA.desktop;\n")
+    put(base / "shell.qml", '''import QtQuick
+import QtQuick.Window
+import QtTest
+import Quickshell
+import "modules/core"
+import "modules/ui/overlay/settings/pages"
+ShellRoot {
+    Window { visible:true; width:1000;height:800;PageApplications{id:page;anchors.fill:parent} }
+    TestCase {
+        id:events;when:false;optional:true
+        function check(ok,message){if(!ok)throw new Error(message);}
+        function until(predicate,message){for(let i=0;i<400&&!predicate();i++)wait(10);check(predicate(),message);}
+        function exercise(){
+            const section=findChild(page,"fileAssociationsSection"), list=findChild(page,"applicationsList"), search=findChild(page,"applicationsSearch");
+            check(section && list && search && !page.hasHeader,"Associations foldout or list search is missing");
+            let parent=search.parent;while(parent&&parent!==list)parent=parent.parent;
+            check(parent===list,"Search is outside the application list");
+            const first=page.apps[0];
+            const firstRow=findChild(page,"applicationRow-"+first.id);
+            const tile=firstRow.children.find(child=>child.first!==undefined && child.outer!==undefined);
+            check(tile && tile.first && tile.topLeftRadius>0,"Search removes rounded corners from the first application row");
+            check(search.x>=3 && search.width<=search.parent.width-6,"Search focus ring has no inset");
+            check(section.entries.length===0,"File associations are loaded before opening the foldout");
+            section.expanded=true;until(()=>!section.busy&&section.entries.length===30,"File associations did not load");
+            const images=findChild(section,"fileAssociationGroup-images");
+            check(images && images.entries.length===8,"Image associations do not cover common formats");
+            images.expanded=true;wait(20);
+            check(findChild(images,"fileAssociation-webp") && findChild(images,"fileAssociation-avif") && findChild(images,"fileAssociation-svg"),"Expanded image formats are missing");
+            const folders=findChild(section,"fileAssociation-folders");
+            check(folders.current==="file-managerA.desktop"&&folders.options.some(app=>app.value==="file-managerB.desktop"),"Association choices or current app are wrong");
+            folders.selected("file-managerB.desktop");until(()=>!section.busy,"Association write did not finish");
+            check(section.error===""&&findChild(section,"fileAssociation-folders").current==="file-managerB.desktop","Selected application was not saved");
+            search.text="browser";search.textEdited("browser");
+            check(section.entries.length===30,"Application search filters file associations");
+            console.log("ASSOCIATIONS_UI_PASSED list search, lazy foldout, handlers and saved defaults");Qt.quit();
+        }
+    }
+    Timer {interval:200;running:Config.initialized;onTriggered:{try{events.exercise();}catch(error){console.error("ASSOCIATIONS_UI_FAILED",error);Qt.quit();}}}
+}
+''')
+    env.update(QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", DBUS_SESSION_BUS_ADDRESS="unix:path=/tmp/bloodyShell-associations-no-bus", DBUS_SYSTEM_BUS_ADDRESS="unix:path=/tmp/bloodyShell-associations-no-system-bus")
+    env.pop("WAYLAND_DISPLAY",None)
+    result=subprocess.run(["qs","-p",str(base),"--no-color"],env=env,capture_output=True,text=True,timeout=15)
+    output=result.stdout+result.stderr
+    assert result.returncode==0 and "ASSOCIATIONS_UI_PASSED" in output,output
+    assert not re.search(r"ASSOCIATIONS_UI_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|Failed to load configuration",output),output
+    print("File associations UI passed: scrolling search, lazy loading, choices and saved user defaults.")
 
 
 def run_defaults_ui(base):
@@ -634,6 +666,8 @@ def main():
         base = Path(temporary)
         run_removal(base / "removal")
         run_defaults(base / "defaults")
+        run_associations(base / "associations")
+        run_associations_ui(base / "associations-ui")
         run_defaults_ui(base / "defaults-ui")
         run_files(base / "files")
         run_ui(base / "ui")

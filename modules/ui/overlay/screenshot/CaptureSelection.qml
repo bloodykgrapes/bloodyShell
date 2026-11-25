@@ -15,6 +15,8 @@ Item
     property rect before: Qt.rect(0, 0, 0, 0)
     property string operation: ""
     readonly property bool dragging: pointer.pressed
+    property real shadeOpacity: 1
+    readonly property color shadeColor: "#70000000"
     signal selected()
     property rect savedArea: Qt.rect(0, 0, 0, 0)
 
@@ -100,10 +102,16 @@ Item
         onCanceled: selection.operation = ""
     }
 
-    Rectangle { x: 0; y: 0; width: selection.width; height: selection.region.y; color: "#85000000" }
-    Rectangle { x: 0; y: selection.region.y + selection.region.height; width: selection.width; height: Math.max(0, selection.height - y); color: "#85000000" }
-    Rectangle { x: 0; y: selection.region.y; width: selection.region.x; height: selection.region.height; color: "#85000000" }
-    Rectangle { x: selection.region.x + selection.region.width; y: selection.region.y; width: Math.max(0, selection.width - x); height: selection.region.height; color: "#85000000" }
+    Item
+    {
+        anchors.fill: parent
+        opacity: selection.shadeOpacity
+
+        Rectangle { x: 0; y: 0; width: selection.width; height: selection.region.y; color: selection.shadeColor }
+        Rectangle { x: 0; y: selection.region.y + selection.region.height; width: selection.width; height: Math.max(0, selection.height - y); color: selection.shadeColor }
+        Rectangle { x: 0; y: selection.region.y; width: selection.region.x; height: selection.region.height; color: selection.shadeColor }
+        Rectangle { x: selection.region.x + selection.region.width; y: selection.region.y; width: Math.max(0, selection.width - x); height: selection.region.height; color: selection.shadeColor }
+    }
 
     Rectangle
     {
@@ -121,9 +129,16 @@ Item
             Rectangle
             {
                 required property var modelData
+                readonly property bool horizontal: modelData[0] === 0.5
+                readonly property bool vertical: modelData[1] === 0.5
+
                 x: parent.width * modelData[0] - width / 2
                 y: parent.height * modelData[1] - height / 2
-                width: 10; height: 10; radius: 4
+                width: horizontal ? 16 : vertical ? 6 : 8
+                height: vertical ? 16 : horizontal ? 6 : 8
+                radius: Math.min(width, height) / 2
+                visible: (!horizontal || parent.width >= 32) && (!vertical || parent.height >= 32)
+                antialiasing: true
                 color: Theme.colorAccent
                 border.width: 1
                 border.color: Theme.colorSolid

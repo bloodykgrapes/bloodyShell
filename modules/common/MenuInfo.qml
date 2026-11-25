@@ -11,16 +11,14 @@ Item
     property string info: ""
 
     width: parent ? parent.width : 200
-    height: 32
+    height: 36
 
     Rectangle
     {
         anchors.fill: parent
-        radius: Theme.radiusMedium
-        color: Theme.menuColorHover
-
-        opacity: area.containsMouse ? 1 : 0
-        Smooth on opacity { duration: 175 }
+        radius: Theme.menuControlRadius
+        color: Qt.tint(Theme.menuControlBackground, area.containsMouse ? Theme.menuColorHover : "transparent")
+        Tint on color {}
 
         MouseArea
         {

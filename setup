@@ -120,7 +120,7 @@ usage()
     printf '    %s%-26s%s %s\n' "$CYN" "./setup doctor [--json]"  "$R" "check dependencies and configuration"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup configs [names]"  "$R" "re-apply app configs (kitty, fastfetch, GTK…)"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup cli"              "$R" "refresh the CLI and PATH without reinstalling the shell"
-    printf '    %s%-26s%s %s\n' "$CYN" "./setup sddm"           "$R" "login screen in the shell's style (SDDM, sudo)"
+    printf '    %s%-26s%s %s\n' "$CYN" "./setup sddm"             "$R" "login screen in the shell's style (SDDM, sudo)"
     printf '    %s%-26s%s %s\n' "$CYN" "./setup help"             "$R" "show commands and options"
     section "Update options"
     printf '    %-22s %s\n' "--beta"        "update channel: include pre-releases"

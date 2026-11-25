@@ -1,7 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell.Widgets
+import QtQuick.Layouts
 
 import "../../../../common"
 import "../../../../core"
@@ -21,181 +21,319 @@ SettingsPage
     onActiveChanged: if (active) ServiceSystem.ensureDetails()
     Component.onCompleted: if (active) ServiceSystem.ensureDetails()
 
-    component InfoRow: SettingsRow
+    property bool confirmReset: false
+
+    SettingsConfirmation
     {
-        id: infoRow
+        objectName: "resetConfirmation"
+        host: pageAbout
+        visible: pageAbout.active && pageAbout.confirmReset
+        title: Tr.tr("settings.about.resetAllSettings")
+        description: Tr.tr("settings.about.resetHint")
+        acceptText: Tr.tr("settings.about.reset")
+        danger: true
+        onAccepted: { pageAbout.confirmReset = false; Config.reset(); }
+        onRejected: pageAbout.confirmReset = false
+    }
 
-        property string detail: ""
-        readonly property string display: detail || pageAbout.missing
-        stacked: display.includes("\n") || measure.advanceWidth > width * 0.45
-        valueText: stacked ? "" : display
+    component AboutCard: Rectangle
+    {
+        radius: Theme.radiusLarge
+        color: Theme.settingsColorCard
+    }
 
-        TextMetrics { id: measure; text: infoRow.display; font: detailText.font }
-        Item
+    component IdentityBanner: AboutCard
+    {
+        id: banner
+
+        property string caption: ""
+        property string name: ""
+        property string subtitle: ""
+        property url artwork
+        property string fallbackIcon: ""
+        property bool branded: false
+
+        width: parent.width
+        height: Math.max(96, identity.implicitHeight + 32)
+
+        gradient: Gradient
         {
-            visible: infoRow.stacked
-            width: infoRow.stacked ? Math.max(0, infoRow.width - infoRow.inset * 2) : 0
-            height: infoRow.stacked ? detailText.implicitHeight : 0
-            ShellText
+            orientation: Gradient.Horizontal
+            GradientStop
             {
-                id: detailText
-                width: parent.width
-                label: infoRow.stacked ? infoRow.display : ""
-                size: 12
-                color: Theme.text2
-                wrapMode: Text.Wrap
+                position: 0
+                color: Qt.tint(Theme.settingsColorCard, Theme.accentShell ? Theme.accentAlpha(0.12) : Theme.inkAlpha(0.04))
             }
+            GradientStop { position: 0.72; color: Theme.settingsColorCard }
+            GradientStop { position: 1; color: Theme.settingsColorCard }
         }
-    }
 
-    SettingsGroup
-    {
-        title: Tr.tr("common.system")
-
-        InfoRow { label: Tr.tr("settings.about.operatingSystem"); detail: ServiceSystem.release.PRETTY_NAME || ServiceSystem.release.NAME || "Linux" }
-        InfoRow { label: Tr.tr("settings.about.kernel"); detail: ServiceSystem.kernel }
-        InfoRow { label: Tr.tr("settings.about.compositor"); detail: ServiceSystem.compositor || ServiceCompositor.displayName }
-        InfoRow { label: Tr.tr("settings.about.runtime"); detail: "Quickshell" + (Qt.application.version ? " " + Qt.application.version : "") }
-        InfoRow { label: Tr.tr("settings.about.computerName"); detail: ServiceSystem.hostname }
-    }
-
-    SettingsGroup
-    {
-        title: Tr.tr("settings.about.hardware")
-
-        InfoRow { objectName: "aboutDevice"; visible: ServiceSystem.device !== ""; label: Tr.tr("settings.about.device"); detail: ServiceSystem.device }
-        InfoRow
+        RowLayout
         {
-            objectName: "aboutProcessor"
-            label: Tr.tr("settings.about.processor")
-            detail: ServiceSystem.processor
-            description: ServiceSystem.threads > 0 ? Tr.tr("settings.about.threads").arg(ServiceSystem.threads) : ""
-        }
-        InfoRow { objectName: "aboutGraphics"; label: Tr.tr("settings.about.graphics"); detail: ServiceSystem.graphics.join("\n") }
-        InfoRow { label: Tr.tr("settings.about.memory"); detail: ServiceSystem.memoryKiB > 0 ? (ServiceSystem.memoryKiB / 1048576).toLocaleString(Tr.locale, "f", 1) + " GiB" : "" }
-        SettingsRow
-        {
-            label: Tr.tr("settings.about.systemInformation")
-            SettingsButton
+            id: identity
+            anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 16 }
+            spacing: 14
+
+            Rectangle
             {
-                objectName: "aboutRefresh"
-                icon: Icon.reload
-                text: Tr.tr(ServiceSystem.loading ? "common.refreshing" : "common.refresh")
-                enabled: !ServiceSystem.loading
-                onClicked: ServiceSystem.refresh()
+                Layout.preferredWidth: 60
+                Layout.preferredHeight: 60
+                radius: Theme.controlRadius
+                color: Theme.settingsColorCard
+
+                Image
+                {
+                    id: artworkImage
+                    anchors { fill: parent; margins: banner.branded ? 4 : 10 }
+                    source: banner.artwork
+                    fillMode: Image.PreserveAspectFit
+                    sourceSize: Qt.size(112, 112)
+                    asynchronous: true
+                }
+
+                ShellIcon
+                {
+                    anchors.centerIn: parent
+                    visible: artworkImage.status !== Image.Ready && icon !== ""
+                    icon: banner.fallbackIcon
+                    size: 28
+                }
             }
-        }
-    }
-
-    SettingsGroup
-    {
-        title: Tr.tr("settings.about.project")
-
-        Item
-        {
-            id: hero
-            objectName: "aboutShellCard"
-            width: parent.width
-            height: identity.implicitHeight + 40
-
-            SettingsTile { row: hero }
 
             Column
             {
-                id: identity
-                x: 20; y: 20
-                width: parent.width - 40
-                spacing: 18
+                Layout.fillWidth: true
+                Layout.preferredWidth: 0
+                spacing: 4
 
-                Row
-                {
-                    width: parent.width
-                    spacing: 18
-
-                    ClippingRectangle
-                    {
-                        width: 64; height: 64; radius: 17
-                        anchors.verticalCenter: parent.verticalCenter
-                        color: "transparent"
-                        Image
-                        {
-                            anchors.fill: parent
-                            source: Qt.resolvedUrl("../../../../../assets/icons/logo.png")
-                            sourceSize: Qt.size(128, 128)
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                        }
-                    }
-                    Column
-                    {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: Math.max(0, parent.width - 82)
-                        spacing: 5
-
-                        ShellText { width: parent.width; label: "bloodyShell"; size: 26; font.family: Theme.fontBrand; font.weight: Font.DemiBold; color: Theme.text1 }
-                        ShellText
-                        {
-                            width: parent.width
-                            label: ServiceUpdate.versionReady ? Tr.tr("settings.about.versionLabel").arg(ServiceUpdate.version) : Tr.tr("common.loading")
-                            size: 12
-                            color: Theme.text2
-                        }
-                        ShellText
-                        {
-                            width: parent.width
-                            label: Tr.tr(ServiceUpdate.installed ? "settings.about.installed" : "settings.updates.developmentCopy")
-                            size: 11
-                            color: Theme.text3
-                        }
-                    }
-                }
-
+                ShellText { width: parent.width; label: banner.caption; size: 11; color: Theme.text3; wrapMode: Text.Wrap }
                 ShellText
                 {
                     width: parent.width
-                    label: Tr.tr("settings.about.shellDescription")
-                    color: Theme.text2
+                    label: banner.name
+                    size: banner.branded ? 28 : 22
+                    font.family: banner.branded ? Theme.fontBrand : Theme.fontText
+                    font.weight: Font.DemiBold
+                    color: Theme.text1
                     wrapMode: Text.Wrap
                 }
+                ShellText { width: parent.width; label: banner.subtitle; size: 12; color: Theme.text2; wrapMode: Text.Wrap }
+            }
+        }
+    }
 
-                Flow
-                {
-                    width: parent.width
-                    spacing: 8
-                    SettingsButton { icon: Icon.update; text: Tr.tr("common.updates"); onClicked: ServiceUpdate.showPage() }
-                    SettingsButton { text: Tr.tr("settings.about.source"); onClicked: Qt.openUrlExternally(pageAbout.projectUrl) }
-                    SettingsButton { text: Tr.tr("settings.about.documentation"); onClicked: Qt.openUrlExternally(pageAbout.projectUrl + "/wiki") }
-                }
+    component DetailGrid: GridLayout
+    {
+        width: parent.width
+        columns: width >= 360 ? 2 : 1
+        columnSpacing: 8
+        rowSpacing: 8
+    }
+
+    component DetailTile: AboutCard
+    {
+        id: tile
+
+        property string label: ""
+        property string detail: ""
+        property string description: ""
+        property string icon: ""
+        readonly property string display: detail || pageAbout.missing
+
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        Layout.preferredWidth: 0
+        implicitHeight: details.implicitHeight + 24
+        height: implicitHeight
+
+        Column
+        {
+            id: details
+            x: 12; y: 12
+            width: Math.max(0, parent.width - 24)
+            spacing: 6
+
+            RowLayout
+            {
+                width: parent.width
+                spacing: 8
+
                 Rectangle
                 {
-                    width: parent.width
-                    height: 1
-                    color: Theme.colorHairline
+                    visible: tile.icon !== ""
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
+                    radius: Theme.radiusSmall
+                    color: Theme.controlColorActive
+                    ShellIcon { anchors.centerIn: parent; icon: tile.icon; size: 16 }
                 }
-
-                Item
+                ShellText
                 {
-                    width: parent.width
-                    height: Math.max(licenseText.implicitHeight, licenseButton.height)
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 0
+                    label: tile.label
+                    size: 11
+                    color: Theme.text3
+                    wrapMode: Text.Wrap
+                }
+            }
+            ShellText
+            {
+                objectName: "aboutDetailValue"
+                width: parent.width
+                label: tile.display
+                size: tile.icon !== "" ? 14 : 13
+                font.weight: Font.DemiBold
+                color: Theme.text1
+                wrapMode: Text.Wrap
+            }
+            ShellText { width: parent.width; label: tile.description; size: 11; color: Theme.text3; wrapMode: Text.Wrap }
+        }
+    }
 
-                    ShellText
+    SettingsRowGroup
+    {
+        title: Tr.tr("common.system")
+
+        Column
+        {
+            width: parent.width
+            spacing: 8
+
+            IdentityBanner
+            {
+                caption: Tr.tr("settings.about.operatingSystem")
+                name: ServiceSystem.release.PRETTY_NAME || ServiceSystem.release.NAME || "Linux"
+                artwork: ServiceSystem.logo
+                fallbackIcon: Icon.settingsDesktop
+            }
+
+            DetailGrid
+            {
+                DetailTile { label: Tr.tr("settings.about.kernel");       detail: ServiceSystem.kernel }
+                DetailTile { label: Tr.tr("settings.about.compositor");   detail: ServiceSystem.compositor || ServiceCompositor.displayName }
+                DetailTile { label: Tr.tr("settings.about.runtime");      detail: "Quickshell" + (Qt.application.version ? " " + Qt.application.version : "") }
+                DetailTile { label: Tr.tr("settings.about.computerName"); detail: ServiceSystem.hostname }
+            }
+        }
+    }
+
+    SettingsRowGroup
+    {
+        title: Tr.tr("settings.about.hardware")
+
+        DetailGrid
+        {
+            DetailTile
+            {
+                objectName: "aboutDevice"
+                visible: ServiceSystem.device !== ""
+                label: Tr.tr("settings.about.device")
+                detail: ServiceSystem.device
+                icon: Icon.settingsDesktop
+            }
+            DetailTile
+            {
+                label: Tr.tr("settings.about.memory")
+                detail: ServiceSystem.memoryKiB > 0 ? (ServiceSystem.memoryKiB / 1048576).toLocaleString(Tr.locale, "f", 1) + " GiB" : ""
+                icon: Icon.memory
+            }
+            DetailTile
+            {
+                objectName: "aboutProcessor"
+                label: Tr.tr("settings.about.processor")
+                detail: ServiceSystem.processor
+                description: ServiceSystem.threads > 0 ? Tr.tr("settings.about.threads").arg(ServiceSystem.threads) : ""
+                icon: Icon.processor
+            }
+            DetailTile
+            {
+                objectName: "aboutGraphics"
+                label: Tr.tr("settings.about.graphics")
+                detail: ServiceSystem.graphics.join("\n")
+                icon: Icon.settingsDisplay
+            }
+        }
+    }
+
+    SettingsRowGroup
+    {
+        title: Tr.tr("settings.about.project")
+
+        Column
+        {
+            width: parent.width
+            spacing: 8
+
+            IdentityBanner
+            {
+                objectName: "aboutShellCard"
+                branded: true
+                artwork: Qt.resolvedUrl("../../../../../assets/icons/logo.png")
+                name: "bloodyShell"
+                caption: Tr.tr(ServiceUpdate.installed ? "settings.about.installed" : "settings.updates.developmentCopy")
+                subtitle: (ServiceUpdate.versionReady ? Tr.tr("settings.about.versionLabel").arg(ServiceUpdate.version) : Tr.tr("common.loading")) + " · GPL-3.0"
+            }
+
+            SettingsDisclosure
+            {
+                objectName: "aboutMaintenance"
+                title: Tr.tr("settings.about.maintenance")
+                icon: Icon.configuration
+
+                SettingsRow
+                {
+                    label: Tr.tr("settings.about.documentation")
+
+                    Button
                     {
-                        id: licenseText
-                        anchors { left: parent.left; right: licenseButton.left; rightMargin: 12; verticalCenter: parent.verticalCenter }
-                        label: Tr.tr("settings.about.license") + " · GPL-3.0"
-                        color: Theme.text2
-                        wrapMode: Text.Wrap
-                    }
-                    SettingsButton
-                    {
-                        id: licenseButton
-                        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
                         text: Tr.tr("common.open")
-                        onClicked: Qt.openUrlExternally(pageAbout.projectUrl + "/blob/main/LICENSE")
+                        Accessible.name: Tr.tr("settings.about.documentation")
+                        onClicked: Qt.openUrlExternally(pageAbout.projectUrl + "/wiki")
+                    }
+                }
+                SettingsRow
+                {
+                    label: Tr.tr("settings.about.source")
+
+                    Button
+                    {
+                        text: Tr.tr("common.open")
+                        Accessible.name: Tr.tr("settings.about.source")
+                        onClicked: Qt.openUrlExternally(pageAbout.projectUrl)
+                    }
+                }
+                SettingsRow
+                {
+                    label: Tr.tr("helper.setup")
+                    description: Tr.tr("helper.openHint")
+                    Button { text: Tr.tr("common.open"); icon: Icon.setup; onClicked: OverlayState.show("helper") }
+                }
+                SettingsRow
+                {
+                    label: Tr.tr("settings.about.debugLogging")
+                    description: Tr.tr("settings.about.debugLoggingHint")
+
+                    Toggle
+                    {
+                        checked: Config.debug
+                        onToggled: value => Config.set("debug", value)
+                    }
+                }
+                SettingsRow
+                {
+                    label: Tr.tr("settings.about.resetAllSettings")
+                    description: Tr.tr("settings.about.resetHint")
+
+                    Button
+                    {
+                        danger: true
+                        objectName: "requestReset"
+                        text: Tr.tr("settings.about.reset")
+                        onClicked: pageAbout.confirmReset = true
                     }
                 }
             }
         }
     }
-
 }

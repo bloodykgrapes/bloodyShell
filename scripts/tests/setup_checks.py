@@ -50,11 +50,15 @@ def ui_checks(base):
         no = Screen(("j", "\n"))
         assert wizard(no).run() == 0
         assert "fresh install" in no.frames[0] and "Package" in no.frames[0]
-        screen = Screen(("\n", "\t", " ", "\n", " ", "\t", "\n", "\n", "j", "\n", "\t", "j", "\n",
-                         "\n", "\n", "\n", "j", "j", "\n"))
+        screen = Screen(("\n", "\t", " ", "\n", "\n", "j", " ", "\t", "\n", "\n", "j", "\n",
+                         "\t", "j", "\n", "\n", "\n", "\n", "\n", "\x1b"))
         instance = wizard(screen)
-        assert "wallpapers" not in instance.selected, "Setup downloads wallpapers without opting in"
-        assert instance.run() == 0
+        assert instance.selected == {"input", "audio", "cava", "wlsunset", "fish", "themes", "login", "wallpapers"}
+        try:
+            instance.run()
+            raise AssertionError("Escape did not cancel setup")
+        except KeyboardInterrupt:
+            pass
         assert "input" not in instance.selected and "themes" not in instance.selected
         assert instance.backup is False, "Editing lost the backup choice"
         assert any("Packages" in frame for frame in screen.frames)
@@ -65,7 +69,8 @@ def ui_checks(base):
         assert all("> " not in frame for frame in screen.frames)
         assert no.lines[3].index("fresh install") == 16, "Version info stretched across the terminal"
         assert no.lines[9].strip() == "Choose optional programs and configs."
-        for page, keys in ((1, API["OPTIONS"][:4]), (2, API["OPTIONS"][4:])):
+        for page, section in enumerate(API["SECTIONS"], start=1):
+            keys = [option["id"] for option in API["INSTALL_OPTIONS"] if option["section"] == section]
             descriptions = Screen((*["j"] * len(keys), "\x1b"))
             instance = wizard(descriptions)
             instance.navigate(page)
@@ -75,16 +80,22 @@ def ui_checks(base):
             except KeyboardInterrupt:
                 pass
             for key in keys:
-                assert API["DESCRIPTIONS"][key] in " ".join(descriptions.frames)
-        short = Screen(("j", "j", "\n"), height=24, width=60)
+                assert API["DESCRIPTIONS"][key] in " ".join(" ".join(descriptions.frames).split())
+        short = Screen(("\x1b",), height=24, width=60)
         instance = wizard(short)
         instance.selected = set(API["OPTIONS"])
         instance.plan = API["make_plan"](instance.selected, family="arch")
         instance.pending = ["fixture"]
-        instance.navigate(4)
-        assert instance.run() == 0
+        instance.navigate(5)
+        try:
+            instance.run()
+            raise AssertionError("Escape did not cancel setup")
+        except KeyboardInterrupt:
+            pass
+        assert "Cancel" not in short.frames[0]
+        assert short.frames[0].index("Updates the system") < short.frames[0].index("Installs")
         for label in API["LABELS"].values():
-            assert label in short.frames[0], (label, short.frames[0])
+            assert label in " ".join(short.frames[0].replace("- ", "").split()), (label, short.frames[0])
 
         class CompletionScreen(Screen):
             def get_wch(self):
@@ -224,7 +235,7 @@ def plan_checks(base):
         plan = API["make_plan"](API["OPTIONS"], False, family)
         assert len(plan["packages"]) == len(set(plan["packages"]))
         assert not set(plan["packages"]) & set(plan["appearance_packages"])
-        assert "fish" in plan["packages"] and plan["configs"] == ["gtk-3.0", "gtk-4.0"]
+        assert "fish" in plan["appearance_packages"] and plan["configs"] == ["gtk-3.0", "gtk-4.0"]
         assert any("noto" in name for name in plan["appearance_packages"])
         assert not any("papirus" in name for name in plan["appearance_packages"])
         path = base / (family + ".json")
@@ -462,6 +473,8 @@ def terminal_checks(base):
     shutil.copy2(ROOT / "scripts/bloodyShell", package / "scripts/bloodyShell")
     for name in ("version", "shell.qml"):
         shutil.copy2(ROOT / name, package / name)
+    (package / "assets").mkdir()
+    shutil.copy2(ROOT / "assets/packages.json", package / "assets/packages.json")
     (package / "dots/niri").mkdir(parents=True)
     shutil.copy2(ROOT / "dots/niri/config.kdl", package / "dots/niri/config.kdl")
     with (package / "scripts/lib/management.py").open("a") as output:
@@ -514,6 +527,7 @@ sys.exit(1)
         fcntl.ioctl(terminal.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 90, 0, 0))
         os.kill(terminal.process.pid, signal.SIGWINCH)
         terminal.wait("Input tools")
+        terminal.send("\n");terminal.wait("night light")
         terminal.send("\n");terminal.wait("Fonts and Themes")
         terminal.send("\n");terminal.wait("Back up your current config files?")
         terminal.send("\n");terminal.wait("Installs")
@@ -521,8 +535,8 @@ sys.exit(1)
     terminal = Terminal(["bash", str(package / "setup")], env)
     try:
         reach_ready(terminal)
-        terminal.send("jj\n")
-        assert terminal.finish() == 0
+        terminal.send("\x1b")
+        assert terminal.finish() == 130
         assert not (base / "stages").exists() and not (base / "authenticated").exists()
     except BaseException:
         terminal.close(); raise
@@ -533,8 +547,8 @@ sys.exit(1)
             terminal.send("\n");terminal.wait("Password: ")
             if mode == "back":
                 terminal.send("\x03");terminal.wait("Ready")
-                terminal.send("jj\n")
-                expected = 0
+                terminal.send("\x1b")
+                expected = 130
             else:
                 terminal.process.terminate()
                 expected = 143

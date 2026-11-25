@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 
 import "../../../animations"
+import "../../../common"
 import "../../../core"
 
 Item
@@ -16,27 +17,14 @@ Item
     property var    widgets: []
     property string align: "start"
 
-    property bool docked: true
     property bool adaptive: false
-    property bool detached: false
+    property bool attachedMenu: false
     readonly property real contentThickness: row.slots.reduce((thickness, slot) => Math.max(thickness, slot && slot.shown ? slot.crossSize : 0), 0)
     readonly property Item singleWidget: row.slots.length === 1 && row.slots[0] ? row.slots[0].widget : null
     property real thickness: Theme.barThickness
-    property real band: thickness
-    property real stripDepth: 0
-    property real stripInset: 0
-    readonly property bool stripFloats: docked && stripDepth > 0
     property real islandDepth: 0
     property real cornerInset: 0
     property bool revealed: true
-
-    property real edgeMin: 0
-    property real edgeMax: total
-    property real snapMin: 0
-    property real snapMax: total
-    property bool extendSnapped: false
-
-    property real smoothing: Theme.barRadius
 
     property alias panel: panel
 
@@ -48,6 +36,11 @@ Item
 
     readonly property real pad: Theme.barPadding
     readonly property real total: isHorizontal ? width : height
+    readonly property real edgeInset: Theme.frameThickness + Theme.panelGap
+    readonly property real horizontalPadding: isHorizontal ? Theme.menuPadding * 2 : 0
+    readonly property real availableAlong: Math.max(0, total - 2 * edgeInset)
+    readonly property real availableDepth: Math.max(0, (isHorizontal ? height : width) - edgeInset
+        - (attachedMenu ? islandDepth : menuNear))
 
     function toRect(a0, a1, d0, d1)
     {
@@ -60,22 +53,21 @@ Item
         }
     }
     function mix(a, b, t) { return a + (b - a) * t }
-    function inset(lo, hi, by) { return hi - lo > by * 2 ? [lo + by, hi - by] : [(lo + hi) / 2, (lo + hi) / 2] }
 
     readonly property real rowAlong: isHorizontal ? row.width : row.height
     readonly property bool hasWidgets: rowAlong > 0.5
 
     readonly property real rowStart:
     {
-        const lo = docked ? stripInset + pad : cornerInset + pad;
-        const hi = docked ? total - stripInset - pad : total - cornerInset - pad;
+        const lo = cornerInset + pad;
+        const hi = total - cornerInset - pad;
         if (align === "start") return Math.round(lo);
         if (align === "end") return Math.round(hi - rowAlong);
         return Math.round((total - rowAlong) / 2);
     }
     readonly property real rowMid: rowStart + rowAlong / 2
 
-    readonly property real rowCenter: docked ? band - thickness / 2 : islandDepth + thickness / 2
+    readonly property real rowCenter: islandDepth + thickness / 2
 
     readonly property real islandAlong: hasWidgets ? rowAlong + pad * 2 * (adaptive ? Math.min(1, thickness / Theme.barThickness) : 1) : 0
     readonly property real islandThick: thickness
@@ -83,7 +75,7 @@ Item
                                    : align === "end" ? total - cornerInset - islandAlong
                                    : (total - islandAlong) / 2
     readonly property real islandA1: islandA0 + islandAlong
-    readonly property rect islandRect: !docked && islandAlong > 0.5
+    readonly property rect islandRect: islandAlong > 0.5
         ? toRect(islandA0, islandA1, islandDepth, islandDepth + islandThick) : Qt.rect(0, 0, 0, 0)
 
     readonly property bool open: visibleMenu
@@ -93,8 +85,6 @@ Item
 
     property real fullAlong: 0
     property real fullOut: 0
-
-    property bool floating: false
 
     readonly property real anchorCenter:
     {
@@ -125,119 +115,67 @@ Item
     {
         if (wantAlong > 0 && wantOut > 0)
         {
-            fullAlong = wantAlong + (isHorizontal ? 20 : 0);
+            fullAlong = wantAlong + horizontalPadding;
             fullOut = wantOut;
         }
-        if (!open) return;
-
-        floating = Config.barMenu === Enums.MenuFloating;
-    }
-    Connections
-    {
-        target: MenuState
-        function onMenuWidgetChanged() { barZone.refreshPanel() }
     }
 
-    readonly property real wantStart:
-    {
-        const ideal = anchorCenter - fullAlong / 2;
+    function fitStart(start, span) { return Math.max(edgeInset, Math.min(total - edgeInset - span, start)) }
 
-        if (floating)
-        {
-            const lo = extendSnapped ? snapMin + floatGap : edgeMin;
-            const hi = extendSnapped ? snapMax - floatGap - fullAlong : edgeMax - fullAlong;
-            return Math.round(Math.max(lo, Math.min(hi, ideal)));
-        }
-
-        if (menu.centerOnWidget)
-            return Math.round(Math.max(edgeMin, Math.min(edgeMax - fullAlong, ideal)));
-
-        const lo = edgeMin + smoothing;
-        const hi = edgeMax - smoothing - fullAlong;
-
-        if (ideal < lo) return snapMin;
-        if (ideal > hi) return Math.round(snapMax - fullAlong);
-
-        if (stripFloats || (!docked && hasWidgets))
-        {
-            const near = smoothing * 2;
-            const a0 = stripFloats ? stripInset : islandA0;
-            const a1 = stripFloats ? total - stripInset : islandA1;
-            const start = Math.abs(ideal - a0) < near ? a0
-                        : Math.abs(ideal + fullAlong - a1) < near ? a1 - fullAlong
-                        : ideal;
-            return Math.round(Math.max(lo, Math.min(hi, start)));
-        }
-        return Math.round(ideal);
-    }
+    readonly property real wantStart: fitStart(anchorCenter - fullAlong / 2, fullAlong)
     property real panelStart: 0
+    property real panelAnchor: 0
     onWantStartChanged: if (open || progress < 0.001) panelStart = wantStart
-    Glide on panelStart { enabled: barZone.animated && barZone.progress > 0.001 }
+    onAnchorCenterChanged: if (open) panelAnchor = anchorCenter
+    Glide on panelStart { enabled: barZone.animated && barZone.progress > 0.001 && (barZone.isHorizontal || !menu.contentAnimatesHeight) }
     onWantAlongChanged: refreshPanel()
     onWantOutChanged: refreshPanel()
-    onOpenChanged: refreshPanel()
+    onOpenChanged:
+    {
+        if (open)
+        {
+            panelAnchor = anchorCenter;
+            panelStart = wantStart;
+        }
+        refreshPanel();
+    }
 
     property real panelAlong: fullAlong
     property real panelOut: fullOut
 
-    Glide on panelOut { enabled: barZone.animated && barZone.progress > 0.001 }
+    // An inline expansion already changes the content height on every animation frame.
+    Glide on panelOut { enabled: barZone.animated && barZone.progress > 0.001 && (!barZone.isHorizontal || !menu.contentAnimatesHeight) }
 
-    Glide on panelAlong { enabled: barZone.animated && barZone.progress > 0.001 }
+    Glide on panelAlong { enabled: barZone.animated && barZone.progress > 0.001 && (barZone.isHorizontal || !menu.contentAnimatesHeight) }
 
-    property real progress: open && wantOut > 0 ? 1 : 0
-    Glide on progress { enabled: barZone.animated }
+    readonly property real progress: reveal.progress
 
-    readonly property real baseOuter: docked ? band : hasWidgets ? islandDepth + islandThick : islandDepth
+    EdgeReveal
+    {
+        id: reveal
+        opened: barZone.open && barZone.wantAlong > 0 && barZone.wantOut > 0
+        animated: barZone.animated
+    }
 
-    readonly property real panelEnd: panelStart + panelAlong
-    readonly property bool snappedStart: extendSnapped && !floating && panelStart <= snapMin + 0.5
-    readonly property bool snappedEnd: extendSnapped && !floating && panelEnd >= snapMax - 0.5
-
-    readonly property real baseA0: docked ? panelStart : Math.max(panelStart, hasWidgets ? islandA0 : anchorCenter)
-    readonly property real baseA1: docked ? panelEnd   : Math.min(panelEnd,   hasWidgets ? islandA1 : anchorCenter)
-
-    readonly property real floatGap: 10
-    readonly property real floatSmoothing: floatGap / 2 - 1
-
-    readonly property var closedAlong: inset(baseA0, Math.max(baseA0, baseA1), smoothing)
-    readonly property var closedDepth: stripFloats ? inset(stripDepth, band, smoothing)
-                                     : docked ? [-100, band - smoothing]
-                                     : hasWidgets ? inset(islandDepth, islandDepth + islandThick, smoothing)
-                                     : [islandDepth - smoothing, islandDepth]
-    readonly property real openA0: snappedStart ? -100 : panelStart
-    readonly property real openA1: snappedEnd ? total + 100 : panelEnd
-
-    readonly property real openD0: floating ? baseOuter + floatGap : docked && !stripFloats ? -100 : baseOuter - 1
-    readonly property real openD1: floating ? baseOuter + floatGap + panelOut : baseOuter + panelOut
-
-    readonly property real shapeA0: mix(closedAlong[0], openA0, progress)
-    readonly property real shapeA1: mix(closedAlong[1], openA1, progress)
-    readonly property real shapeD0: mix(closedDepth[0], openD0, progress)
-    readonly property real shapeD1: mix(closedDepth[1], openD1, progress)
-
-    readonly property real visibleD0: floating ? Math.max(baseOuter, shapeD0) : baseOuter
-    readonly property real depth: Math.max(0, shapeD1 - visibleD0)
-    readonly property real visibleA0: mix(closedAlong[0], panelStart, progress)
-    readonly property real visibleA1: mix(closedAlong[1], panelEnd, progress)
-
-    readonly property rect blob: progress > 0 && panelAlong >= 1 ? toRect(shapeA0, shapeA1, shapeD0, shapeD1) : Qt.rect(0, 0, 0, 0)
+    readonly property real baseOuter: islandDepth + thickness
+    readonly property real menuNear: baseOuter + (attachedMenu ? 0 : Theme.panelGap)
+    readonly property real menuDepth: Math.min(panelOut, availableDepth) * progress
+    readonly property real panelSpan: Math.min(panelAlong, availableAlong)
+    readonly property real fittedStart: fitStart(panelStart, panelSpan)
+    readonly property real panelEnd: fittedStart + panelSpan
+    readonly property real anchorStart: attachedMenu ? Math.max(islandA0, Math.min(islandA1, fittedStart))
+        : Math.min(panelEnd, Math.max(fittedStart, panelAnchor - pad))
+    readonly property real anchorEnd: attachedMenu ? Math.max(anchorStart, Math.min(islandA1, panelEnd))
+        : Math.max(anchorStart, Math.min(panelEnd, panelAnchor + pad))
+    readonly property real visibleA0: mix(anchorStart, fittedStart, progress)
+    readonly property real visibleA1: mix(anchorEnd, panelEnd, progress)
+    readonly property rect attachedMenuRect: attachedMenu && progress > 0 && visibleA1 > visibleA0 && menuDepth > 0
+        ? toRect(visibleA0, visibleA1, islandDepth, menuNear + menuDepth) : Qt.rect(0, 0, 0, 0)
 
     property bool ready: false
 
     Component.onCompleted: Qt.callLater(function() { barZone.ready = true })
     Component.onDestruction: if (MenuState.menuOwner === barZone) MenuState.close()
-
-    Rectangle
-    {
-        objectName: "barIslandSurface"
-        x: barZone.islandRect.x
-        y: barZone.islandRect.y
-        width: barZone.islandRect.width
-        height: barZone.islandRect.height
-        radius: Theme.barRadius
-        color: Theme.frameColor
-        visible: barZone.detached && width > 0 && height > 0
-    }
 
     WidgetRow
     {
@@ -267,17 +205,26 @@ Item
         else hideFade.start();
     }
 
+    FloatingPanelSurface
+    {
+        anchors.fill: panel
+        z: -1
+        visible: !barZone.attachedMenu && panel.visible
+        reveal: barZone.progress
+    }
+
     Item
     {
         id: panel
 
-        readonly property rect area: barZone.toRect(barZone.visibleA0, Math.max(barZone.visibleA0, barZone.visibleA1), barZone.visibleD0, barZone.visibleD0 + barZone.depth)
+        readonly property rect area: barZone.toRect(barZone.visibleA0, barZone.visibleA1, barZone.menuNear, barZone.menuNear + barZone.menuDepth)
 
         x: area.x
         y: area.y
         width: area.width
         height: area.height
-        visible: barZone.depth > 1 && width > 1 && height > 1
+        visible: width > 1 && height > 1
+        enabled: barZone.open
 
         clip: true
 
@@ -292,6 +239,8 @@ Item
 
             width: panel.width
             height: panel.height
+            maximumWidth: barZone.isHorizontal ? Math.max(0, barZone.availableAlong - barZone.horizontalPadding) : barZone.availableDepth
+            maximumHeight: barZone.isHorizontal ? barZone.availableDepth : barZone.availableAlong
 
             side: barZone.side
             origin: panel.alongStart
@@ -299,6 +248,7 @@ Item
 
             active: barZone.visibleMenu
             menu: MenuState.menuCurrent
+            revealOpacity: reveal.contentOpacity
         }
     }
 }

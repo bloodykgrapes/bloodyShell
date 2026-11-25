@@ -44,7 +44,7 @@ Item
             }
         }
         let rect = content.bodies[index];
-        if (rect.width > 0 && rect.height > 0)
+        if (inFrame && rect.width > 0 && rect.height > 0)
         {
             if (isHorizontal && index === 0) rect = Qt.rect(0, rect.y, rect.x + rect.width, rect.height);
             else if (isHorizontal && index === 2) rect = Qt.rect(rect.x, rect.y, width - rect.x, rect.height);
@@ -53,7 +53,6 @@ Item
         }
         return translated(rect);
     }
-    function panelRect(index) { return translated(content.panels[index]) }
     function translated(rect) { return Qt.rect(rect.x + stage.x, rect.y + stage.y, rect.width, rect.height) }
     function overBand(point)
     {
@@ -95,7 +94,7 @@ Item
     {
         for (const item of [content.panel0, content.panel2])
         {
-            if (!item.visible || item.width <= 0 || item.height <= 0) continue;
+            if (!item.enabled || !item.visible) continue;
             const local = stage.mapToItem(item, point.x, point.y);
             if (local.x >= 0 && local.y >= 0 && local.x < item.width && local.y < item.height) return true;
         }
@@ -105,8 +104,8 @@ Item
     Region
     {
         id: barInput
-        Region { item: content.panel0 }
-        Region { item: content.panel2 }
+        Region { item: content.panel0.enabled && content.panel0.visible ? content.panel0 : null }
+        Region { item: content.panel2.enabled && content.panel2.visible ? content.panel2 : null }
         Region { item: sidebarArea }
         Region { item: trigger }
     }
@@ -144,17 +143,9 @@ Item
             width: bar.isHorizontal ? bar.width : bar.reserve
             height: bar.isHorizontal ? bar.reserve : bar.height
             cursorShape: Qt.PointingHandCursor
-            property real wheelRest: 0
             onClicked: mouse =>
             {
                 if (bar.screen) SidebarState.toggle(bar.sidebarAt(mapToItem(stage, mouse.x, mouse.y)), bar.screen.name);
-            }
-            onWheel: wheel =>
-            {
-                wheelRest += wheel.angleDelta.y;
-                const steps = Math.trunc(wheelRest / 120);
-                wheelRest -= steps * 120;
-                if (steps) ServiceAudio.changeVolume(steps * 0.05);
             }
         }
 

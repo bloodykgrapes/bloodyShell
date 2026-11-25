@@ -1,0 +1,56 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// 06 ─ Input
+// ─────────────────────────────────────────────────────────────────────────────
+// Docs: https://niri-wm.github.io/niri/Configuration:-Input
+//
+// Keyboard, mouse and touchpad settings.
+// ─────────────────────────────────────────────────────────────────────────────
+
+input {
+    keyboard {
+        xkb {
+            layout "us"
+            options "grp:alt_shift_toggle"
+        }
+
+        repeat-delay 350
+        repeat-rate 35
+        track-layout "global"
+
+        numlock
+    }
+
+    mouse {
+        accel-speed 0.0
+        accel-profile "flat"
+
+        scroll-factor 1.0
+        scroll-method "on-button-down"
+    }
+
+    touchpad {
+        tap
+        tap-button-map "left-right-middle"
+
+        natural-scroll
+        middle-emulation
+
+        accel-speed 0.2
+        accel-profile "flat"
+
+        scroll-factor horizontal=0.6 vertical=0.6
+        scroll-method "two-finger"
+
+        click-method "button-areas"
+
+        // disabled-on-external-mouse
+    }
+
+    // warp-mouse-to-focus
+    // focus-follows-mouse
+
+    // workspace-auto-back-and-forth
+
+    mod-key "Super"
+    mod-key-nested "Alt"
+}

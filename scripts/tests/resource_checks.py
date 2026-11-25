@@ -427,17 +427,18 @@ def backend_checks():
         directory.mkdir(parents=True)
         main=directory.parent / "config.kdl"
         main.write_text("// User config\n")
-        entry=directory / "06-user-input.kdl"
+        entry=directory / "08-settings.kdl"
         entry.write_text("// User input\n")
         def command(*args,success=True):
             result=subprocess.run([sys.executable,str(ROOT / "scripts/bloodyShell"),*args],env=env,capture_output=True,text=True,timeout=6)
             assert (result.returncode==0)==success,result.stdout+result.stderr
             return result
-        command("internal","compositor","config","niri","write",entry.name,"// Updated input")
+        command("internal","compositor","config","niri","outputs",'output "HDMI-A-1" { scale 1.0; }')
         before=main.read_bytes()
+        before_entry=entry.read_bytes()
         niri.write_text("#!/bin/sh\nexit 1\n")
-        command("internal","compositor","config","niri","write","07-user-output.kdl","invalid",success=False)
-        assert main.read_bytes()==before and not (directory / "07-user-output.kdl").exists(),"Rejected config did not roll back"
+        command("internal","compositor","config","niri","outputs",'output "HDMI-A-1" { scale 2.0; }',success=False)
+        assert main.read_bytes()==before and entry.read_bytes()==before_entry,"Rejected config did not roll back"
         assert not list((base / "state").iterdir()),"Backend edit created persistent tracking"
         for removed in ("footprint","cleanup","restore"):
             assert "Unknown command" in command(removed,success=False).stderr

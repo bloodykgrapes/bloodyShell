@@ -6,17 +6,20 @@ Rectangle
 
     required property var host
     readonly property var colors: host.colors
+    property string iconName: ""
     property string text: ""
     property string description: text
     property bool checked: false
     property bool accent: false
     property bool repeatable: false
+    property bool doubleActivatable: false
     property bool animations: host.animations
     property bool fluid: host.fluid
     property string family: host.family
     property int textSize: host.width < 600 ? 14 : 17
     readonly property color onAccentColor: colors.onAccent
     signal activated(bool repeated)
+    signal doubleActivated()
 
     implicitHeight: 46
     height: host.keyHeight
@@ -43,8 +46,21 @@ Rectangle
         Behavior on opacity { enabled: key.animations; NumberAnimation { duration: 140; easing.type: Easing.InOutSine } }
     }
 
+    KeyIcon
+    {
+        objectName: "virtualKeyIcon"
+        anchors.centerIn: parent
+        width: Math.min(22, key.height * 0.5)
+        height: width
+        visible: key.iconName !== ""
+        name: key.iconName
+        color: key.checked || key.accent ? key.colors.onAccent : key.colors.text
+        Behavior on color { enabled: key.animations; ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+    }
+
     Text
     {
+        visible: key.iconName === ""
         anchors { fill: parent; margins: 3 }
         text: key.text
         font.family: key.family
@@ -64,7 +80,7 @@ Rectangle
         hoverEnabled: true
         preventStealing: true
         cursorShape: Qt.PointingHandCursor
-        onDoubleClicked: { key.activated(false); if (key.repeatable) delay.restart(); }
+        onDoubleClicked: { if (key.doubleActivatable) key.doubleActivated(); else key.activated(false); if (key.repeatable) delay.restart(); }
         onPressed: if (key.repeatable) { key.activated(false); delay.restart(); }
         onClicked: if (!key.repeatable) key.activated(false)
         onReleased: { delay.stop(); repeat.stop(); }

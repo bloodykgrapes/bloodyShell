@@ -12,14 +12,12 @@ Common.InteractiveControl
     property bool checked: false
     property real inset: 3
     property real thumbStretch: 5
-    property real thumbBorderWidth: 1
     property real pressScale: 0.97
     property real hoverScale: 1.06
     property real disabledOpacity: 0.4
     property color uncheckedColor: Theme.tinted(Theme.light ? "#85858d" : "#515158", 0.10)
-    property color checkedThumbColor: Theme.onAccent
+    property color checkedThumbColor: Theme.accentForeground
     property color uncheckedThumbColor: "#ffffff"
-    property color thumbBorderColor: Qt.rgba(0, 0, 0, 0.14)
 
     readonly property bool pressed: enabled && area.pressed
     readonly property bool highlighted: enabled && (hovered || visualFocus)
@@ -60,8 +58,6 @@ Common.InteractiveControl
             height: Math.max(0, parent.height - toggle.inset * 2)
             radius: height / 2
             color: toggle.checked ? toggle.checkedThumbColor : toggle.uncheckedThumbColor
-            border.width: toggle.thumbBorderWidth
-            border.color: toggle.thumbBorderColor
             Tint on color { duration: Theme.animationDurationControl }
         }
     }

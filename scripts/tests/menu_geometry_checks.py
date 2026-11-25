@@ -20,6 +20,7 @@ with tempfile.TemporaryDirectory(prefix="bloodyshell-menu-geometry-") as tempora
     (base / "common").mkdir()
     for name in ("Menu", "RevealSection", "RenderActivity"):
         shutil.copyfile(ROOT / f"modules/common/{name}.qml", base / f"common/{name}.qml")
+    put(base, "common/FloatingPanelSurface.qml", 'import QtQuick\nItem { property real reveal: 1 }\n')
     (base / "ui/bar/components").mkdir(parents=True)
     for name in ("BarZone", "BarMenu", "MenuSlot", "WidgetRow", "WidgetSlot"):
         shutil.copyfile(ROOT / f"modules/ui/bar/components/{name}.qml", base / f"ui/bar/components/{name}.qml")
@@ -28,15 +29,18 @@ with tempfile.TemporaryDirectory(prefix="bloodyshell-menu-geometry-") as tempora
     property bool debug: false
     property int mode: 0
     property int barSide: 0
-    property int barMenu: 1
     readonly property bool animationsEnabled: mode > 0
     readonly property bool animationsFluid: mode === 2
 ''')
     stub(base, "core", "Theme", '''
     property color frameColor: "#000000"
+    property int panelBorderWidth: 1
+    property color colorPanelEdge: "#29ffffff"
     property int barPadding: 8
     property int barThickness: 44
     property int barRadius: 22
+    property int frameThickness: 8
+    property int panelGap: 10
     property int barSpacing: 6
     property int barVerticalWidth: 44
     property int barGroupThickness: 32
@@ -67,12 +71,14 @@ Item
     module(base, "core")
     put(base, "ResizeMenu.qml", '''import QtQuick
 import "common"
+import "animations"
+import "core"
 Menu
 {
     id: menu
-    centerOnWidget: true
     implicitWidth: 68
     implicitHeight: 68
+    Glide on implicitHeight { enabled: menu.contentAnimatesHeight && Config.animationsEnabled }
     readonly property alias firstSection: first
     readonly property alias lastSection: last
     RevealSection { id: first; shown: menu.presented; order: 0; Item { width: parent.width; height: 16 } }
@@ -113,8 +119,8 @@ ShellRoot
     }
     function verify(centered = false)
     {
-        const edge = zone.baseOuter + (zone.floating ? zone.floatGap : 0);
-        check(Math.abs(nearEdge(zone.blob) - edge + (zone.floating ? 0 : 1)) < 0.01, "Menu background moved away from its edge during resize");
+        const edge = zone.baseOuter + (zone.attachedMenu ? 0 : Theme.panelGap);
+        verifyAttachment();
         check(Math.abs(nearEdge(zone.panel.area) - edge) < 0.01, "Menu clip moved away from its edge during resize");
         const point = content.mapToItem(zone,
             zone.isHorizontal ? content.width / 2 : zone.isRight ? content.width : 0,
@@ -123,14 +129,29 @@ ShellRoot
             : zone.isRight ? zone.width - point.x : point.x;
         check(Math.abs(distance - edge) < 0.01, "Menu content moved away from its anchor during resize");
         const center = content.mapToItem(zone, content.width / 2, content.height / 2);
-        const offset = (zone.isHorizontal ? center.x : center.y) - zone.anchorCenter;
-        if (centered) check(Math.abs(offset) < 1, "Centered menu shifted by " + offset + " with anchor=" + zone.anchorCenter + " size=" + zone.fullAlong);
+        const expected = Math.max(zone.edgeInset + zone.fullAlong / 2,
+            Math.min(zone.total - zone.edgeInset - zone.fullAlong / 2, zone.anchorCenter));
+        const offset = (zone.isHorizontal ? center.x : center.y) - expected;
+        if (centered) check(Math.abs(offset) < 1, "Menu moved farther than needed to fit: " + offset);
         if (centered && !zone.isHorizontal)
         {
             check(Math.abs(zone.panel.width - content.width) < 0.01, "Vertical menu background is wider than its content");
             check(Math.abs(zone.panel.height - content.height) < 0.01, "Vertical menu background is taller than its content");
         }
         samples++;
+    }
+    function verifyAttachment()
+    {
+        const surface = zone.attachedMenu ? zone.attachedMenuRect : zone.panel.area;
+        if (surface.width <= 0 || surface.height <= 0) return;
+        const expected = zone.attachedMenu ? zone.islandDepth : zone.baseOuter + Theme.panelGap;
+        check(Math.abs(nearEdge(surface) - expected) < 0.01, "Menu surface does not match its attachment or gap");
+        const span = zone.isHorizontal ? surface.width : surface.height;
+        const along = zone.isHorizontal ? surface.x : surface.y;
+        if (zone.attachedMenu) check(along + span > zone.islandA0 && along < zone.islandA1, "Menu lost contact with its parent section");
+        else check(along >= zone.edgeInset - 0.01 && along + span <= zone.total - zone.edgeInset + 0.01, "Floating menu crossed the frame gap");
+        check(Math.abs((zone.isHorizontal ? surface.height : surface.width) + nearEdge(surface) - zone.menuNear - zone.menuDepth) < 0.01,
+            "Menu content and surface reveal at different depths");
     }
     function advance()
     {
@@ -145,15 +166,10 @@ ShellRoot
             id: zone
             anchors.fill: parent
             side: Config.barSide
-            docked: false
             align: "end"
             cornerInset: 20
             widgets: ["fixture"]
             islandDepth: 8
-            edgeMin: 20
-            edgeMax: total - 20
-            snapMin: edgeMin
-            snapMax: edgeMax
         }
         Item
         {
@@ -171,6 +187,7 @@ ShellRoot
             try
             {
                 const elapsed = Date.now() - tests.since;
+                if (tests.phase > 0) tests.verifyAttachment();
                 if (tests.phase === 0)
                 {
                     tests.trial++;
@@ -180,7 +197,7 @@ ShellRoot
                         console.log("MENU_GEOMETRY_PASSED", tests.samples, "frames"); Qt.quit(); return;
                     }
                     Config.mode = Math.floor((tests.trial % 12) / 4);
-                    Config.barMenu = tests.trial < 12 ? 0 : 1;
+                    zone.attachedMenu = tests.trial >= 12;
                     Config.barSide = tests.trial % 4;
                     tests.phase = -1;
                     tests.since = Date.now();
@@ -194,7 +211,7 @@ ShellRoot
                     tests.phase = 1;
                     tests.since = Date.now();
                 }
-                else if (tests.phase === 1 && elapsed > 200)
+                else if (tests.phase === 1 && elapsed > 160 && zone.progress === 1)
                 {
                     const view = zone.panel.children.find(item => item.front !== undefined);
                     tests.content = view.front.item;
@@ -209,16 +226,34 @@ ShellRoot
                 else if (tests.phase >= 2 && tests.phase <= 4)
                 {
                     tests.verify(elapsed > 160);
+                    if (tests.phase === 3)
+                    {
+                        tests.check(Math.abs(zone.panel.height - tests.content.height) < 0.01,
+                            "Menu surface lags behind its own animated content height");
+                    }
                     if (elapsed < 200) return;
-                    if (tests.phase === 2) tests.content.implicitHeight = 100;
-                    else if (tests.phase === 3) tests.content.implicitWidth = 340;
+                    if (tests.phase === 2)
+                    {
+                        tests.content.contentAnimatesHeight = true;
+                        tests.content.implicitHeight = 100;
+                    }
+                    else if (tests.phase === 3)
+                    {
+                        tests.content.contentAnimatesHeight = false;
+                        tests.content.implicitWidth = 340;
+                    }
                     else { MenuState.close(); tests.advance(); return; }
                     tests.advance();
                 }
-                else if (tests.phase === 5 && elapsed > 110)
+                else if (tests.phase === 5 && elapsed > 75)
                 {
-                    tests.check(!tests.content.presented && tests.content.firstSection.reveal === 0, "Closing a menu left its sections revealed");
+                    tests.check(!zone.panel.enabled, "Closing menu still accepts input");
+                    if (Config.animationsEnabled)
+                        tests.check(zone.progress > 0 && zone.progress < 1 && tests.content.presented, "Menu content disappeared before the surface retracted");
+                    else tests.check(zone.progress === 0 && !tests.content.presented, "Animations-off delayed menu close");
+                    const progress = zone.progress;
                     MenuState.menuActive = true;
+                    if (Config.animationsEnabled) tests.check(zone.progress === progress, "Rapid reopen jumped to another size");
                     tests.advance();
                 }
                 else if (tests.phase === 6 && elapsed > 200)
@@ -238,11 +273,19 @@ ShellRoot
                     tests.verify(elapsed > 220);
                     if (elapsed < 250) return;
                     if (tests.phase === 7) tests.slot.widget.along = 140;
-                    else MenuState.close();
+                    else tests.content.implicitHeight = 1100;
                     tests.advance();
                 }
-                else if (tests.phase === 9 && elapsed > 360)
+                else if (tests.phase === 9 && elapsed > 220)
                 {
+                    const view = zone.panel.children.find(item => item.front !== undefined);
+                    tests.check(view.front.interactive && view.front.contentHeight > view.front.height, "Oversized menu did not get a scrolling viewport");
+                    MenuState.close();
+                    tests.advance();
+                }
+                else if (tests.phase === 10 && elapsed > 360)
+                {
+                    tests.check(zone.progress === 0 && zone.attachedMenuRect.width === 0 && !zone.panel.visible, "Closing animation left a menu surface behind");
                     tests.slot.widget.along = 300;
                     zone.align = "end";
                     tests.phase = 0;
@@ -262,4 +305,4 @@ ShellRoot
     assert result.returncode == 0 and "MENU_GEOMETRY_PASSED" in output, "Menu geometry checks failed"
     assert not re.search(r"MENU_GEOMETRY_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign", output), "Menu geometry QML error"
 
-print("Menus followed growing and shrinking islands; compact menus stayed centered on their widget; Default/Floating edges stayed fixed while resizing and reopening on all four edges and animation modes.")
+print("Attached and floating menus kept their geometry on all four edges through opening, resizing, scrolling, and rapid reopening.")

@@ -1,8 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell.Widgets
-
 import "../core"
 
 Item
@@ -14,8 +12,9 @@ Item
     property point origin: Qt.point(0, 0)
     property color color: Theme.colorSolid
     property real radius: Theme.radiusLarge
-    property real borderWidth: 1
+    property real borderWidth: Theme.panelBorderWidth
     property color borderColor: Theme.colorPanelEdge
+    property bool useSurfaceMaterial: true
 
     readonly property real amount: Math.max(0, Math.min(1, progress))
     readonly property real anchorX: Math.max(0, Math.min(1, origin.x))
@@ -26,9 +25,9 @@ Item
 
     opacity: amount
 
-    SurfaceShadow { surface: panel; cornerRadius: menuReveal.radius }
+    SurfaceShadow { surface: panel; cornerRadius: menuReveal.radius; frosted: panel.materialSurface.frosted }
 
-    ClippingRectangle
+    RoundedShellSurface
     {
         id: panel
         objectName: "menuRevealPanel"
@@ -36,12 +35,11 @@ Item
         y: (menuReveal.height - height) * menuReveal.anchorY
         width: menuReveal.revealWidth
         height: menuReveal.revealHeight
-        clip: true
-        contentInsideBorder: false
-        color: menuReveal.color
+        baseColor: menuReveal.color
         radius: menuReveal.radius
         border.width: menuReveal.borderWidth
         border.color: menuReveal.borderColor
+        materialEnabled: menuReveal.useSurfaceMaterial && menuReveal.amount > 0.01
 
         Item
         {

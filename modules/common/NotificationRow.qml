@@ -16,6 +16,8 @@ Common.InteractiveControl
 
     property bool entering: false
     property int  order: 0
+    property bool grouped: false
+    property bool swipeToDismiss: true
 
     signal activated()
 
@@ -25,7 +27,7 @@ Common.InteractiveControl
     property bool leaving: false
 
     width: parent ? parent.width : 300
-    implicitHeight: Math.max(56, content.implicitHeight + 24)
+    implicitHeight: Math.max(grouped ? 48 : 56, content.implicitHeight + (grouped ? 20 : 24))
     activeFocusOnTab: !leaving
     enabled: !leaving
 
@@ -102,7 +104,7 @@ Common.InteractiveControl
         hoverEnabled: true
         cursorShape: drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor
 
-        drag.target: card
+        drag.target: notificationRow.swipeToDismiss ? card : null
         drag.axis: Drag.XAxis
         drag.threshold: 8
         drag.minimumX: -notificationRow.width
@@ -137,10 +139,9 @@ Common.InteractiveControl
         Rectangle
         {
             anchors.fill: parent
-            radius: notificationRow.highlighted && Config.animationsFluid ? 14 : 18
-            border.width: 1
-            border.color: Theme.colorHairline
-            color: notificationRow.critical ? Qt.tint(Theme.colorField, Qt.rgba(Theme.colorCritical.r, Theme.colorCritical.g, Theme.colorCritical.b, 0.08)) : Theme.colorField
+            radius: Theme.controlRadius
+            color: notificationRow.critical ? Qt.tint(Theme.controlColorBackground, Qt.rgba(Theme.colorCritical.r, Theme.colorCritical.g, Theme.colorCritical.b, 0.08))
+                : notificationRow.grouped ? "transparent" : Theme.controlColorBackground
             opacity: card.fade
             Tint on color {}
             Glide on radius { duration: Theme.animationDurationControl }
@@ -149,11 +150,21 @@ Common.InteractiveControl
             {
                 anchors.fill: parent
                 radius: parent.radius
-                color: area.pressed ? Theme.colorPressed : Theme.colorHoverStrong
+                color: area.pressed ? Theme.colorPressed : notificationRow.grouped ? Theme.colorHover : Theme.colorHoverStrong
                 opacity: notificationRow.highlighted || area.drag.active ? 1 : 0
                 Smooth on opacity {}
                 Tint on color {}
             }
+        }
+
+        Rectangle
+        {
+            visible: notificationRow.grouped
+            x: 12
+            width: Math.max(0, parent.width - 24)
+            height: 1
+            color: Theme.controlColorBorder
+            opacity: card.fade
         }
 
         Rectangle
@@ -169,6 +180,7 @@ Common.InteractiveControl
         NotificationIcon
         {
             id: icon
+            visible: !notificationRow.grouped
             n: notificationRow.n
             size: 32
             opacity: card.fade
@@ -181,9 +193,10 @@ Common.InteractiveControl
 
             anchors
             {
-                left: icon.right; leftMargin: 10
+                left: notificationRow.grouped ? parent.left : icon.right
+                leftMargin: notificationRow.grouped ? 12 : 10
                 right: parent.right; rightMargin: 12
-                top: parent.top; topMargin: 12
+                top: parent.top; topMargin: notificationRow.grouped ? 10 : 12
             }
             spacing: 2
             opacity: card.fade
@@ -191,16 +204,16 @@ Common.InteractiveControl
             Item
             {
                 width: parent.width
-                height: Math.max(24, summary.implicitHeight)
+                height: Math.max(notificationRow.grouped ? 20 : 24, summary.implicitHeight)
 
                 ShellText
                 {
                     id: summary
                     anchors { left: parent.left; right: side.left; rightMargin: 8; verticalCenter: parent.verticalCenter }
                     label: notificationRow.n ? (notificationRow.n.summary || notificationRow.n.appName || "") : ""
-                    size: 13
+                    size: notificationRow.grouped ? 12 : 13
                     color: Theme.text1
-                    font.weight: Font.Medium
+                    font.weight: Font.DemiBold
                 }
 
                 Item
@@ -216,12 +229,12 @@ Common.InteractiveControl
                         anchors { right: parent.right; verticalCenter: parent.verticalCenter }
                         label: ServiceNotifications.age(notificationRow.n, notificationRow.now)
                         size: 10
-                        color: Theme.text4
+                        color: Theme.text3
                         opacity: notificationRow.highlighted || close.hovered ? 0 : 1
                         Smooth on opacity {}
                     }
 
-                    ActionButton
+                    Button
                     {
                         id: close
                         anchors { right: parent.right; verticalCenter: parent.verticalCenter }
@@ -260,13 +273,13 @@ Common.InteractiveControl
                 {
                     model: notificationRow.actions
 
-                    ActionButton
+                    Button
                     {
                         required property var modelData
                         maximumWidth: buttons.width
                         text: modelData.text
                         height: 28
-                        radius: 12
+                        radius: 8
                         onClicked: modelData.invoke()
                     }
                 }

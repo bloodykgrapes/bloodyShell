@@ -43,7 +43,7 @@ Column
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: 88; height: 88; radius: 28
                 color: Theme.colorSelection
-                border.width: 1
+                border.width: Theme.panelBorderWidth
                 border.color: Theme.colorPanelEdge
                 Image
                 {
@@ -58,7 +58,7 @@ Column
                 {
                     anchors.centerIn: parent
                     visible: message.complete
-                    icon: message.ready ? Icon.check : Icon.settingsGeneral
+                    icon: message.ready ? Icon.check : Icon.setup
                     size: 38
                 }
             }
@@ -136,7 +136,7 @@ Column
                     x: 14; y: 14; width: parent.width - 28
                     spacing: 10
                     ShellText { width: parent.width; horizontalAlignment: Text.AlignHCenter; label: Tr.tr("helper.issueHint"); wrapMode: Text.Wrap; size: 12 }
-                    SettingsButton
+                    Button
                     {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: Tr.tr("helper.reportIssue")
@@ -177,13 +177,14 @@ Column
             {
                 objectName: "helperTheme"
                 options: Registry.themeOptions
-                current: Theme.light ? Enums.ThemeLight : Enums.ThemeDark
+                current: Config.themeStyle
                 onSelected: value => Config.set("themeStyle", value)
             }
         }
         SettingsRow
         {
             label: Tr.tr("settings.appearance.automaticColor")
+            description: ServiceColors.automaticColorHint
             Toggle { objectName: "helperAccent"; checked: Config.themeAccent; onToggled: value => Config.set("themeAccent", value) }
         }
         SettingsRow
@@ -208,14 +209,14 @@ Column
         LayoutSection { prefix: "dock"; title: Tr.tr("common.dock") }
     }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         visible: helperPages.currentPage === 5 && helperPages.saveError !== ""
         SettingsRow
         {
             label: Tr.tr("common.actionFailed")
             description: helperPages.saveError
-            SettingsButton
+            Button
             {
                 text: Tr.tr(ServiceDisplay.error !== "" ? "helper.reviewDisplay" : "helper.reviewTimeLanguage")
                 onClicked: helperPages.navigate(ServiceDisplay.error !== "" ? 2 : 1)
@@ -223,7 +224,7 @@ Column
         }
     }
 
-    component LayoutSection: SettingsGroup
+    component LayoutSection: SettingsRowGroup
     {
         id: section
         required property string prefix

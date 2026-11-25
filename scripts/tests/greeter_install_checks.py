@@ -3,6 +3,7 @@
 import configparser
 import os
 from pathlib import Path
+import runpy
 import shlex
 import subprocess
 import tempfile
@@ -28,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix="bloodyShell-sddm-install-") as temporar
             if line.startswith("readonly " + key + "="):
                 lines[index] = "readonly " + key + "=" + shlex.quote(str(value))
     source = "\n".join(lines) + '''
-interactive() { return 0; }
+interactive() { [[ "${TEST_HEADLESS:-}" != 1 ]]; }
 sddm() { :; }
 sddm-greeter-qt6() { :; }
 niri() { [[ "${TEST_INVALID_NIRI:-}" != 1 ]]; }
@@ -45,7 +46,9 @@ sudo()
     if [[ "${TEST_INTERRUPT_SDDM:-}" == 1 && "$1" == cp && "$*" == *"/theme/."* ]]; then
         kill -TERM "$BASHPID"
     fi
+    if [[ "${TEST_REFRESH_FAILURE:-}" == 1 && "$1" == mv && "$*" == *"/theme $TEST_THEME" ]]; then return 1; fi
     case "$1" in
+        -n) return 1 ;;
         -v) return 0 ;;
         chown) return 0 ;;
         systemctl)
@@ -64,12 +67,13 @@ sudo()
         *) command "$@" ;;
     esac
 }
-apply_greeter
+if [[ "${TEST_REFRESH:-}" == 1 ]]; then refresh_greeter; else apply_greeter; fi
 '''
     script = base / "test-setup"
     script.write_text(source)
     log = base / "services.log"
-    env = dict(os.environ, XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(base / "private-state"), XDG_CACHE_HOME=str(base / "cache"), TEST_SERVICE_LOG=str(log))
+    env = dict(os.environ, XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(base / "private-state"), XDG_CACHE_HOME=str(base / "cache"),
+               TEST_SERVICE_LOG=str(log), TEST_THEME=str(share))
 
     def run(**options):
         result = subprocess.run(["bash", str(script)], env=dict(env, **options), capture_output=True, text=True, timeout=12)
@@ -94,10 +98,33 @@ apply_greeter
     appearance = configparser.ConfigParser(interpolation=None)
     appearance.read(state / "theme.conf")
     assert appearance["General"]["animationLevel"] == "1"
+    default_wallpaper = Path(appearance["General"]["wallpaperCurrent"])
+    assert default_wallpaper.parent == state and default_wallpaper.stat().st_mode & 0o777 == 0o644
+    assert default_wallpaper.read_bytes() == (ROOT / "assets/wallpapers/default.png").read_bytes()
     assert "Current=" not in system_config.read_text() and "DisplayServer=" not in system_config.read_text()
     assert "MinimumUid=1000" in system_config.read_text() and "# Keep this comment" in system_config.read_text()
     assert not log.exists(), "Already enabled SDDM was restarted or re-enabled"
+    personal_image = base / "personal.png"
+    personal_image.write_bytes(b"personal login wallpaper")
+    apply_wallpaper = runpy.run_path(str(ROOT / "scripts/lib/resources.py"))["set_greeter_wallpaper"]
+    personal_wallpaper = Path(apply_wallpaper(str(personal_image), state)["wallpaper"])
+    old_config, old_system, saved_settings = config.read_bytes(), system_config.read_bytes(), (state / "theme.conf").read_bytes()
+    installed_main = (share / "Main.qml").read_bytes()
+    (share / "Main.qml").write_text("// previous theme version")
+    assert run(TEST_REFRESH="1", TEST_HEADLESS="1").returncode == 75
+    assert (share / "Main.qml").read_text() == "// previous theme version"
+    assert run(TEST_REFRESH="1", TEST_REFRESH_FAILURE="1").returncode != 0
+    assert (share / "Main.qml").read_text() == "// previous theme version"
+    assert run(TEST_REFRESH="1").returncode == 0
+    assert (share / "Main.qml").read_bytes() == installed_main
+    assert (share / "theme.conf.user").resolve() == state / "theme.conf"
+    assert (config.read_bytes(), system_config.read_bytes(), (state / "theme.conf").read_bytes()) == (old_config, old_system, saved_settings)
+    assert not log.exists() and not list(base.glob(".bloodyShell-theme.*"))
     assert run(TEST_SWITCH="1").returncode == 0
+    appearance.read(state / "theme.conf")
+    assert appearance["General"]["wallpaperCurrent"] == str(personal_wallpaper)
+    assert appearance["General"]["wallpaperSource"] == str(personal_image)
+    assert personal_wallpaper.read_bytes() == personal_image.read_bytes()
     assert log.read_text().splitlines() == ["systemctl disable gdm.service", "systemctl enable sddm.service"]
     log.write_text("")
     old_theme = (share / "Main.qml").read_bytes()

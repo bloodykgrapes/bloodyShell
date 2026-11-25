@@ -13,6 +13,7 @@ Flickable
 
     property string title: ""
     property string subtitle: ""
+    property string pageIcon: ""
     readonly property bool active: activity.active
 
     RenderActivity { id: activity; target: settingsPage }
@@ -20,8 +21,8 @@ Flickable
     default property alias content: column.data
     property alias header: fixedControls.data
     readonly property bool hasHeader: fixedControls.children.length > 0
-    readonly property real headerHeight: hasHeader ? fixedHeader.height : 0
-    readonly property int pagePadding: width < 640 ? 24 : 32
+    readonly property real headerHeight: fixedHeader.height
+    readonly property int pagePadding: width < 640 ? 22 : 28
 
     clip: true
     contentWidth: width
@@ -30,10 +31,10 @@ Flickable
     flickableDirection: Flickable.VerticalFlick
     interactive: contentHeight > height
 
-    Controls.ScrollBar.vertical: Parts.SettingsScrollBar
+    Controls.ScrollBar.vertical: Parts.SettingsScrollbar
     {
         view: settingsPage
-        topPadding: settingsPage.pagePadding
+        topPadding: settingsPage.headerHeight + 12
         bottomPadding: settingsPage.pagePadding
     }
 
@@ -46,38 +47,53 @@ Flickable
         contentY = 0;
     }
 
-    Component.onCompleted:
+    function revealItem(item)
     {
-        if (!Config.animationsFluid) return;
-        Qt.callLater(() =>
-        {
-            let order = 0;
-            for (const child of column.children)
-                if (typeof child.enter === "function") child.enter(order++);
-        });
+        const top = item.mapToItem(contentItem, 0, 0).y;
+        const bottom = top + item.height;
+        if (top < contentY + headerHeight) scroll.scrollTo(top - headerHeight - 6);
+        else if (bottom > contentY + height) scroll.scrollTo(bottom - height + 6);
     }
 
-    component Heading: Column
+    component Heading: Row
     {
         width: parent.width
-        spacing: 8
+        spacing: 12
 
-        ShellText
+        Rectangle
         {
-            width: Math.max(0, parent.width - Theme.settingsControlHeight - 12)
-            label: settingsPage.title
-            wrapMode: Text.Wrap
-            size: 24
-            color: Theme.text1
-            font.weight: Font.DemiBold
+            id: iconTile
+            visible: settingsPage.pageIcon !== ""
+            anchors.verticalCenter: parent.verticalCenter
+            width: 42
+            height: width
+            radius: Theme.radiusMedium
+            color: Theme.controlColorActive
+            ShellIcon { anchors.centerIn: parent; icon: settingsPage.pageIcon; size: 22 }
         }
-        ShellText
+        Column
         {
-            width: parent.width
-            label: settingsPage.subtitle
-            size: 12
-            color: Theme.text3
-            wrapMode: Text.Wrap
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.max(0, parent.width - 44 - (iconTile.visible ? iconTile.width + parent.spacing : 0))
+            spacing: 4
+
+            ShellText
+            {
+                width: parent.width
+                label: settingsPage.title
+                wrapMode: Text.Wrap
+                size: 20
+                color: Theme.text1
+                font.weight: Font.DemiBold
+            }
+            ShellText
+            {
+                width: parent.width
+                label: settingsPage.subtitle
+                size: 12
+                color: Theme.text3
+                wrapMode: Text.Wrap
+            }
         }
     }
 
@@ -86,37 +102,48 @@ Flickable
         id: column
 
         x: settingsPage.pagePadding
-        y: settingsPage.hasHeader ? settingsPage.headerHeight + 6 : 28
+        y: settingsPage.headerHeight + 16
         width: Math.max(0, settingsPage.width - settingsPage.pagePadding * 2)
         spacing: Theme.settingsSectionGap
-
-        Heading { visible: !settingsPage.hasHeader }
     }
 
     Item
     {
         id: fixedHeader
+        objectName: "settingsPageHeader"
         parent: settingsPage
         width: parent.width
-        height: fixedControls.y + fixedControls.implicitHeight + 16
-        visible: settingsPage.hasHeader
+        height: fixedControls.y + (settingsPage.hasHeader ? fixedControls.implicitHeight + 12 : 0) + 16
         z: 10
 
-        Rectangle { anchors.fill: parent; color: Theme.settingsColorBackground }
+        Rectangle
+        {
+            anchors.fill: parent
+            topRightRadius: Theme.settingsRadius - 1
+            color: Theme.settingsColorBackground
+        }
         MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; hoverEnabled: true }
         Heading
         {
             id: fixedHeading
-            x: settingsPage.pagePadding; y: 28
+            x: settingsPage.pagePadding; y: 20
             width: Math.max(0, parent.width - settingsPage.pagePadding * 2)
         }
         Column
         {
             id: fixedControls
             x: settingsPage.pagePadding
-            y: fixedHeading.y + fixedHeading.implicitHeight + 10
+            y: fixedHeading.y + fixedHeading.implicitHeight + (settingsPage.hasHeader ? 12 : 0)
             width: Math.max(0, parent.width - settingsPage.pagePadding * 2)
             spacing: 6
+        }
+        Rectangle
+        {
+            x: settingsPage.pagePadding
+            y: parent.height - 1
+            width: Math.max(0, parent.width - settingsPage.pagePadding * 2)
+            height: 1
+            color: Theme.settingsColorLine
         }
     }
 }

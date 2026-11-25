@@ -14,20 +14,119 @@ Scope
 
     readonly property string name: "niri"
     readonly property string displayName: "niri"
-    readonly property var capabilities: ({windows:true, workspaces:true, keyboardLayout:true, displays:true, keyboard:true, mouse:true, cursor:true, logout:true, powerOutputs:true})
+    readonly property var capabilities: ({windows:true, workspaces:true, keyboardLayout:true, displays:true, keyboard:true, mouse:true, cursor:true, logout:true, powerOutputs:true,
+        overviewBackdrop: Settings.hasOverviewBackdrop(configText, layerRules), backgroundBlur: backgroundBlur})
     readonly property var versionCommand: ["niri", "--version"]
     readonly property var logoutCommand: ["niri", "msg", "action", "quit", "--skip-confirmation"]
     property var captureStreams: []
-    property bool connected: false
+    readonly property bool connected: ipc.subscribed
+    property string runningVersion: ""
+    readonly property bool backgroundBlur:
+    {
+        const version = runningVersion.match(/\b(\d+)\.(\d+)\b/);
+        return version !== null && (Number(version[1]) > 26 || (Number(version[1]) === 26 && Number(version[2]) >= 4));
+    }
 
-    readonly property var configFiles: ({input:Paths.configHome + "/niri/bloodyShell/06-user-input.kdl"})
+    function readBlurVersion()
+    {
+        if (!connected || Config.shellSurface !== Enums.SurfaceBlur || runningVersion) return;
+        ipc.request(["Version"], result =>
+        {
+            if (connected && typeof result?.Version === "string") runningVersion = result.Version;
+        });
+    }
+    Connections { target: Config; function onShellSurfaceChanged() { niri.readBlurVersion() } }
+
+    NiriIpc
+    {
+        id: ipc
+        path: Quickshell.env("NIRI_SOCKET") || ""
+        onEventReceived: message => niri.event(message)
+    }
+    onConnectedChanged:
+    {
+        if (connected)
+        {
+            readBlurVersion();
+            if (outputsRequested) refreshOutputs();
+            return;
+        }
+
+        runningVersion = "";
+        captureStreams = [];
+        workspacesApply([]);
+        windowsApply([]);
+        keyboardLayouts = [];
+        keyboardLayoutIndex = -1;
+        overviewOpen = false;
+        outputs = [];
+        outputsLoaded = false;
+    }
+
+    readonly property string fragments: Paths.configHome + "/niri/bloodyShell/"
+    readonly property var configFiles: ({input: fragments + "08-settings.kdl", inputDefaults: fragments + "06-input.kdl"})
+    readonly property string configPath: Quickshell.env("NIRI_CONFIG") || Paths.configHome + "/niri/config.kdl"
+    property string configText: ""
+    property string layerRules: ""
+
+    FileView
+    {
+        path: niri.configPath
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: niri.configText = text()
+        onLoadFailed: niri.configText = ""
+    }
+    FileView
+    {
+        path: niri.configPath.substring(0, niri.configPath.lastIndexOf("/") + 1) + "bloodyShell/03-layer.kdl"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: niri.layerRules = text()
+        onLoadFailed: niri.layerRules = ""
+    }
     property var outputs: []
     property bool outputsLoaded: false
     property string outputsError: ""
-    function refreshOutputs() { outputsReader.running = true; }
-    function outputWriteArgs(all) { return ["write", "07-user-output.kdl", Settings.outputs(all)]; }
+    property bool outputsRequested: false
+    property bool outputsReading: false
+    property bool outputsRefreshPending: false
+
+    function refreshOutputs()
+    {
+        outputsRequested = true;
+        if (outputsReading) { outputsRefreshPending = true; return; }
+        outputsError = "";
+        outputsReading = true;
+        if (!ipc.request(["Outputs"], (result, error) =>
+        {
+            outputsReading = false;
+            if (!setOutputs(result?.Outputs)) outputsError = error || Tr.tr("service.display.readFailed");
+            if (outputsRefreshPending)
+            {
+                outputsRefreshPending = false;
+                Qt.callLater(niri.refreshOutputs);
+            }
+        }))
+        {
+            outputsReading = false;
+            outputsError = Tr.tr("service.display.readFailed");
+        }
+    }
+
+    function setOutputs(all)
+    {
+        if (!all || typeof all !== "object" || Array.isArray(all)) return false;
+        outputs = Object.keys(all).sort().map(name => all[name]);
+        outputsLoaded = true;
+        outputsError = "";
+        return true;
+    }
+    function outputWriteArgs(all) { return ["outputs", Settings.outputs(all)]; }
     function keyboardWriteArgs(settings) { return ["keyboard", Settings.keyboard(settings, "")]; }
-    function keyboardSettings(text) { return Settings.keyboardSettings(text); }
+    function keyboardSettings(text, defaults) { return Settings.keyboardSettings(text, defaults); }
 
     function applyOutput(name, key, state)
     {
@@ -43,26 +142,6 @@ Scope
             default: return;
         }
         Quickshell.execDetached(["niri", "msg", "output", name].concat(args));
-    }
-
-    Process
-    {
-        id: outputsReader
-        onStarted: niri.outputsError = ""
-        command: ["niri", "msg", "-j", "outputs"]
-        stdout: StdioCollector
-        {
-            onStreamFinished:
-            {
-                try
-                {
-                    const all = JSON.parse(text);
-                    niri.outputs = Object.keys(all).sort().map(k => all[k]);
-                    niri.outputsLoaded = true;
-                }
-                catch (e) { niri.outputsError = Tr.tr("service.display.readFailed") }
-            }
-        }
     }
 
     ListModel { id: workspaces }
@@ -128,29 +207,49 @@ Scope
     readonly property string keyboardLayoutName: keyboardLayouts[keyboardLayoutIndex] || ""
     readonly property string keyboardLayout:     keyboardLayoutName
 
-    function validWindowId(id) { return id !== -1 && id !== "" && id !== null && id !== undefined }
+    function validWindowId(id) { return id !== null && id !== "" && Number.isSafeInteger(Number(id)) && Number(id) > 0 }
+    function action(name, args = {}) { ipc.request([{ Action: { [name]: args } }]); }
 
-    function action(args) { Quickshell.execDetached(["niri", "msg", "action"].concat(args)) }
+    function nextKeyboardLayout()     { if (keyboardLayouts.length > 1) action("SwitchLayout", { layout: "Next" }); }
+    function setKeyboardLayout(index) { if (index >= 0 && index < keyboardLayouts.length && index !== keyboardLayoutIndex) action("SwitchLayout", { layout: { Index: index } }); }
+    function focusWindow(id)          { if (validWindowId(id)) action("FocusWindow", { id: Number(id) }); }
+    function closeWindow(id)          { if (validWindowId(id)) action("CloseWindow", { id: Number(id) }); }
 
-    function nextKeyboardLayout()     { if (keyboardLayouts.length > 1) action(["switch-layout", "next"]) }
-    function setKeyboardLayout(index) { if (index >= 0 && index < keyboardLayouts.length && index !== keyboardLayoutIndex) action(["switch-layout", String(index)]) }
-    function focusWindow(id)          { if (validWindowId(id)) action(["focus-window", "--id", String(id)]) }
-    function closeWindow(id)          { if (validWindowId(id)) action(["close-window", "--id", String(id)]) }
-
-    function onOutput(output, args)
+    function workspaceAt(output, index)
     {
-        const target = output && output !== focusedOutput ? output : "";
-        if (!target) { action(args); return; }
-        Quickshell.execDetached(["sh", "-c", "[ -z \"$1\" ] || niri msg action focus-monitor \"$1\"; shift; exec niri msg action \"$@\"", "sh", target].concat(args));
+        for (let i = 0; i < workspaces.count; i++)
+        {
+            const workspace = workspaces.get(i);
+            if (workspace.output === output && workspace.wsIdx === index) return workspace;
+        }
+        return null;
     }
-    function focusWorkspace(output, index)        { if (index >= 1) onOutput(output, ["focus-workspace", String(index)]) }
-    function focusWorkspaceRelative(output, step) { if (step !== 0) onOutput(output, [step > 0 ? "focus-workspace-down" : "focus-workspace-up"]) }
 
-    function event(line)
+    function actionOnOutput(output, name, args = {})
     {
-        let e;
-        try { e = JSON.parse(line) } catch (err) { return }
+        if (!output) action(name, args);
+        else ipc.request([{ Action: { FocusMonitor: { output: output } } }, { Action: { [name]: args } }]);
+    }
 
+    function focusWorkspace(output, index)
+    {
+        if (index < 1) return;
+        const workspace = workspaceAt(output || focusedOutput, index);
+        if (workspace) action("FocusWorkspace", { reference: { Id: workspace.wsId } });
+        else actionOnOutput(output, "FocusWorkspace", { reference: { Index: index } });
+    }
+
+    function focusWorkspaceRelative(output, step)
+    {
+        if (step !== 0) actionOnOutput(output, step > 0 ? "FocusWorkspaceDown" : "FocusWorkspaceUp");
+    }
+
+    function event(e)
+    {
+        if (typeof e === "string") e = ipc.parse(e);
+        if (!e || typeof e !== "object") return;
+
+        if (e.OutputsChanged?.outputs) setOutputs(e.OutputsChanged.outputs);
         if (e.CastsChanged) captureStreams = e.CastsChanged.casts.map(castRecord);
         if (e.CastStartedOrChanged)
         {
@@ -187,7 +286,7 @@ Scope
             output:cast.target && cast.target.Output ? cast.target.Output.name : "",
             windowId:cast.target && cast.target.Window ? cast.target.Window.id : null};
     }
-    function powerOffMonitors() { action(["power-off-monitors"]); }
+    function powerOffMonitors() { action("PowerOffMonitors"); }
 
     function windowRecord(w)
     {
@@ -279,7 +378,9 @@ Scope
     function workspacesApply(list)
     {
         const sorted = list.slice().sort((a, b) => String(a.output).localeCompare(String(b.output)) || a.idx - b.idx);
-        for (const w of sorted) if (w.is_focused) { focusedOutput = w.output || ""; focusedWorkspaceId = w.id; }
+        const focused = sorted.find(w => w.is_focused);
+        focusedOutput = focused?.output || "";
+        focusedWorkspaceId = focused?.id ?? null;
 
         const items = sorted.map(w => ({
             wsId: w.id, wsIdx: w.idx, output: w.output || "",
@@ -314,16 +415,5 @@ Scope
         if (changed) workspaceRevision++;
         if (focused) { focusedOutput = output; focusedWorkspaceId = id; }
     }
-
-    Process
-    {
-        id: stream
-        running: true
-        command: ["niri", "msg", "--json", "event-stream"]
-        stdout: SplitParser { onRead: line => niri.event(line) }
-        onStarted: niri.connected = true
-        onExited: { niri.connected = false; niri.captureStreams = []; restream.restart(); }
-    }
-    Timer { id: restream; interval: 2000; onTriggered: stream.running = true }
 
 }

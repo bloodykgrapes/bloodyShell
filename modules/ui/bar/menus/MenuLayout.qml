@@ -23,11 +23,13 @@ Menu
             shown: menuLayout.presented
             order: index
 
-            MenuItem
+            ButtonList
             {
+                filled: true
+                selected: layout.index === ServiceCompositor.keyboardLayoutIndex
                 icon: Icon.keyboard
                 text: layout.modelData
-                trailing: layout.index === ServiceCompositor.keyboardLayoutIndex ? "●" : ServiceCompositor.shortLayout(layout.modelData)
+                trailing: selected ? "" : ServiceCompositor.shortLayout(layout.modelData)
 
                 onClicked:
                 {
@@ -35,20 +37,6 @@ Menu
                     MenuState.close();
                 }
             }
-        }
-    }
-
-    RevealSection
-    {
-        visible: Config.virtualKeyboardEnabled
-        shown: menuLayout.presented && visible
-        order: ServiceCompositor.keyboardLayouts.length
-
-        MenuItem
-        {
-            icon: Icon.keyboard
-            text: ServiceVirtualKeyboard.visible ? Tr.tr("keyboard.hide") : Tr.tr("keyboard.show")
-            onClicked: { ServiceVirtualKeyboard.toggle(); MenuState.close(); }
         }
     }
 }

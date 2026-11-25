@@ -1,0 +1,11 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// 08 ─ Shell settings
+// ─────────────────────────────────────────────────────────────────────────────
+// bloodyShell saves keyboard, mouse, cursor and display settings here.
+// Updates preserve this file.
+// ─────────────────────────────────────────────────────────────────────────────
+
+cursor {
+    xcursor-theme "Bibata Material Grey"
+    xcursor-size 24
+}

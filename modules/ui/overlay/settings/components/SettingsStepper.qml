@@ -25,8 +25,9 @@ Row
     spacing: 4
     opacity: enabled ? 1 : 0.4
 
-    SettingsIconButton
+    Button
     {
+        iconOnly: true
         icon: Icon.minus
         autoRepeat: true
         enabled: settingsStepper.value > settingsStepper.from
@@ -36,7 +37,7 @@ Row
     Rectangle
     {
         width: Math.max(72, valueText.implicitWidth + 20)
-        height: Theme.settingsControlHeight
+        height: Theme.controlHeight
         radius: Theme.radiusMedium
         color: Theme.colorField
 
@@ -45,14 +46,15 @@ Row
             id: valueText
             anchors.centerIn: parent
             label: settingsStepper.value.toFixed(settingsStepper.decimals) + settingsStepper.suffix
-            size: 12
+            size: Theme.controlTextSize
             color: Theme.text1
             font.family: Theme.fontMono
         }
     }
 
-    SettingsIconButton
+    Button
     {
+        iconOnly: true
         icon: Icon.add
         autoRepeat: true
         enabled: settingsStepper.value < settingsStepper.to

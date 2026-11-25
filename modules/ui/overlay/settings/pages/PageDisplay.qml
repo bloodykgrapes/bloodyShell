@@ -18,7 +18,7 @@ SettingsPage
     property date now: new Date()
     Timer { interval: 60000; running: pageDisplay.active; repeat: true; onTriggered: pageDisplay.now = new Date() }
 
-    SettingsGroup
+    SettingsRowGroup
     {
         title: Tr.tr("settings.display.nightLight")
 

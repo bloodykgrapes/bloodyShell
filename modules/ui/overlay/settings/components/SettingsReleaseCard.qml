@@ -68,7 +68,7 @@ Item
                 }
             }
 
-            SettingsButton
+            Button
             {
                 id: github
 
@@ -112,7 +112,7 @@ Item
             }
         }
 
-        SettingsButton
+        Button
         {
             objectName: "releaseNotesToggle"
             visible: notesItem.collapsible && notesItem.tall

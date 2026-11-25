@@ -5,7 +5,6 @@ import QtQuick
 import "../../../common"
 import "../../../core"
 import "../../../services"
-import "../../overlay/settings/components"
 
 Column
 {
@@ -14,7 +13,7 @@ Column
     property bool active: false
     property bool opening: false
     width: parent ? parent.width : 344
-    spacing: 8
+    spacing: 12
 
     function updateActivity()
     {
@@ -71,28 +70,62 @@ Column
         shown: notifications.active
         order: 0
 
-        Column
+        Rectangle
         {
+            objectName: "notificationsFocusCard"
             width: parent.width
-            spacing: 8
-            ControlToggle
+            height: focusControls.implicitHeight + 24
+            radius: Theme.menuControlRadius
+            color: Theme.menuControlBackground
+
+            Column
             {
-                objectName: "notificationsDnd"
-                width: parent.width
-                height: implicitHeight
-                icon: Icon.notifications
-                text: Tr.tr("common.doNotDisturb")
-                subtitle: ServiceNotifications.dndStatus
-                checked: ServiceNotifications.dnd
-                onToggled: value => ServiceNotifications.setDnd(value)
-            }
-            SettingsChoices
-            {
-                objectName: "notificationsDndDuration"
-                width: parent.width
-                options: ServiceNotifications.dndOptions
-                current: ServiceNotifications.dnd ? ServiceNotifications.dndMinutes : -1
-                onSelected: value => ServiceNotifications.setDnd(true, value)
+                id: focusControls
+                x: 12; y: 12
+                width: parent.width - 24
+                spacing: 10
+
+                Row
+                {
+                    width: parent.width
+                    height: 32
+                    spacing: 10
+
+                    Rectangle
+                    {
+                        width: 32; height: 32; radius: 10
+                        color: ServiceNotifications.dnd ? Theme.menuControlSelected : Theme.colorField
+                        ShellIcon { anchors.centerIn: parent; icon: Icon.bellOFF; size: 18 }
+                    }
+                    Column
+                    {
+                        width: Math.max(0, parent.width - 32 - dndSwitch.width - parent.spacing * 2)
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 3
+                        ShellText { width: parent.width; label: Tr.tr("common.doNotDisturb"); size: 12; font.weight: Font.DemiBold; color: Theme.text1 }
+                        ShellText { width: parent.width; label: ServiceNotifications.dndStatus; size: 10; color: Theme.text3 }
+                    }
+                    Toggle
+                    {
+                        id: dndSwitch
+                        objectName: "notificationsDnd"
+                        anchors.verticalCenter: parent.verticalCenter
+                        Accessible.name: Tr.tr("common.doNotDisturb")
+                        checked: ServiceNotifications.dnd
+                        onToggled: value => ServiceNotifications.setDnd(value)
+                    }
+                }
+
+                MenuDropdown
+                {
+                    objectName: "notificationsDndDuration"
+                    visible: ServiceNotifications.dnd
+                    width: parent.width
+                    presented: notifications.active
+                    options: ServiceNotifications.dndOptions
+                    current: ServiceNotifications.dndMinutes
+                    onSelected: value => ServiceNotifications.setDnd(true, value)
+                }
             }
         }
     }
@@ -103,28 +136,27 @@ Column
         order: 1
         visible: ServiceNotifications.count === 0
 
-        Rectangle
+        Item
         {
+            objectName: "notificationsEmptyState"
             width: parent.width
-            height: Math.max(148, empty.implicitHeight + 32)
-            radius: 18
-            color: Theme.colorField
+            height: empty.implicitHeight + 32
 
             Column
             {
                 id: empty
                 anchors.centerIn: parent
-                width: parent.width - 32
+                width: parent.width - 24
                 spacing: 8
 
                 Rectangle
                 {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    width: 44; height: 44; radius: 16
-                    color: Theme.colorHoverStrong
-                    ShellIcon { anchors.centerIn: parent; icon: Icon.bellOFF; size: 24 }
+                    width: 40; height: 40; radius: 14
+                    color: Theme.menuControlBackground
+                    ShellIcon { anchors.centerIn: parent; icon: Icon.bellON; size: 20; opacity: 0.65 }
                 }
-                ShellText { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; label: Tr.tr("menu.notifications.noNotifications"); size: 13; color: Theme.text1; font.weight: Font.Medium }
+                ShellText { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; label: Tr.tr("menu.notifications.noNotifications"); size: 12; color: Theme.text1; font.weight: Font.Medium }
                 ShellText { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; label: Tr.tr("menu.notifications.emptyHint"); size: 11; color: Theme.text3 }
             }
         }
@@ -137,14 +169,32 @@ Column
         visible: ServiceNotifications.count > 0
         spacing: 4
 
-        MenuLabel
+        Item
         {
-            heading: true
-            text: Tr.tr("common.notifications")
-            actionText: Tr.tr("menu.notifications.clearAll")
-            actionIcon: Icon.trash
-            actionEnabled: notifications.pendingClear.length === 0
-            onActionTriggered: notifications.clearAll()
+            width: parent.width
+            height: 32
+
+            Row
+            {
+                anchors { left: parent.left; leftMargin: 2; verticalCenter: parent.verticalCenter }
+                spacing: 8
+                ShellText { anchors.verticalCenter: parent.verticalCenter; label: Tr.tr("notifications.recent"); size: 11; color: Theme.text3; font.weight: Font.Medium }
+                ShellText { anchors.verticalCenter: parent.verticalCenter; label: String(ServiceNotifications.count); size: 10; color: Theme.text3 }
+            }
+            Button
+            {
+                objectName: "notificationsClearAll"
+                anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                height: 28
+                radius: 8
+                text: Tr.tr("menu.notifications.clearAll")
+                textSize: 11
+                icon: Icon.trash
+                iconSize: 11
+                color: "transparent"
+                enabled: notifications.pendingClear.length === 0
+                onClicked: notifications.clearAll()
+            }
         }
 
         Column
