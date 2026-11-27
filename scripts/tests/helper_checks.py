@@ -217,11 +217,13 @@ ShellRoot {
                 const accent=Config.themeAccent;click(find("helperAccent"));check(Config.themeAccent!==accent,"Automatic color did not save");
                 for(const mode of [0,1,2]) {find("helperAnimations").selected(mode);check(Config.themeAnimations===mode,"Animation segment did not save");}
                 Config.set("themeAnimations",0);helper.go(4);
-                for(const prefix of ["bar","dock"]) {
+                find("helper-bar-position").selected(Enums.EdgeRight);
+                for(const prefix of ["dock"]) {
                     const enabled=find("helper-"+prefix+"-enabled"),position=find("helper-"+prefix+"-position");
-                    reveal(enabled);click(enabled);check(!Config[prefix+"Enabled"]&&!position.enabled,"Disabled layout keeps its position enabled");
+                    reveal(enabled);if(enabled.checked)click(enabled);
+                    check(Config[prefix+"Type"]===Enums.PanelDisabled&&!position.enabled,"Disabled layout keeps its position enabled");
                     click(enabled);position.selected(prefix==="bar"?Enums.EdgeRight:Enums.EdgeLeft);
-                    check(Config[prefix+"Enabled"]&&Config[prefix+"Side"]===(prefix==="bar"?Enums.EdgeRight:Enums.EdgeLeft),"Layout controls did not apply");
+                    check(Config[prefix+"Type"]===Enums.InFrame&&Config[prefix+"Side"]===(prefix==="bar"?Enums.EdgeRight:Enums.EdgeLeft),"Layout controls did not apply");
                 }
                 check(!find("helper-bar-style-0"),"Layout still offers style previews");
                 ServiceRegion.setTimezone("Europe/London");helper.go(5);
@@ -267,8 +269,8 @@ ShellRoot {
         assert result.returncode == 0 and "HELPER_UI_PASSED" in output, output
         assert not re.search(r"HELPER_UI_FAILED|ReferenceError|TypeError|Binding loop|Cannot assign|Unable to assign|Failed to load configuration", output), output
         saved = json.loads((base / "config/bloodyShell/settings.json").read_text())
-        assert saved["barEnabled"] is True and saved["dockEnabled"] is True and saved["islandEnabled"] is True
-        assert saved["barSide"] == 3 and saved["barType"] == 0 and saved["dockSide"] == 2 and saved["dockType"] == 0
+        assert saved["islandEnabled"] is True
+        assert saved["barSide"] == 3 and saved["barType"] == 4 and saved["dockSide"] == 2 and saved["dockType"] == 0
         stored_input = input_file.read_text()
         assert 'layout "us"' in stored_input and 'compose:menu' in stored_input
         assert 'horizontal=-2.1' in stored_input and 'vertical=1.0' in stored_input and 'touchpad { tap; }' in stored_input

@@ -14,6 +14,7 @@ Flickable
     readonly property alias item: loader.item
     property bool shown: false
     readonly property bool presented: shown || (selected && revealOpacity > 0)
+    readonly property bool internalScroll: item && item.ownsScrolling === true
 
     width: Math.min(maximumWidth, item ? item.implicitWidth : 0)
     height: Math.min(maximumHeight, contentHeight)
@@ -21,7 +22,7 @@ Flickable
     contentHeight: loader.height
     boundsBehavior: Flickable.StopAtBounds
     flickableDirection: Flickable.VerticalFlick
-    interactive: contentHeight > height
+    interactive: !internalScroll && contentHeight > height
     clip: interactive
 
     visible: opacity > 0
@@ -39,6 +40,8 @@ Flickable
         {
             slot.contentY = 0;
             if ("presented" in item) item.presented = Qt.binding(() => slot.presented);
+            if ("maximumWidth" in item) item.maximumWidth = Qt.binding(() => slot.maximumWidth);
+            if ("maximumHeight" in item) item.maximumHeight = Qt.binding(() => slot.maximumHeight);
         }
     }
 }

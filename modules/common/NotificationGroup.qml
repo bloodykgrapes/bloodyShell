@@ -1,4 +1,7 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
+import Quickshell
 
 import "../animations"
 import "../core"
@@ -6,216 +9,202 @@ import "../services"
 
 Item
 {
-    id: notificationGroup
+    id: group
+    objectName: "notificationStack"
 
-    property var  model
+    required property var model
     property bool expanded: false
     property real now: Date.now()
-
-    property bool entering: false
-    property int  order: 0
-
-    signal toggle()
     signal activated()
 
-    readonly property int total: model ? model.items.length : 0
-
-    property bool justExpanded: false
-    function requestToggle()
-    {
-        justExpanded = !expanded;
-        settleExpand.restart();
-        toggle();
-    }
-    Timer { id: settleExpand; interval: 500; onTriggered: notificationGroup.justExpanded = false }
-
-    width: parent ? parent.width : 300
+    readonly property var notifications: model?.items ?? []
+    readonly property int total: notifications.length
+    readonly property int layers: expanded ? 0 : Math.min(2, Math.max(0, total - 1))
+    property var pendingDismissals: []
     property real collapse: 1
-    property bool settled: false
-    implicitHeight: column.implicitHeight
+
+    implicitHeight: pile.implicitHeight
     height: implicitHeight * collapse
-    clip: collapse < 1 || height + 0.5 < implicitHeight
+    visible: total > 0 && collapse > 0
     enabled: !leaving.running
-    Glide on height { enabled: Config.animationsEnabled && notificationGroup.settled && !leaving.running; duration: Theme.animationDurationControl }
+    clip: true
+    Glide on height { enabled: Config.animationsEnabled && !leaving.running; duration: Theme.animationDurationControl }
 
-    property var pendingDismissal: []
-
-    function dismissAll(close = true, direction = 0)
+    function dismissAll(direction = 1)
     {
-        if (leaving.running || !model) return;
-        entrance.stop();
-        if (close) pendingDismissal = model.items.slice();
-        leaving.destination = direction === 0 ? card.x : Math.sign(direction) * width;
-        leaving.restart();
+        if (leaving.running || total === 0) return;
+        pendingDismissals = notifications.slice();
+        leaving.destination = Math.sign(direction) * width;
+        leaving.start();
     }
 
-    function finishDismissal()
+    function finishDismissal(restore)
     {
-        const pending = pendingDismissal;
-        pendingDismissal = [];
-        if (pending.length > 0) Qt.callLater(() => pending.forEach(item => ServiceNotifications.dismiss(item)));
+        const pending = pendingDismissals;
+        pendingDismissals = [];
+        if (pending.length > 0) Qt.callLater(() => pending.forEach(notification => ServiceNotifications.dismiss(notification)));
+        if (restore && notifications.some(notification => !pending.includes(notification)))
+        {
+            pile.x = 0;
+            pile.opacity = 1;
+            collapse = 1;
+        }
     }
-    Component.onDestruction: finishDismissal()
+    Component.onDestruction: finishDismissal(false)
 
     SequentialAnimation
     {
         id: leaving
-        readonly property bool animated: Config.animationsEnabled
         property real destination: 0
 
         ParallelAnimation
         {
-            NumberAnimation { target: card; property: "opacity"; to: 0; duration: leaving.animated ? Theme.animationDurationClose : 0; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingAccelerate }
-            NumberAnimation { target: card; property: "x"; to: leaving.destination; duration: leaving.animated ? Theme.animationDurationClose : 0; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingAccelerate }
+            NumberAnimation { target: pile; property: "opacity"; to: 0; duration: Theme.animationDurationClose; easing.type: Easing.InCubic }
+            NumberAnimation { target: pile; property: "x"; to: leaving.destination; duration: Theme.animationDurationClose; easing.type: Easing.InCubic }
         }
-        NumberAnimation { target: notificationGroup; property: "collapse"; to: 0; duration: leaving.animated ? 240 : 0; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized }
-        ScriptAction { script: notificationGroup.finishDismissal() }
+        NumberAnimation { target: group; property: "collapse"; to: 0; duration: Theme.animationDuration(160); easing.type: Easing.OutCubic }
+        ScriptAction { script: group.finishDismissal(true) }
     }
 
-    property real rise: 0
-    Component.onCompleted:
+    Column
     {
-        if (entering && Config.animationsEnabled) entrance.start();
-        const group = notificationGroup;
-        Qt.callLater(() => { if (group) group.settled = true; });
-    }
+        id: pile
+        width: parent.width
+        spacing: 4
+        Glide on x { enabled: Config.animationsEnabled && !swipe.active && !leaving.running; duration: Theme.animationDurationControl }
 
-    SequentialAnimation
-    {
-        id: entrance
-
-        PropertyAction { target: card; property: "opacity"; value: 0 }
-        PropertyAction { target: notificationGroup; property: "rise"; value: Config.animationsFluid ? 18 : 6 }
-        PauseAnimation { duration: (Config.animationsFluid ? 35 : 0) + Math.max(0, Math.min(6, notificationGroup.order)) * (Config.animationsFluid ? 30 : 12) }
-        ParallelAnimation
+        Item
         {
-            NumberAnimation { target: card; property: "opacity"; to: 1; duration: 300; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized }
-            NumberAnimation { target: notificationGroup; property: "rise"; to: 0; duration: 440; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized }
-        }
-    }
+            width: parent.width
+            height: 32
 
-    DragHandler
-    {
-        id: swipe
-        parent: notificationGroup.expanded ? header : notificationGroup
-        target: null
-        acceptedButtons: Qt.LeftButton
-        dragThreshold: 8
-        yAxis.enabled: false
-
-        onTranslationChanged: if (active) card.x = Math.max(-notificationGroup.width, Math.min(notificationGroup.width, translation.x))
-        onGrabChanged: transition =>
-        {
-            if (transition === PointerDevice.UngrabExclusive)
+            NotificationIcon
             {
-                if (Math.abs(card.x) > notificationGroup.width * 0.3) notificationGroup.dismissAll(true, card.x);
-                else card.x = 0;
+                id: app
+                anchors { left: parent.left; leftMargin: 4; verticalCenter: parent.verticalCenter }
+                n: group.notifications[0] ?? null
+                size: 22
             }
-            else if (transition === PointerDevice.CancelGrabExclusive && !leaving.running) card.x = 0;
+            ShellText
+            {
+                anchors { left: app.right; leftMargin: 7; right: count.left; rightMargin: 6; verticalCenter: parent.verticalCenter }
+                label: group.model?.name ?? ""
+                size: 12
+                font.weight: Font.DemiBold
+                color: Theme.text1
+            }
+            Rectangle
+            {
+                id: count
+                anchors { right: dismiss.left; rightMargin: 6; verticalCenter: parent.verticalCenter }
+                width: group.total > 1 ? Math.max(18, number.implicitWidth + 9) : 0
+                height: 18
+                radius: height / 2
+                visible: width > 0
+                color: Theme.colorField
+                ShellText { id: number; anchors.centerIn: parent; label: String(group.total); size: 10; color: Theme.text3 }
+            }
+            Button
+            {
+                id: dismiss
+                anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                width: 24; height: 24; radius: 8
+                text: Tr.tr("notifications.clearGroup").arg(group.model?.name ?? "")
+                icon: Icon.close
+                iconSize: 10
+                iconOnly: true
+                color: "transparent"
+                onClicked: group.dismissAll()
+            }
+        }
+
+        Item
+        {
+            width: parent.width
+            height: cards.implicitHeight + group.layers * 5
+
+            Repeater
+            {
+                model: group.layers
+
+                Rectangle
+                {
+                    required property int index
+                    readonly property int depth: group.layers - index
+                    objectName: "notificationStackLayer"
+                    x: depth * 6
+                    y: depth * 5
+                    width: Math.max(0, parent.width - 2 * x)
+                    height: cards.implicitHeight
+                    radius: Theme.controlRadius
+                    color: Theme.controlColorBackground
+                    border.color: Theme.controlColorBorder
+                    border.width: 1
+                }
+            }
+
+            Column
+            {
+                id: cards
+                width: parent.width
+                spacing: 5
+
+                Repeater
+                {
+                    model: ScriptModel
+                    {
+                        values: group.expanded ? group.notifications : group.notifications.slice(0, 1)
+                        objectProp: "id"
+                    }
+
+                    NotificationRow
+                    {
+                        required property var modelData
+                        n: modelData
+                        grouped: true
+                        now: group.now
+                        onActivated: group.activated()
+                    }
+                }
+            }
+        }
+
+        Button
+        {
+            objectName: "notificationGroupToggle"
+            visible: group.total > 1
+            anchors.horizontalCenter: parent.horizontalCenter
+            height: 28
+            radius: height / 2
+            text: Tr.tr(group.expanded ? "notifications.showLess" : "notifications.showMore")
+            textSize: 11
+            onClicked: group.expanded = !group.expanded
         }
     }
 
     Item
     {
-        id: card
+        objectName: "notificationGroupSwipeArea"
         width: parent.width
-        height: column.implicitHeight
-        y: notificationGroup.rise
-        Spring on x { enabled: Config.animationsEnabled && !swipe.active && !leaving.running }
+        height: 32
 
-        Rectangle
+        DragHandler
         {
-            anchors.fill: parent
-            radius: Theme.controlRadius
-            color: Theme.controlColorBackground
-        }
+            id: swipe
+            target: null
+            acceptedButtons: Qt.LeftButton
+            dragThreshold: 8
+            yAxis.enabled: false
 
-        Column
-        {
-            id: column
-            width: parent.width
-            spacing: 0
-
-            Item
+            onTranslationChanged: if (active) pile.x = Math.max(-group.width, Math.min(group.width, translation.x))
+            onGrabChanged: transition =>
             {
-                id: header
-                width: parent.width
-                height: 44
-                NotificationIcon
+                if (transition === PointerDevice.UngrabExclusive)
                 {
-                    id: appIcon
-                    anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
-                    n: notificationGroup.model && notificationGroup.total > 0 ? notificationGroup.model.items[0] : null
-                    size: 24
+                    if (Math.abs(pile.x) > group.width * 0.3) group.dismissAll(pile.x);
+                    else pile.x = 0;
                 }
-                ShellText
-                {
-                    id: name
-                    anchors { left: appIcon.right; leftMargin: 8; verticalCenter: parent.verticalCenter }
-                    width: Math.max(0, Math.min(implicitWidth, dismissButton.x - x - (counter.visible ? counter.width + 6 : 0) - 4))
-                    label: notificationGroup.model ? notificationGroup.model.name : ""
-                    size: 12
-                    color: Theme.text1
-                    font.weight: Font.DemiBold
-                }
-                Rectangle
-                {
-                    id: counter
-                    visible: notificationGroup.total > 1
-                    anchors { left: name.right; leftMargin: 6; verticalCenter: parent.verticalCenter }
-                    width: Math.max(18, countText.implicitWidth + 10)
-                    height: 18
-                    radius: 6
-                    color: Theme.colorField
-                    Glide on width {}
-                    ShellText { id: countText; anchors.centerIn: parent; label: String(notificationGroup.total); size: 10; color: Theme.text3 }
-                }
-                Button
-                {
-                    id: dismissButton
-                    anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
-                    width: 24; height: 24; radius: 8
-                    text: Tr.tr("notifications.clearGroup").arg(notificationGroup.model ? notificationGroup.model.name : "")
-                    icon: Icon.close
-                    iconSize: 10
-                    iconOnly: true
-                    color: "transparent"
-                    onClicked: notificationGroup.dismissAll()
-                }
-            }
-
-            Repeater
-            {
-                model: notificationGroup.model ? (notificationGroup.expanded ? notificationGroup.model.items : notificationGroup.model.items.slice(0, 1)) : []
-                NotificationRow
-                {
-                    required property var modelData
-                    required property int index
-                    n: modelData
-                    grouped: true
-                    swipeToDismiss: notificationGroup.expanded
-                    now: notificationGroup.now
-                    entering: notificationGroup.justExpanded && index > 0
-                    order: index - 1
-                    onActivated: notificationGroup.activated()
-                }
-            }
-
-            Item
-            {
-                visible: notificationGroup.total > 1
-                width: parent.width
-                height: 36
-                Button
-                {
-                    objectName: "notificationGroupToggle"
-                    anchors.centerIn: parent
-                    height: 28
-                    radius: 8
-                    text: Tr.tr(notificationGroup.expanded ? "notifications.showLess" : "notifications.showMore")
-                    textSize: 11
-                    onClicked: notificationGroup.requestToggle()
-                }
+                else if (transition === PointerDevice.CancelGrabExclusive && !leaving.running) pile.x = 0;
             }
         }
     }

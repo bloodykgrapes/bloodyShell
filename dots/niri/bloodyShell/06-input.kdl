@@ -14,7 +14,7 @@ input {
         }
 
         repeat-delay 350
-        repeat-rate 35
+        repeat-rate 30
         track-layout "global"
 
         numlock

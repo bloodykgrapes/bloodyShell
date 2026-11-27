@@ -16,7 +16,7 @@ Item
     property Item surfaceHost: null
     readonly property alias surface: paint
 
-    signal selected(int index)
+    signal selected(string id)
 
     Component.onCompleted: revealTimer.restart()
 
@@ -98,6 +98,7 @@ Item
             y: entry ? tabColumn.y + entry.y + entry.tabY : 0
             width: tabColumn.width
             height: entry ? entry.tabHeight : Theme.settingsTabHeight
+            radius: height / 2
             visible: entry !== null
             color: Qt.tint(Theme.settingsColorSidebar, Theme.accentShell ? Theme.accentAlpha(0.22) : Theme.inkAlpha(0.1))
             scale: entry ? entry.tabScale : 1
@@ -149,7 +150,7 @@ Item
                         icon: entry.modelData.icon
                         title: entry.modelData.title
                         selected: group.current === entry.index
-                        onClicked: group.selected(entry.index)
+                        onClicked: group.selected(entry.modelData.id)
                     }
                 }
             }

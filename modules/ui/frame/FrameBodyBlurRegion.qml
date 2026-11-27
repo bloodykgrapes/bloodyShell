@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import Quickshell
 
@@ -10,10 +12,12 @@ Region
 
     required property Item surface
     required property rect area
-    required property real join
+    required property real bodyRadius
+    required property real curveScale
+    property real joinLimit: bodyRadius
 
     readonly property var shape: JoinGeometry.bodyShape(area, surface.width, surface.height, surface.inset,
-        surface.bodyRadius, join, surface.frosted)
+        bodyRadius, surface.frosted, curveScale > 0, joinLimit)
     readonly property rect bounds: shape.bounds
     readonly property vector4d corners: shape.corners
     readonly property vector4d fillets: shape.fillets
@@ -27,10 +31,12 @@ Region
         const end = start + (horizontal ? bounds.width : bounds.height);
         const span = horizontal ? surface.width : surface.height;
         const depth = horizontal ? surface.height : surface.width;
+        const reach = Math.max(1, Math.round(radius * curveScale));
         return {
             face: far ? depth - inset : inset, start, end,
             startRadius: surface.frosted && start > inset ? radius : 0,
-            endRadius: surface.frosted && end < span - inset ? radius : 0
+            endRadius: surface.frosted && end < span - inset ? radius : 0,
+            reach
         };
     }
 

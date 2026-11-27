@@ -16,8 +16,9 @@ Rectangle
     property real blurRadius: radius
     readonly property int maskRadius: Math.ceil(Math.max(0, Math.min(blurRadius, width / 2, height / 2)))
     readonly property var surfaceWindow: Window.window
+    readonly property Item localCanvas: ShellMaterial.localCanvasFor(surface)
     readonly property bool frosted: materialEnabled && baseColor.a > 0 && ShellMaterial.blur
-    readonly property bool blurActive: frosted && visible && opacity > 0.01 && width > 1 && height > 1 && !!surfaceWindow
+    readonly property bool blurActive: frosted && !localCanvas && visible && opacity > 0.01 && width > 1 && height > 1 && !!surfaceWindow
     readonly property rect blurBounds: blurActive ? ShellMaterial.boundsIn(surface, surfaceWindow.contentItem) : Qt.rect(0, 0, 0, 0)
     readonly property alias blurMask: blurRegion
 
@@ -73,7 +74,7 @@ Rectangle
             {
                 property real blend: status === Image.Ready ? 1 : 0
                 Smooth on blend { enabled: Config.animationsEnabled && surface.transitionMaterial; duration: 100 }
-                readonly property Item canvas: surface.surfaceWindow?.contentItem ?? null
+                readonly property Item canvas: surface.localCanvas ?? surface.surfaceWindow?.contentItem ?? null
                 readonly property rect bounds: canvas ? ShellMaterial.boundsIn(parent, canvas) : Qt.rect(0, 0, 0, 0)
                 x: -bounds.x
                 y: -bounds.y

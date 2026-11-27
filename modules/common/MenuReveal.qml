@@ -12,7 +12,7 @@ Item
     property real progress: 0
     property point origin: Qt.point(0, 0)
     property color color: Theme.colorSolid
-    property real radius: Theme.radiusLarge
+    property real radius: Theme.menuRadius
     property real borderWidth: Theme.panelBorderWidth
     property color borderColor: Theme.colorPanelEdge
     property bool useSurfaceMaterial: true

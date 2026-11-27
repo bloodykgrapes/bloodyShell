@@ -11,7 +11,7 @@ Rectangle
     id: launcherContent
     objectName: "launcherContent"
 
-    readonly property int  maxRows: 8
+    readonly property int  maxRows: Math.max(3, Math.min(14, Config.launcherMaxResults))
     readonly property real rowH: Theme.launcherRow
     readonly property real footerH: width < 440 ? 48 : 34
     readonly property real footerGap: Theme.launcherSpacing
@@ -29,6 +29,7 @@ Rectangle
     readonly property var    apps: ServiceApplications.search(query)
 
     property bool instant: true
+    property real surfaceRadius: Theme.launcherRadius
     onAppsChanged:
     {
         instant = true;
@@ -41,7 +42,7 @@ Rectangle
 
     implicitHeight: chrome + listH
 
-    radius: Theme.launcherRadius
+    radius: surfaceRadius
     color: Theme.settingsColorBackground
     border.width: Theme.panelBorderWidth
     border.color: Theme.colorPanelEdge

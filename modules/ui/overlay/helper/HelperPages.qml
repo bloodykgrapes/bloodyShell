@@ -165,37 +165,106 @@ Column
         sourceComponent: SettingsDisplayControls { objectName: "helperDisplay"; active: helperPages.currentPage === 2 }
     }
 
-    Column
+    SettingsRowGroup
     {
         visible: helperPages.currentPage === 3
-        width: parent.width
-        spacing: 2
+        title: Tr.tr("settings.appearance.theme")
+
         SettingsRow
         {
-            label: Tr.tr("settings.appearance.theme")
-            SettingsChoices
+            label: Tr.tr("settings.structure.scheme")
+            stacked: true
+
+            SettingsStyleChoices
             {
                 objectName: "helperTheme"
+                kind: "theme"
                 options: Registry.themeOptions
+                namePrefix: "helperThemeStyle-"
                 current: Config.themeStyle
                 onSelected: value => Config.set("themeStyle", value)
             }
         }
         SettingsRow
         {
-            label: Tr.tr("settings.appearance.automaticColor")
-            description: ServiceColors.automaticColorHint
-            Toggle { objectName: "helperAccent"; checked: Config.themeAccent; onToggled: value => Config.set("themeAccent", value) }
+            label: Tr.tr("settings.appearance.accent")
+            description: Tr.tr("settings.appearance.accentHint")
+
+            SettingsChoices
+            {
+                objectName: "helperAccentMode"
+                options: Registry.accentModeOptions
+                current: Config.themeAccentMode
+                onSelected: value => Config.set("themeAccentMode", value)
+            }
         }
         SettingsRow
         {
-            label: Tr.tr("settings.appearance.animations")
-            SettingsChoices
+            label: Tr.tr("settings.appearance.accentHue")
+            visible: Config.themeAccentMode === Enums.AccentCustom
+
+            SettingsSlider
             {
-                objectName: "helperAnimations"
-                options: Registry.animationOptions
-                current: Config.themeAnimations
-                onSelected: value => Config.set("themeAnimations", value)
+                objectName: "helperAccentHue"
+                from: 0
+                to: 360
+                step: 1
+                hue: true
+                value: Config.accentHue
+                valueText: Math.round(shown) + "°"
+                onMoved: value => Config.set("accentHue", value)
+            }
+        }
+    }
+
+    SettingsRowGroup
+    {
+        visible: helperPages.currentPage === 3
+        title: Tr.tr("settings.structure.motion")
+
+        SettingsRow
+        {
+            label: Tr.tr("settings.structure.reduceMotion")
+            description: Tr.tr("settings.appearance.reduceMotionHint")
+
+            Toggle
+            {
+                objectName: "helperMotionReduce"
+                checked: Config.motionReduce
+                onToggled: value => Config.set("motionReduce", value)
+            }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.appearance.motionStyle")
+            stacked: true
+            enabled: !Config.motionReduce
+
+            SettingsStyleChoices
+            {
+                objectName: "helperMotionStyle"
+                kind: "animation"
+                options: Registry.motionStyleOptions
+                namePrefix: "helperMotionStyle-"
+                current: Config.motionStyle
+                onSelected: value => Config.set("motionStyle", value)
+            }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.appearance.motionSpeed")
+            description: Tr.tr("settings.appearance.motionSpeedHint")
+            enabled: !Config.motionReduce && Config.motionStyle !== Enums.MotionDirect
+
+            SettingsSlider
+            {
+                objectName: "helperMotionSpeed"
+                from: 0.25
+                to: 2
+                step: 0.05
+                value: Config.motionSpeed
+                valueText: shown.toFixed(2) + "×"
+                onMoved: value => Config.set("motionSpeed", value)
             }
         }
     }
@@ -228,15 +297,40 @@ Column
     {
         id: section
         required property string prefix
+        readonly property string styleKey: prefix + "Type"
+        readonly property int style: Config[styleKey]
+        property int enabledStyle: Enums.InFrame
+
         SettingsRow
         {
+            visible: section.prefix === "dock"
             label: Tr.tr("common.enabled")
-            Toggle { objectName: "helper-" + section.prefix + "-enabled"; checked: Config[section.prefix + "Enabled"]; onToggled: value => Config.set(section.prefix + "Enabled", value) }
+            Toggle
+            {
+                objectName: "helper-" + section.prefix + "-enabled"
+                checked: section.style !== Enums.PanelDisabled
+                onToggled: value =>
+                {
+                    if (!value) section.enabledStyle = section.style;
+                    Config.set(section.styleKey, value ? section.enabledStyle : Enums.PanelDisabled);
+                }
+            }
+        }
+        SettingsRow
+        {
+            visible: section.prefix === "bar"
+            label: Tr.tr("common.style")
+            SettingsChoices
+            {
+                options: Registry.barStyleOptions
+                current: Config.barType
+                onSelected: value => Config.set("barType", value)
+            }
         }
         SettingsRow
         {
             label: Tr.tr("common.position")
-            enabled: Config[section.prefix + "Enabled"]
+            enabled: section.style !== Enums.PanelDisabled
             SettingsChoices
             {
                 objectName: "helper-" + section.prefix + "-position"

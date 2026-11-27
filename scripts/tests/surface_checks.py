@@ -45,7 +45,7 @@ else:
     (base / "config/bloodyShell").mkdir()
     (base / "config/bloodyShell/settings.json").write_text(json.dumps({
         "helperSeen": True, "themeAnimations": 0, "dockPinned": ["surface-test.desktop"],
-        "barType": 0, "dockType": 0, "dockHideAuto": False
+        "barType": 0, "dockHideAuto": False
     }))
     for name in ("niri", "awww", "cava"):
         path = base / "bin" / name
@@ -114,12 +114,14 @@ ShellRoot
     property int settling: 0
     property var mediaWidget: null
     property var mediaOwner: null
+    property int islandReservation: 0
     property real slideBefore: 0
     property string frameBeforeSidebar: ""
     function barShape()
     {
         const surface = frame.surface;
-        return JSON.stringify([surface.startBody, surface.endBody, surface.thickness, surface.cornerRadius, surface.bodyRadius, surface.smoothing]);
+        return JSON.stringify([surface.startBody, surface.endBody, surface.thickness, surface.cornerRadius,
+            surface.startCorners, surface.startFillets, surface.endCorners, surface.endFillets]);
     }
     function check(ok, message) { if (!ok) throw new Error(message) }
     function verifyMediaCenter()
@@ -190,12 +192,14 @@ ShellRoot
     }
     function menuEdges()
     {
+        const previousStyle = Config.barType;
+        Config.set("barType", Enums.BarWaves);
         const names = ["Battery", "Bluetooth", "Clock", "Layout", "Media", "Network", "Tray", "Volume"];
         for (const edge of [Enums.EdgeBottom, Enums.EdgeRight, Enums.EdgeTop, Enums.EdgeLeft])
         {
             Config.set("barSide", edge);
             events.wait(40);
-            const trigger = slot(frame.bar, "clock").widget;
+            const trigger = slot(frame.bar, "status").widget;
             for (const name of names)
             {
                 const source = Qt.resolvedUrl("modules/ui/bar/menus/Menu" + name + ".qml");
@@ -220,6 +224,7 @@ ShellRoot
         }
         MenuState.close();
         Config.set("barSide", Enums.EdgeTop);
+        Config.set("barType", previousStyle);
         events.wait(360);
     }
     function sidebarEdges()
@@ -265,9 +270,41 @@ ShellRoot
         check(frame.reservations.length === 4 && frame.reservations.every(value => value >= frame.thickness), "Frame margins were lost");
         check(frame.reservations[Config.barSide] >= frame.bar.reserve, "Bar reservation lost");
         check(frame.reservations[Config.dockSide] >= frame.dock.thickness + frame.dock.edgeGap, "Dock reservation lost");
-        if (Config.barType === Enums.OutFrame) check(shape.startBody.width === 0 && shape.endBody.width === 0, "Out Frame bar kept its fill");
-        if (Config.dockType === Enums.OutFrame) check(shape.dockBody.width === 0, "Out Frame dock kept its fill");
-        else check(shape.dockBody.width > 0 && shape.dockBody.height > 0, "In Frame dock has no surface");
+        const full = Config.barType === Enums.BarFull;
+        const compact = Registry.usesStatusBubbles(Config.barType);
+        const along = frame.bar.isHorizontal ? shape.startBody.width : shape.startBody.height;
+        check(full ? along >= (frame.bar.isHorizontal ? frame.width : frame.height) && shape.endBody.width === 0
+            : compact ? shape.startBody.width === 0 && shape.endBody.width === 0
+                : shape.startBody.width > 0 && shape.endBody.width > 0, "Bar has the wrong bodies for its style");
+        check(compact ? !slot(frame.bar, "workspaces") && !slot(frame.bar, "window")
+            : slot(frame.bar, "workspaces") && slot(frame.bar, "window"), "Workspace or window widgets do not match the bar style");
+        const island = shape.centerBody;
+        const a = rect => frame.bar.isHorizontal ? rect.x : rect.y;
+        const b = rect => a(rect) + (frame.bar.isHorizontal ? rect.width : rect.height);
+        const surfaces = findAll(frame.bar, "statusBubbleSurface").filter(item => item.visible);
+        if (compact)
+        {
+            check(surfaces.length >= 3 && surfaces.every(surface => surface.baseColor === Theme.frameColor && surface.materialEnabled),
+                "Compact bar is missing separate bubbles with the Island material");
+            const bounds = surfaces.map(surface => surface.mapToItem(frame, 0, 0, surface.width, surface.height)).sort((left, right) => a(left) - a(right));
+            check(bounds.every((rect, index) => index === 0 || b(bounds[index - 1]) < a(rect)), "Status bubbles overlap");
+            if (island.width > 0 && island.height > 0)
+            {
+                if (Config.barType === Enums.BarLeft) check(b(island) < a(bounds[0]), "Left island does not lead the bubbles");
+                else if (Config.barType === Enums.BarRight) check(b(bounds[bounds.length - 1]) < a(island), "Right island does not trail the bubbles");
+                else check(bounds.some(rect => b(rect) < a(island)) && bounds.some(rect => a(rect) > b(island)), "Center Island needs bubbles on both sides");
+            }
+        }
+        else check(surfaces.length === 0, "Full or Waves has individual status bubbles");
+        if (island.width > 0 && island.height > 0 && Config.barType !== Enums.BarLeft && Config.barType !== Enums.BarRight)
+            check(Math.abs(a(island) + b(island) - (frame.bar.isHorizontal ? frame.width : frame.height)) < 2, "Island is not centered");
+        const dock = shape.dockBody;
+        check(dock.width > 0 && dock.height > 0, "Dock has no surface");
+        const gap = [dock.y, frame.height - dock.y - dock.height, dock.x, frame.width - dock.x - dock.width][Config.dockSide];
+        check(gap <= shape.inset, "Dock lost its frame join");
+        const dockCorner = [shape.dockCorners.z, shape.dockCorners.x, shape.dockCorners.y, shape.dockCorners.x][Config.dockSide];
+        const dockJoin = [shape.dockFillets.x, shape.dockFillets.y, shape.dockFillets.z, shape.dockFillets.w][Config.dockSide];
+        check(dockJoin === dockCorner, "Dock join and body use different radii");
     }
     function barInteraction()
     {
@@ -277,7 +314,19 @@ ShellRoot
         check(frame.leftSidebar.barSide === Config.barSide && frame.rightSidebar.barSide === Config.barSide, "Sidebar clearance uses a different bar edge");
         for (const side of ["left", "right"])
         {
-            const along = (bar.isHorizontal ? band.width : band.height) / 2 + (side === "left" ? -6 : 6);
+            const length = bar.isHorizontal ? band.width : band.height;
+            const boxes = [frame.surface.centerBody];
+            if (Config.barType !== Enums.BarFull) boxes.push(frame.surface.startBody, frame.surface.endBody);
+            for (const bubble of findAll(bar, "statusBubbleSurface"))
+                if (bubble.visible) boxes.push(bubble.mapToItem(frame, 0, 0, bubble.width, bubble.height));
+            const fractions = [0.32, 0.41, 0.22, 0.12];
+            const candidates = fractions.map(fraction => (side === "left" ? fraction : 1 - fraction) * length);
+            const along = candidates.find(pos => boxes.every(rect =>
+            {
+                const start = bar.isHorizontal ? rect.x : rect.y;
+                const size = bar.isHorizontal ? rect.width : rect.height;
+                return size <= 0 || pos < start - 4 || pos > start + size + 4;
+            })) ?? candidates[0];
             const x = bar.isHorizontal ? along : band.width / 2;
             const y = bar.isHorizontal ? band.height / 2 : along;
             events.mouseMove(band, x, y, 0);
@@ -435,28 +484,29 @@ ShellRoot
                         ServiceCompositor.backend.lastWindowId = 1;
                         ServiceCompositor.backend.focusedWindowId = 1;
                     }
-                    Config.set("barType", Math.floor(step / 8) % 2);
+                    Config.set("barType", Registry.barStyleOptions[Math.floor(step / 4) % 5].value);
                     Config.set("barSide", step % 4);
                     Config.set("dockSide", step < 16 ? (step + 1) % 4 : step % 4);
-                    Config.set("dockType", Math.floor(step / 4) % 2);
                 }
                 else switch (step - 32)
                 {
                     case 0:
                         tests.geometry();
-                        Config.set("barEnabled", false); Config.set("dockEnabled", false);
+                        Config.set("dockType", Enums.PanelDisabled);
+                        Config.set("islandEnabled", false);
                         Config.set("frameThickness", 0);
                         break;
                     case 1:
-                        tests.check(!frame.bar && !frame.dock && tests.area(frame.inputRegion) === 0, "Hidden layout still captures input");
-                        tests.check(frame.thickness === 0 && frame.surface.thickness === 0 && frame.reservations.every(value => value === 0), "Zero frame thickness keeps application margins");
+                        tests.check(frame.bar && !frame.dock && !frame.island, "Disabling the frame, dock and island hid the bar");
+                        tests.check(frame.thickness === 0 && frame.surface.thickness === 0 && frame.reservations.every((value, edge) => value === (edge === Config.barSide ? Theme.barThickness : 0)), "Zero frame thickness kept unused margins");
                         Config.set("frameThickness", 8);
-                        Config.set("barEnabled", true); Config.set("dockEnabled", true);
+                        Config.set("barType", Enums.BarWaves); Config.set("dockType", Enums.InFrame);
+                        Config.set("islandEnabled", true);
                         Config.set("barScreens", ["disconnected-output"]);
                         break;
                     case 2:
                         tests.geometry();
-                        Config.set("barType", Enums.InFrame);
+                        Config.set("barType", Enums.BarWaves);
                         Config.set("barScreens", []);
                         MenuState.toggle(Registry.widgets.clock.menu, tests.island(frame.bar));
                         MenuState.menuKeyboard = true;
@@ -523,8 +573,8 @@ ShellRoot
                         break;
                     case 16: tests.check(frame.surface.centerBody.width > 0, "Island exit animation disappeared instantly"); break;
                     case 17:
-                        if (overlay.visible || frame.surface.centerBody.width > 0.5) { tests.check(++tests.settling < 10, "Overlay never completed its exit"); return; }
-                        tests.check(frame.surface.centerBody.width <= 0.5 && !overlay.visible, "Closed overlay kept a surface visible");
+                        if (overlay.visible || !tests.find(frame.island, "islandRestingClock").visible) { tests.check(++tests.settling < 10, "Overlay never completed its exit"); return; }
+                        tests.check(frame.surface.centerBody.width > 0, "Dismissing the event dropped the resting Island");
                         Config.set("themeAnimations", 2); OverlayState.show("launcher");
                         break;
                     case 18: OverlayState.close(); OverlayState.show("settings"); break;
@@ -586,7 +636,7 @@ ShellRoot
                         tests.check(tests.find(frame, "dynamicIsland").shown.kind === "media", "Media did not return after transients");
                         player.isPlaying = false; break;
                     case 31:
-                        tests.check(frame.surface.centerBody.width === 0, "Empty media island kept its background");
+                        tests.check(tests.find(frame.island, "islandRestingClock").visible, "Stopping media did not restore the resting clock");
                         SidebarState.toggle("right", Quickshell.screens[0].name); break;
                     case 32:
                         tests.check(frame.rightSidebar.opened, "Control center failed to open");
@@ -613,19 +663,22 @@ ShellRoot
                         tests.check(mediaCard.height === 0 && !mediaLoader.item.active, "Empty control center retained a media card or playback subscriptions");
                         ServiceMedia.players = [player];
                         SidebarState.close(); player.isPlaying = true;
-                        Config.set("barEnabled", false); break;
+                        Config.set("barType", Enums.BarCenter); break;
                     case 33:
-                        tests.check(!frame.bar && frame.island && tests.find(frame.island, "dynamicIsland").active, "Island still depends on bar enablement");
-                        tests.check(frame.surface.centerBody.width > 0 && frame.island.bodyRect.width > 0, "Island lost its In Frame background with the bar disabled");
-                        Config.set("barType", Enums.OutFrame);
+                        tests.check(frame.bar?.island === frame.island && frame.island && tests.find(frame.island, "dynamicIsland").active, "Island is not owned by the bar");
+                        tests.check(frame.surface.centerBody.width > 0 && frame.island.bodyRect.width > 0, "Island lost its attached background");
                         Config.set("barSide", Enums.EdgeBottom); break;
                     case 34:
                         tests.check(frame.surface.centerBody.y > window.height / 2 && frame.surface.centerBody.width > 0, "Island did not follow the bar to the bottom edge");
+                        tests.islandReservation = frame.reservations[Enums.EdgeBottom];
+                        tests.check(tests.islandReservation >= frame.layoutThickness + Theme.barThickness
+                            && frame.leftSidebar.barSide === Enums.EdgeBottom, "Standalone island has no space on its edge");
                         tests.mediaWidget = tests.find(frame.island, "dynamicIsland");
                         tests.check(tests.mediaWidget.side === Enums.EdgeBottom, "Island orientation was not forwarded to its content");
                         tests.mediaWidget.toggleMenu(); tests.mediaOwner = MenuState.menuOwner; break;
                     case 35:
                         tests.check(MenuState.menuActive && MenuState.menuWidget === tests.mediaWidget, "Media menu failed to open independently");
+                        tests.check(frame.reservations[Enums.EdgeBottom] === tests.islandReservation, "Opening the island menu resized the work area");
                         tests.check(!tests.find(tests.mediaWidget, "islandCompactContent").visible, "Media menu duplicated the compact artwork and track details");
                         tests.check(frame.island.bodyRect.height === 0, "Expanded media retained an empty compact island");
                         tests.check(!tests.find(tests.mediaWidget, "islandEqualizer").streaming, "Hidden compact media retained its visualizer subscription");
@@ -667,7 +720,7 @@ ShellRoot
                         tests.check(tests.find(overlay.testPage.item, "frameStyle-island-0") === null, "Removed island style selector is still present");
                         break;
                     case 39:
-                        tests.check(Config.barType === Enums.OutFrame, "Island settings changed the bar style");
+                        tests.check(Config.barType === Enums.BarCenter, "Island settings changed the bar style");
                         OverlayState.close(); Config.set("themeAnimations", 2);
                         SidebarState.toggle("left", Quickshell.screens[0].name); break;
                     case 40:
@@ -685,27 +738,23 @@ ShellRoot
                         tests.check(canvas.reserveAnchors.top && canvas.reserveAnchors.bottom && canvas.reserveAnchors.left && canvas.reserveAnchors.right, "Canvas no longer covers all output edges");
                         tests.check(canvas.width === Quickshell.screens[0].width && canvas.height === Quickshell.screens[0].height, "Canvas was inset into the work area");
                         Config.set("themeAnimations", 0); SidebarState.close(); ServiceMedia.players = [];
-                        Config.set("barEnabled", true); Config.set("barSide", Enums.EdgeTop);
-                        Config.set("barHideAuto", true); Config.set("barHideSmart", false);
+                        Config.set("barType", Enums.BarWaves); Config.set("barSide", Enums.EdgeTop);
                         break;
                     case 42:
-                        frame.bar.revealed = false;
-                        events.mouseMove(frame, frame.width / 2 - 6, 1, 0);
-                        tests.check(frame.bar.revealed, "Auto-hide edge no longer reveals the bar");
-                        events.mouseMove(frame.bar.sidebarArea, frame.width / 2 - 6, frame.bar.reserve / 2, 0);
-                        tests.check(frame.bar.revealWanted, "Auto-hide does not stay revealed on empty bar space");
                         events.mouseClick(frame.bar.sidebarArea, frame.width / 4, frame.bar.reserve / 2, Qt.LeftButton, Qt.NoModifier, 0);
-                        tests.check(SidebarState.current === "left", "Expanded auto-hide bar no longer opens a sidebar");
-                        const clock = tests.slot(frame.bar, "clock");
+                        tests.check(SidebarState.current === "left", "Bar no longer opens a sidebar");
+                        const clock = tests.find(frame.island, "islandRestingClock");
                         tests.check(clock !== null, "Clock widget did not load");
                         events.mouseClick(clock, clock.width / 2, clock.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                         tests.check(!SidebarState.active && MenuState.menuActive && MenuState.menuCurrent === String(Registry.widgets.clock.menu), "Bar background or sidebar swallowed a widget click");
-                        MenuState.close(); Config.set("barHideAuto", false);
+                        MenuState.close();
                         OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "bar");
                         OverlayState.show("settings"); break;
                     case 43:
                         tests.check(!tests.find(overlay.testPage.item, "menuStyle-0") && !tests.find(overlay.testPage.item, "menuStyle-1"),
                             "Settings still offers an attached sidebar");
+                        tests.check(tests.find(overlay.testPage.item, "barHideAuto") && tests.find(overlay.testPage.item, "barHideSmart"),
+                            "Bar settings lost the shared auto-hide controls");
                         OverlayState.close();
                         tests.frameBeforeSidebar = tests.barShape();
                         SidebarState.toggle("left", Quickshell.screens[0].name); break;
@@ -725,7 +774,7 @@ ShellRoot
                     case 46:
                         tests.check(frame.rightSidebar.opened, "Switching sidebars did not open the right sidebar");
                         ServiceCompositor.backend.lastWindowId = 1; ServiceCompositor.backend.focusedWindowId = null;
-                        const clockAfterSidebar = tests.slot(frame.bar, "clock");
+                        const clockAfterSidebar = tests.find(frame.island, "islandRestingClock");
                         events.mouseClick(clockAfterSidebar, clockAfterSidebar.width / 2, clockAfterSidebar.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
                         tests.check(!SidebarState.active && MenuState.menuActive, "Opening a menu did not replace the sidebar");
                         ServiceCompositor.backend.focusedWindowId = 1;
@@ -785,80 +834,63 @@ ShellRoot
                     case 50:
                         OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "bar"); break;
                     case 51:
-                        const filledBar = tests.find(overlay.testPage.item, "frameStyle-bar-" + Enums.Filled);
-                        tests.check(filledBar && filledBar.filled && filledBar.width <= 150, "Filled bar preview is missing");
-                        filledBar.clicked(); OverlayState.close();
-                        Config.set("dockType", Enums.Filled);
-                        Config.set("barSide", Enums.EdgeTop); Config.set("dockSide", Enums.EdgeTop);
+                        const styles = tests.find(overlay.testPage.item, "barStyle");
+                        tests.check(styles?.options.length === 5 && tests.find(overlay.testPage.item, "settingsShellPreview"),
+                            "Bar style selector or live preview is missing");
+                        styles.selected(Enums.BarCenter); OverlayState.close();
+                        Config.set("barSide", Enums.EdgeRight); Config.set("dockSide", Enums.EdgeLeft);
                         player.isPlaying = true; ServiceMedia.players = [player]; break;
                     case 52:
-                    case 53:
-                    case 54:
-                    case 55:
-                        tests.check(Config.barType === Enums.Filled && frame.bar.filled && frame.dock.filled, "Filled styles are not independent");
-                        tests.check(frame.island.side === Config.barSide && tests.find(frame.island, "dynamicIsland").side === Config.barSide, "Island position or content orientation does not follow the bar");
-                        tests.check(frame.bar.inFrame && frame.dock.inFrame, "Filled is detached from the frame");
-                        const horizontal = Config.barSide === Enums.EdgeTop || Config.barSide === Enums.EdgeBottom;
-                        const span = horizontal ? frame.width : frame.height;
-                        const strips = [frame.surface.startBody, frame.surface.centerBody, frame.surface.endBody, frame.surface.dockBody].filter(rect => rect.width > 0 && rect.height > 0);
-                        tests.check(strips.length === 1, "Same-edge Filled backgrounds are drawn more than once");
-                        tests.check(strips.every(rect => (horizontal ? rect.width : rect.height) >= span), "Filled does not cover the entire edge");
-                        tests.check(strips.every(rect => (horizontal ? rect.x : rect.y) < 0), "Filled ends are not attached to screen corners");
-                        tests.check(frame.dock.edgeGap === Math.max(Theme.frameThickness, frame.dock.barDepth), "Filled dock retains the floating gap");
-                        tests.check(frame.reservations[Config.barSide] >= frame.bar.reserve, "Filled bar has no reservation");
-                        if (step - 32 < 55)
-                        {
-                            const side = [Enums.EdgeLeft, Enums.EdgeBottom, Enums.EdgeRight][step - 84];
-                            Config.set("barSide", side); Config.set("dockSide", side);
-                        }
-                        else Config.set("themeStyle", Enums.ThemeLight);
-                        break;
-                    case 56:
-                        tests.check(frame.surface.fillColor === Theme.frameColor && Theme.light, "Filled ignores the light frame theme");
-                        ServiceMedia.players = []; break;
-                    case 57:
-                        tests.check(frame.island.bodyRect.width === 0, "Empty island kept its Filled background");
-                        Config.set("barType", Enums.InFrame); Config.set("dockType", Enums.OutFrame);
+                        tests.geometry();
+                        tests.check(Config.barType === Enums.BarCenter && frame.surface.centerBody.height > 0, "Center bar lost its Island");
+                        tests.check(frame.surface.centerFillets.w > 0 && frame.surface.centerFillets.w === frame.surface.centerCorners.x,
+                            "Dynamic Island join and body use different radii");
+                        Config.set("barAttach", false);
+                        const bubble = tests.find(frame.bar, "statusBubbleSurface");
+                        tests.check(bubble && bubble.baseColor === Theme.frameColor && bubble.height >= Theme.barStandaloneWidgetHeight,
+                            "Detached status bubble lost its material or padding");
+                        const volume = tests.slot(frame.bar, "statusSystem").widget;
+                        const target = tests.find(volume, "statusBubbleSurface").parent.parent;
+                        events.mouseClick(target, target.width / 2, target.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
+                        tests.check(MenuState.menuActive && MenuState.menuWidget === target && MenuState.menuCurrent.endsWith("MenuVolume.qml"),
+                            "Status bubble did not open its menu");
+                        Config.set("barType", Enums.BarFull);
+                        tests.check(!MenuState.menuActive, "Replacing the status widgets kept their menu open");
+                        Config.set("barType", Enums.BarCenter);
+                        Config.set("barAttach", true);
                         OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "dock");
                         OverlayState.show("settings"); break;
-                    case 58:
-                        tests.check(!frame.bar.filled && frame.surface.startBody.width > 0 && frame.surface.startBody.width < frame.width, "Returning to In Frame retained full-side fill");
-                        tests.check(frame.dock.container.color.a === 0, "Out Frame retained the dock fill");
-                        const filledDock = tests.find(overlay.testPage.item, "frameStyle-dock-" + Enums.Filled);
-                        tests.check(filledDock && filledDock.filled, "Filled dock preview is missing");
-                        const badges=tests.find(overlay.testPage.item,"dockNotificationBadges");
-                        tests.check(badges && tests.find(tests.find(overlay.testPage.item,"dockStyleOptions"),"dockNotificationBadges")===badges,"Notification badges are outside Dock style");
-                        badges.toggled(false);tests.check(!Config.dockBadges,"Dock notification badges did not disable");
-                        badges.toggled(true);tests.check(Config.dockBadges,"Dock notification badges did not enable");
-                        filledDock.clicked();
-                        OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "island"); break;
-                    case 59:
-                        tests.check(Config.dockType === Enums.Filled && Config.barType === Enums.InFrame, "Dock card changed another style");
-                        tests.check(tests.find(overlay.testPage.item, "frameStyle-island-2") === null, "Removed Filled island selector is still present");
+                    case 53:
+                        tests.geometry();
+                        const dockStyle = [Enums.PanelDisabled, Enums.OutFrame, Enums.InFrame].map(value =>
+                            tests.find(overlay.testPage.item, "frameStyle-dock-" + value));
+                        tests.check(dockStyle.every(card => card) && dockStyle[2].current, "Dock styles or default are wrong");
+                        dockStyle[1].clicked();
+                        tests.check(Config.dockType === Enums.OutFrame && frame.surface.dockBody.width === 0 && frame.dock.container.visible,
+                            "Out Frame dock did not detach its surface");
+                        dockStyle[0].clicked();
+                        tests.check(frame.dock === null, "Disabled dock is still loaded");
+                        dockStyle[2].clicked();
+                        const badges = tests.find(overlay.testPage.item, "dockNotificationBadges");
+                        tests.check(badges, "Dock notification badges are missing");
+                        badges.toggled(false); tests.check(!Config.dockBadges, "Dock notification badges did not disable");
+                        badges.toggled(true); tests.check(Config.dockBadges, "Dock notification badges did not enable");
+                        OverlayState.close();
+                        events.wait(30);
+                        tests.geometry();
+                        frame.dock.revealed = false; break;
+                    case 54:
+                        tests.check(frame.bar.reveal === 1 && frame.surface.dockBody.width === 0,
+                            "Hiding the dock affected the bar or left a visible dock body");
+                        frame.dock.revealed = true;
                         break;
-                    case 60:
-                        tests.check(Config.barType === Enums.InFrame, "Island settings changed another style");
-                        OverlayState.close(); Config.set("dockType", Enums.OutFrame);
-                        player.isPlaying = true; ServiceMedia.players = [player];
-                        break;
-                    case 61:
-                        tests.check(frame.surface.startBody.width > 0 && frame.surface.endBody.width > 0 && frame.surface.centerBody.height > 0 && frame.surface.centerBody.height < frame.height, "Island must wrap its content in frame");
-                        Config.set("barType", Enums.Filled); break;
-                    case 62:
-                        tests.check(frame.surface.startBody.height >= frame.height && frame.surface.centerBody.width === 0, "Filled bar duplicates the island body on the same edge");
-                        tests.check(tests.find(frame.island, "dynamicIsland").active && frame.island.bodyRect.width > 0, "Merging backgrounds hid island content or input geometry");
-                        Config.set("barType", Enums.OutFrame); break;
-                    case 63:
-                        tests.check(frame.surface.centerBody.width > 0, "Out Frame bar changed the island background");
-                        Config.set("barType", Enums.Filled); break;
-                    case 64:
-                        tests.check(frame.surface.startBody.height >= frame.height && frame.surface.centerBody.width === 0, "Covered In Frame island background was not merged");
-                        Config.set("barType", Enums.OutFrame); Config.set("themeAnimations", 0); Config.set("dockEnabled", false);
+                    case 55:
+                        Config.set("dockType", Enums.PanelDisabled);
                         ServiceNotifications.notificationReceived(notification); break;
-                    case 65:
-                    case 66:
-                    case 67:
-                    case 68:
+                    case 56:
+                    case 57:
+                    case 58:
+                    case 59:
                         const notice = tests.find(frame.island, "dynamicIsland");
                         const bodyText = tests.find(notice, "islandBody");
                         tests.check(notice.shown.kind === "notification" && !notice.compact && bodyText.lineCount > 1, "Notification is collapsed to an icon on a bar edge");
@@ -866,79 +898,30 @@ ShellRoot
                         const surface = tests.find(frame.island, "islandNotificationSurface");
                         tests.check(surface.visible && surface.color === Theme.frameColor && surface.width === frame.island.bodyRect.width && surface.height === frame.island.bodyRect.height, "Expanded notification lets underlying shell content show through");
                         tests.check(frame.reservations[Config.barSide] === frame.bar.reserve, "Transient notifications resized application reservations");
-                        if (step - 32 < 68) Config.set("barSide", [Enums.EdgeTop, Enums.EdgeLeft, Enums.EdgeBottom][step - 97]);
+                        if (step - 32 < 59) Config.set("barSide", [Enums.EdgeTop, Enums.EdgeLeft, Enums.EdgeBottom][step - 88]);
                         else { Config.set("themeAnimations", 2); ServiceIsland.dismiss(); }
                         break;
-                    case 69:
+                    case 60:
                         if (tests.find(frame.island, "dynamicIsland").shown.kind !== "media") return;
                         ServiceNotifications.notificationReceived(notification); break;
-                    case 70:
+                    case 61:
                         tests.check(tests.find(frame.island, "dynamicIsland").contentOpacity < 1, "Island content transition snapped");
                         break;
-                    case 71:
+                    case 62:
                         tests.check(frame.island.bodyRect.height > Theme.barThickness, "Fluid notification did not start expanding");
                         ServiceOSD.preview(); break;
-                    case 72:
+                    case 63:
                         ServiceOSD.hide(); ServiceIsland.dismiss(); break;
-                    case 73:
+                    case 64:
                         if (tests.find(frame.island, "dynamicIsland").shown.kind !== "media" || tests.find(frame.island, "dynamicIsland").contentOpacity < 0.99) return;
-                        Config.set("themeAnimations", 0); Config.set("dockEnabled", true);
-                        OverlayState.settingsPage = 0; OverlayState.show("settings"); break;
-                    case 74:
-                        OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "bar"); break;
-                    case 75:
-                        const islandsBar = tests.find(overlay.testPage.item, "frameStyle-bar-" + Enums.Islands);
-                        tests.check(islandsBar && islandsBar.islands && islandsBar.width <= 150, "Islands bar preview is missing");
-                        islandsBar.clicked(); OverlayState.close();
-                        Config.set("dockType", Enums.Islands); Config.set("themeStyle", Enums.ThemeDark);
-                        Config.set("barSide", Enums.EdgeTop); Config.set("dockSide", Enums.EdgeTop); break;
-                    case 76:
-                    case 77:
-                    case 78:
-                    case 79:
-                        tests.check(frame.bar.islands && frame.dock.islands && !frame.bar.inFrame && !frame.dock.inFrame, "Islands style still joins the frame");
-                        const capsules = [frame.surface.startBody, frame.surface.endBody];
-                        tests.check(frame.surface.detachedBar && frame.surface.barSmoothing === 0 && frame.surface.dockBody.width === 0,
-                            "Islands bar joined the screen frame");
-                        tests.check(capsules.every(rect => rect.width > 0 && rect.height > 0), "Bar groups have no independent capsule backgrounds");
-                        for (const capsule of capsules)
-                        {
-                            const gap = Config.barSide === Enums.EdgeTop ? capsule.y : Config.barSide === Enums.EdgeBottom ? frame.height - capsule.y - capsule.height
-                                : Config.barSide === Enums.EdgeLeft ? capsule.x : frame.width - capsule.x - capsule.width;
-                            tests.check(Math.abs(gap - Theme.frameThickness - frame.bar.surfaceGap) < 0.01, "Islands bar has no clear frame gap");
-                        }
-                        tests.check(frame.dock.container.color === Theme.frameColor && frame.dock.edgeGap > frame.dock.barDepth, "Islands dock has no separate fill or gap");
-                        tests.check(frame.reservations[Config.barSide] >= frame.bar.reserve, "Islands bar lost its reserved margin");
-                        tests.check(frame.island.side === Config.barSide && frame.surface.centerBody.width > 0, "Islands bar altered the Dynamic Island style");
-                        if (step - 32 < 79)
-                        {
-                            const side = [Enums.EdgeLeft, Enums.EdgeBottom, Enums.EdgeRight][step - 108];
-                            Config.set("barSide", side); Config.set("dockSide", side);
-                        }
-                        else Config.set("themeStyle", Enums.ThemeLight);
-                        break;
-                    case 80:
-                        tests.check(frame.dock.container.color === Theme.frameColor && frame.surface.paintColor === Theme.frameColor, "Islands colors ignore the light theme");
-                        Config.set("dockType", Enums.OutFrame);
-                        OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "dock"); OverlayState.show("settings"); break;
-                    case 81:
-                        const islandsDock = tests.find(overlay.testPage.item, "frameStyle-dock-" + Enums.Islands);
-                        tests.check(islandsDock && islandsDock.islands && frame.dock.container.color.a === 0, "Islands dock preview or style reset failed");
-                        islandsDock.clicked(); OverlayState.close(); break;
-                    case 82:
-                        tests.check(Config.dockType === Enums.Islands && Config.barType === Enums.Islands, "Islands dock card changed the wrong setting");
-                        frame.bar.revealed = false; frame.dock.revealed = false; break;
-                    case 83:
-                        tests.check([frame.surface.startBody, frame.surface.endBody].every(rect => rect.x >= frame.width), "Hidden bar left capsule backgrounds visible");
-                        tests.check(frame.dock.container.x >= frame.width, "Hidden Islands dock left its background onscreen");
-                        frame.bar.revealed = true; frame.dock.revealed = true;
+                        Config.set("themeAnimations", 0); Config.set("dockType", Enums.InFrame);
                         OverlayState.settingsPage = 0; OverlayState.show("settings"); break;
                     default:
-                        if (sidebarChecks === 0 && step - 32 >= 50 && step - 116 < Registry.settings.length)
+                        if (sidebarChecks === 0 && step - 97 < Registry.settings.length)
                         {
                             tests.ready("settings");
-                            tests.check(tests.loadedPage(overlay.testPage.item, Registry.settings[step - 116].page) !== null, "Settings page failed to load after relocation: " + Registry.settings[step - 116].id);
-                            if (Registry.settings[step - 116].id === "updates")
+                            tests.check(tests.loadedPage(overlay.testPage.item, Registry.settings[step - 97].page) !== null, "Settings page failed to load after relocation: " + Registry.settings[step - 97].id);
+                            if (Registry.settings[step - 97].id === "hub")
                             {
                                 const imports = tests.find(overlay.testPage.item, "resourceImports");
                                 tests.check(imports !== null, "Updates import section is missing");
@@ -967,7 +950,9 @@ ShellRoot
                                 if (importChecks === 2)
                                 {
                                     if (ServiceResources.busy) return;
-                                    tests.find(imports, "importResource-wallpapers").clicked();
+                                    const downloads = tests.find(overlay.testPage.item, "resourceDownloads");
+                                    if (!downloads.expanded) { downloads.expanded = true; return; }
+                                    tests.find(downloads, "importResource-wallpapers").clicked();
                                     const confirmation = tests.find(overlay.testPage.item, "resourceConfirmation");
                                     tests.find(confirmation.contentItem, "acceptConfirmation").clicked();
                                     tests.check(ServiceResources.busy && ServiceUpdate.resourcesBusy, "Import and updater can run concurrently");
@@ -980,7 +965,7 @@ ShellRoot
                                     imports.expanded = false; importChecks++;
                                 }
                             }
-                            if (Registry.settings[step - 116].id === "appearance")
+                            if (Registry.settings[step - 97].id === "wallpaper")
                             {
                                 const wallpaperPreview = tests.find(overlay.testPage.item, "currentWallpaperPreview");
                                 tests.check(wallpaperPreview && wallpaperPreview.wallpaper === Config.wallpaperCurrent && wallpaperPreview.height === 172, "Appearance lost its shared wallpaper preview");
@@ -988,7 +973,7 @@ ShellRoot
                                 while (row && row.controlAvailableWidth === undefined) row = row.parent;
                                 tests.check(row && row.stacked, "Wallpaper preview is outside a settings row");
                             }
-                            if (Registry.settings[step - 116].id === "components")
+                            if (Registry.settings[step - 97].id === "desktop")
                             {
                                 const visualizer = tests.find(overlay.testPage.item, "visualizerOptions");
                                 tests.check(visualizer, "Visualizer foldout is missing");
@@ -998,7 +983,7 @@ ShellRoot
                                 tests.check(bars && waves && waves.kind === "equalizer" && waves.width <= 150, "Equalizer style previews are missing");
                                 if (previewStep === 0)
                                 {
-                                    const page = tests.loadedPage(overlay.testPage.item, Registry.settings[step - 116].page);
+                                    const page = tests.loadedPage(overlay.testPage.item, Registry.settings[step - 97].page);
                                     page.contentY = Math.max(0, Math.min(page.contentHeight - page.height, waves.mapToItem(page.contentItem, 0, 0).y - 120));
                                     previewBarHeight = tests.find(bars, "equalizerBar").height;
                                     events.mouseMove(waves, waves.width / 2, waves.height / 2, 0);
@@ -1015,9 +1000,9 @@ ShellRoot
                                 bars.clicked();
                                 tests.check(Config.equalizerStyle === Enums.EqualizerBars && bars.current, "Bars preview did not restore the global style");
                             }
-                            if (step - 116 + 1 < Registry.settings.length)
+                            if (step - 97 + 1 < Registry.settings.length)
                             {
-                                OverlayState.settingsPage = step - 116 + 1;
+                                OverlayState.settingsPage = step - 97 + 1;
                                 break;
                             }
                         }
@@ -1119,7 +1104,7 @@ ShellRoot {
         TestCase {id:events;name:"AudioDropdowns";when:false;optional:true}
     }
     Timer {interval:250;running:Config.initialized;onTriggered:{try{
-        Config.set("barEnabled",false);Config.set("dockEnabled",false);Config.set("islandEnabled",false);
+        Config.set("barType",Enums.BarCenter);Config.set("dockType",Enums.PanelDisabled);Config.set("islandEnabled",false);
         const outputA={id:1,description:"Speakers",audio:{volume:.45,muted:false}};
         const outputB={id:2,description:"Headphones",audio:{volume:.55,muted:false}};
         const outputC={id:3,description:"Headphones",audio:{volume:.65,muted:false}};
@@ -1137,13 +1122,14 @@ ShellRoot {
         for(const mode of [0,1,2]) {
             Config.set("themeAnimations",mode);menu.visible=true;ServiceAudio.sink=outputA;ServiceAudio.source=inputA;
             const collapsed=menu.implicitHeight;
-            events.mouseClick(output,output.width/2,output.height/2,Qt.LeftButton);events.wait(80);
+            events.mouseClick(output,output.width/2,output.height/2,Qt.LeftButton);
             check(output.open&&!frame.popupHere&&!OverlayState.settingsPopup,"Device list opened outside the sound menu");
             const panel=find(output,"inlineMenuDropdownPanel");
             const background=find(output,"inlineMenuDropdownBackground"),trigger=find(output,"menuDropdownTrigger");
-            check(panel&&panel.height>0&&menu.implicitHeight>collapsed&&background.height===output.height
-                && panel.mapToItem(output,0,0).y===trigger.height&&trigger.text==="Speakers",
-                "Device choices did not unfold from the selected button on one surface");
+            const expanded = () => panel && panel.height > 0 && menu.implicitHeight > collapsed
+                && background.height === output.height && panel.mapToItem(output, 0, 0).y === trigger.height;
+            for (let attempt = 0; !expanded() && attempt < 25; attempt++) events.wait(20);
+            check(expanded() && trigger.text === "Speakers", "Device choices did not unfold from the selected button on one surface");
             const options=find(output,"inlineMenuDropdownOptions");
             check(options&&options.count===2&&options.activeFocus&&options.currentIndex===0,"Expansion repeated the selected device or lost keyboard focus");
             events.keyClick(Qt.Key_Down);
@@ -1219,16 +1205,68 @@ ShellRoot {
                 while(!test() && elapsed<timeout) { wait(20); elapsed+=20; }
                 window.check(test(),message);
             }
+            function checkAttachments() {
+                const frame = window.frame, surface = frame.surface, check = window.check;
+                const keys = ["frameThickness", "barAttach", "dockAttach", "barSide", "dockSide", "barAttachCurve", "dockAttachCurve"];
+                const previous = keys.map(key => [key, Config[key]]);
+                const gap = (rect, side) => [rect.y, frame.height - rect.y - rect.height, rect.x, frame.width - rect.x - rect.width][side];
+                const components = vector => [vector.x, vector.y, vector.z, vector.w];
+                const edgeCorners = [[0, 1], [2, 3], [0, 2], [1, 3]];
+                Config.set("frameThickness", 0);
+                Config.set("barAttach", true);
+                Config.set("dockAttach", true);
+                for (const side of [0, 1, 2, 3]) {
+                    const dockSide = side ^ 1;
+                    Config.set("barSide", side);
+                    Config.set("dockSide", dockSide);
+                    until(() => surface.centerBody.width > 0 && surface.dockBody.width > 0, "Missing attached panel geometry");
+                    check(surface.inset === 0 && gap(surface.centerBody, side) === 0 && gap(surface.dockBody, dockSide) === 0
+                        && frame.dock.container.baseColor.a === 0, "Frame toggle detached the Island or Dock");
+                    check(edgeCorners[side].every(index => components(surface.centerCorners)[index] === 0)
+                        && edgeCorners[dockSide].every(index => components(surface.dockCorners)[index] === 0)
+                        && components(surface.centerFillets)[side] > 0 && components(surface.dockFillets)[dockSide] > 0,
+                        "Frameless attachment retained round corners at the edge or lost its curve");
+                }
+                Config.set("barAttachCurve", 40);
+                Config.set("dockAttachCurve", 40);
+                const barScale = surface.bodyCurves.x, dockScale = surface.bodyCurves.y;
+                const radii = () => [surface.centerCorners, surface.dockCorners, surface.centerFillets, surface.dockFillets]
+                    .map(vector => components(vector).join(",")).join("/");
+                const originalRadii = radii();
+                Config.set("barAttachCurve", 80);
+                check(surface.bodyCurves.x > barScale && surface.bodyCurves.y === dockScale, "Bar curve changed the Dock");
+                Config.set("dockAttachCurve", 80);
+                check(surface.bodyCurves.y > dockScale && radii() === originalRadii, "Attach curve changed a radius or depth");
+                Config.set("barAttach", false);
+                Config.set("dockAttach", false);
+                check(gap(surface.centerBody, Config.barSide) === Theme.panelGap && surface.dockBody.width === 0
+                    && frame.dock.edgeGap === Theme.panelGap && frame.dock.container.baseColor.a > 0,
+                    "Detached panels did not keep their edge clearance");
+                for (const [key, value] of previous) Config.set(key, value);
+            }
             function exercise() {
                 until(()=>Config.initialized,"Settings did not initialize",2000);
                 Config.set("barScreens",["A"]); Config.set("dockScreens",["A"]);
                 until(()=>Config.initialized && window.frame && window.frame.bar && window.frame.dock,"Frame did not initialize",2000);
                 const frame=window.frame, check=window.check;
                 const send=event=>window.send(event), tile=(...args)=>window.tile(...args), fullscreen=on=>window.fullscreen(on), find=(...args)=>window.find(...args);
+                Config.set("motionStyle", Enums.MotionDirect);
                 ServiceCompositor.backend.runningVersion = "niri 26.04";
+                const previousStyle = Config.barType;
+                Config.set("barType", Enums.BarCenter);
                 Config.set("shellSurface", Enums.SurfaceBlur);
-                Config.set("barHideAuto",false); Config.set("dockHideAuto",false);
-                Config.set("barHideSmart",true); Config.set("dockHideSmart",true);
+                until(() => find(frame.bar, "statusBubbleSurface")?.blurActive, "Status bubbles did not enable blur");
+                const bubble = find(frame.bar, "statusBubbleSurface");
+                check(bubble.color === frame.surface.paintColor && ShellMaterial.regionsFor(window).includes(bubble.blurMask),
+                    "Status bubble tint or blur mask differs from the shell surface");
+                Config.set("dockHideAuto", false);
+                checkAttachments();
+                Config.set("shellSurface", Enums.SurfaceSolid);
+                check(!bubble.blurActive && bubble.color === frame.surface.paintColor, "Solid status bubble retained blur");
+                Config.set("barType", previousStyle);
+                Config.set("shellSurface", Enums.SurfaceBlur);
+                Config.set("dockHideAuto",false);
+                Config.set("dockHideSmart",true);
                 ServiceCompositor.backend.testOutputs=[outputA,outputB];
                 send({CastsChanged:{casts:[{stream_id:1,session_id:10,is_active:true,target:{Output:{name:"A"}}},{stream_id:2,session_id:10,is_active:false,target:{Window:{id:2}}}]}});
                 check(ServiceCompositor.captureStreams.length===2 && ServiceRecording.streams.length===1 && ServiceRecording.outputs[0]==="A", "Cast snapshot was not normalized");
@@ -1252,52 +1290,54 @@ ShellRoot {
                     {id:3,workspace_id:11,layout:tile(1280,800)}
                 ]}});
                 check(ServiceCompositor.fullscreenOutputs.join(",")==="B","Inactive workspace affected fullscreen outputs");
-                check(!frame.fullscreen && frame.bar.revealWanted && frame.dock.revealWanted,"Other output changed normal panels");
+                check(!frame.fullscreen && !frame.bar.fullscreen && frame.dock.revealWanted,"Other output changed normal panels");
                 check(layout.canvasSurface.surfaceLayer===WlrLayer.Overlay,"Shell canvas does not sit above fullscreen apps");
-                Config.set("barHideAuto",true); Config.set("dockHideAuto",true); outside(); wait(30);
-                check(!frame.bar.revealWanted && !frame.dock.revealWanted,"Occupied output should auto-hide its panels");
+                Config.set("dockHideAuto",true); outside(); wait(30);
+                check(frame.bar.reveal===1 && !frame.dock.revealWanted,"Occupied workspace hid the bar or left the dock open");
                 send({WorkspaceActivated:{id:21,focused:true}}); wait(30);
                 check(ServiceCompositor.workspaceEmptyOnOutput("B") && !ServiceCompositor.workspaceEmptyOnOutput("A"),"Empty workspace state leaked between outputs");
-                check(!frame.bar.revealWanted && !frame.dock.revealWanted,"Focusing another output's empty workspace revealed these panels");
-                until(()=>!frame.bar.revealed && !frame.dock.revealed,"Other output's empty workspace kept panels visible");
+                check(frame.bar.reveal===1 && !frame.dock.revealWanted,"Another output changed panel visibility");
+                until(()=>!frame.dock.revealed,"Other output's empty workspace kept the dock visible");
                 send({WorkspaceActivated:{id:12,focused:true}}); wait(30);
-                check(frame.bar.revealWanted && frame.dock.revealWanted,"Own empty workspace did not reveal panels");
+                check(!frame.bar.fullscreen && frame.dock.revealWanted,"Own empty workspace did not reveal panels");
                 send({WindowOpenedOrChanged:{window:{id:4,workspace_id:12,is_floating:true}}}); wait(30);
-                check(!frame.bar.revealWanted && !frame.dock.revealWanted,"Floating window left its workspace marked empty");
+                check(frame.bar.reveal===1 && !frame.dock.revealWanted,"Floating window left its workspace marked empty");
                 send({WindowClosed:{id:4}}); wait(30);
-                check(frame.bar.revealWanted && frame.dock.revealWanted,"Closing the last window did not reveal its panels");
-                Config.set("barHideSmart",false); Config.set("dockHideSmart",false); wait(30);
-                check(!frame.bar.revealWanted && !frame.dock.revealWanted,"Disabled empty-workspace setting revealed panels");
+                check(!frame.bar.fullscreen && frame.dock.revealWanted,"Closing the last window did not reveal its panels");
+                Config.set("dockHideSmart",false); wait(30);
+                check(frame.bar.reveal===1 && !frame.dock.revealWanted,"Disabled empty-workspace setting affected panel visibility");
                 check(!ServiceCompositor.workspaceEmptyOnOutput("missing"),"Unknown output was treated as empty");
-                Config.set("barHideSmart",true); Config.set("dockHideSmart",true);
+                Config.set("dockHideSmart",true);
                 send({WorkspaceActivated:{id:10,focused:true}}); send({WorkspaceActivated:{id:20,focused:false}}); wait(30);
-                check(!frame.bar.revealWanted && !frame.dock.revealWanted,"Returning to an occupied workspace left panels revealed");
-                Config.set("barHideAuto",false); Config.set("dockHideAuto",false);
+                check(frame.bar.reveal===1 && !frame.dock.revealWanted,"Returning to an occupied workspace affected panel visibility");
+                Config.set("dockHideAuto",false);
                 fullscreen(true); wait(30);
                 check(frame.fullscreen && ServiceCompositor.fullscreenOutputs.join(",")==="A,B","Live layout event did not enter fullscreen");
                 ServiceNotifications.setDnd(true,30);
                 send({CastStartedOrChanged:{cast:{stream_id:3,session_id:20,is_active:true,target:{Output:{name:"A"}}}}}); wait(40);
                 const mark=window.find(frame.island,"recordingMark"), island=window.find(frame.island,"dynamicIsland");
-                check(mark && mark.visible && island.active && island.shown.kind==="recording","Fullscreen or DND hid the recording indicator");
-                check(island.recording && island.implicitWidth===10 && island.implicitHeight===10,"Recording expands the island instead of showing only a dot");
-                check(frame.island.bodyRect.width===0 && frame.island.bodyRect.height===0,"Recording dot keeps the island background");
-                check(!window.find(island,"islandTitle").visible && !window.find(island,"islandBody").visible,"Recording dot keeps its title or details");
-                check(window.find(island,"islandCompactContent").acceptedButtons===Qt.NoButton,"Recording status opens an unrelated media menu");
-                for (const side of [Enums.EdgeTop,Enums.EdgeBottom,Enums.EdgeLeft,Enums.EdgeRight]) {
-                    Config.set("barSide",side); wait(30);
-                    check(mark.visible && mark.width===10 && mark.height===10,"Recording dot changes size with bar position");
-                    const point=mark.mapToItem(frame,mark.width/2,mark.height/2);
-                    check(side<2 ? Math.abs(point.x-frame.width/2)<0.5 : Math.abs(point.y-frame.height/2)<0.5,"Recording dot is not centered on its edge");
-                    check(frame.island.bodyRect.width===0 && frame.island.bodyRect.height===0,"Moving the bar restores a recording island background");
+                check(mark && !mark.visible && ServiceRecording.active,"Fullscreen left a recording indicator visible");
+                fullscreen(false); wait(30);
+                const clock = window.find(island, "islandRestingClock");
+                check(mark.visible && island.active && clock.visible && frame.island.bodyRect.width > 0,
+                    "Recording did not keep the clock and its capture dot after fullscreen");
+                check(!window.find(island, "islandTitle").visible && !window.find(island, "islandBody").visible,
+                    "Recording replaced the clock with a message");
+                for (const side of [Enums.EdgeTop, Enums.EdgeBottom, Enums.EdgeLeft, Enums.EdgeRight]) {
+                    Config.set("barSide", side); wait(30);
+                    const point = mark.mapToItem(frame, mark.width / 2, mark.height / 2);
+                    const body = frame.island.bodyRect;
+                    check(mark.visible && mark.width === 7 && point.x >= body.x && point.x <= body.x + body.width
+                        && point.y >= body.y && point.y <= body.y + body.height, "Recording dot did not stay inside its Island");
                 }
-                Config.set("barSide",Enums.EdgeTop); wait(30);
+                Config.set("barSide", Enums.EdgeTop); wait(30);
                 island.toggleMenu(); wait(60);
-                const mediaMark=window.find(frame.island,"mediaRecordingIndicator");
-                check(mediaMark && mediaMark.visible,"Expanded island media menu hid the recording indicator");
-                MenuState.close(); wait(40);
+                check(mark.visible && frame.island.panelRect.width > 0, "Expanded Island hid the capture dot");
+                fullscreen(true); wait(40);
+                check(!MenuState.menuActive && !frame.island.visible,"Fullscreen retained an open island menu");
                 send({CastStopped:{stream_id:3}}); ServiceNotifications.setDnd(false); wait(30);
                 check(!ServiceRecording.active && !mark.visible,"Recording indicator stayed visible after capture stopped");
-                check(frame.island.bodyRect.width===0 && frame.island.bodyRect.height===0,"Stopping capture flashes an island background");
+                check(!frame.island.visible && frame.surface.centerBody.width===0,"Stopping capture revealed the fullscreen island");
                 const fullscreenState=ServiceCompositor.fullscreenOutputs, fullscreenChanges=window.fullscreenChanges;
                 for(let i=0;i<40;i++) {
                     const record=ServiceCompositor.windowList.find(window=>window.id===1);
@@ -1314,40 +1354,32 @@ ShellRoot {
                 send({OverviewOpenedOrClosed:{is_open:false}}); check(frame.fullscreen,"Closing overview lost fullscreen state");
                 fullscreen(false); wait(30);
                 for(const mode of [0,1,2]) {
-                    Config.set("themeAnimations",mode);
+                    Config.set("motionStyle",mode);
                     for(const side of [0,1,2,3]) {
                         Config.set("barSide",side); Config.set("dockSide",(side+1)%4);
                         until(()=>frame.frameReveal===1,"Normal frame did not finish revealing");
                         const reserved = JSON.stringify(frame.reservations), layoutReserved = JSON.stringify(layout.reservations);
                         const changesBefore = window.reservationChanges;
                         outside(); fullscreen(true); wait(30);
-                        check(frame.bar.autoHide && frame.dock.autoHide,"Fullscreen did not override panel auto-hide settings");
-                        until(()=>!frame.bar.revealed && !frame.dock.revealed,"Fullscreen panels did not hide at mode/side " + mode + "/" + side,1800);
+                        check(frame.dock.autoHide,"Fullscreen did not override panel auto-hide settings");
                         until(()=>frame.bar.reveal===0 && frame.dock.container.reveal===0 && frame.thickness===0,"Fullscreen animation did not settle",1800);
                         check(JSON.stringify(frame.reservations)===reserved && JSON.stringify(layout.reservations)===layoutReserved && window.reservationChanges===changesBefore,"Fullscreen hide changed reserved space during animation at mode/side " + mode + "/" + side);
                         check(!frame.inputRegion.regions.includes(frame.bar.inputRegion) && !frame.inputRegion.regions.includes(frame.dock.inputRegion),"Hidden fullscreen panels intercepted application input");
-                        check(!frame.island || frame.inputRegion.regions.includes(frame.island.inputRegion),"Fullscreen removed dynamic island input");
+                        check(!frame.island.visible && !frame.inputRegion.regions.includes(frame.island.inputRegion)
+                            && frame.surface.centerBody.width===0 && frame.surface.centerPanel.width===0,"Fullscreen retained the Dynamic Island");
                         edge(side); wait(40);
-                        check(!frame.bar.revealWanted && !frame.bar.revealed && frame.bar.reveal===0,"Edge hover revealed the fullscreen bar");
+                        check(frame.bar.fullscreen && frame.bar.reveal===0,"Edge hover revealed the fullscreen bar");
                         outside();
-                        SidebarState.toggle("left","A"); wait(40);
-                        check(!frame.bar.revealWanted,"Sidebar revealed the fullscreen bar"); SidebarState.close();
                         edge((side+1)%4); wait(40);
                         check(!frame.dock.revealWanted && !frame.dock.revealed && frame.dock.container.reveal===0,"Edge hover revealed the fullscreen dock");
                         fullscreen(false); wait(30);
-                        check(frame.bar.revealWanted && frame.dock.revealWanted && !frame.bar.autoHide && !frame.dock.autoHide,"Fullscreen exit changed configured panel behavior");
+                        check(!frame.bar.fullscreen && frame.island.visible && frame.dock.revealWanted && !frame.dock.autoHide,"Fullscreen exit did not restore the panels");
                         until(()=>frame.frameReveal===1,"Restored frame did not finish revealing");
                         check(JSON.stringify(frame.reservations)===reserved && JSON.stringify(layout.reservations)===layoutReserved && window.reservationChanges===changesBefore,"Fullscreen exit resized the work area during animation at mode/side " + mode + "/" + side);
-                        Config.set("barHideAuto",true); Config.set("dockHideAuto",true);
+                        Config.set("dockHideAuto",true);
                         outside();
-                        until(()=>!frame.bar.revealed && !frame.dock.revealed,"Normal auto-hide did not resume",1800);
-                        until(()=>frame.bar.reveal===0 && frame.dock.container.reveal===0,"Normal hide animation did not settle",1800);
-                        edge(side); wait(40);
-                        check(frame.bar.revealed,"Normal bar hover reveal stopped working");
-                        if(mode>0) check(frame.bar.reveal>0 && frame.bar.reveal<1,"Normal bar snapped instead of animating");
-                        until(()=>frame.bar.reveal===1,"Normal bar reveal did not finish");
-                        outside(); SidebarState.toggle("left","A"); wait(40);
-                        check(frame.bar.revealWanted,"Sidebar did not hold the normal bar open"); SidebarState.close();
+                        until(()=>frame.dock.container.reveal===0,"Normal dock auto-hide did not resume",1800);
+                        check(frame.bar.reveal===1 && frame.island.visible,"Dock auto-hide affected the bar or island");
                         edge((side+1)%4); wait(40);
                         check(frame.dock.revealed,"Normal dock hover reveal stopped working");
                         until(()=>frame.dock.container.reveal===1,"Normal dock reveal did not finish");
@@ -1365,16 +1397,16 @@ ShellRoot {
                         check(dockMenu.anchorX===(dockSide===Enums.EdgeLeft?0:dockSide===Enums.EdgeRight?1:0.5) && dockMenu.anchorY===(dockSide===Enums.EdgeTop?0:dockSide===Enums.EdgeBottom?1:0.5),"Dock menu expands away from the wrong edge");
                         until(()=>dockMenu.amount===1,"Dock context menu did not finish opening");
                         fullscreen(true); wait(40);
-                        check(!frame.bar.revealWanted && !frame.dock.revealWanted && !frame.dock.keyboardWanted,"Entering fullscreen retained the dock menu");
+                        check(frame.bar.fullscreen && !frame.dock.revealWanted && !frame.dock.keyboardWanted,"Entering fullscreen retained the dock menu");
                         if(mode>0) check(fill.blurActive && fill.width<dockMenu.width && fill.height<dockMenu.height,
                             "Dock menu blur does not match the shrinking surface");
                         until(()=>!fill.blurActive,"Closing the dock menu retained its blur region");
-                        Config.set("barHideAuto",false); Config.set("dockHideAuto",false);
+                        Config.set("dockHideAuto",false);
                         fullscreen(false); wait(30);
-                        check(frame.bar.revealWanted && frame.dock.revealWanted && !frame.bar.autoHide && !frame.dock.autoHide,"Fullscreen exit changed configured panel behavior");
+                        check(!frame.bar.fullscreen && frame.island.visible && frame.dock.revealWanted && !frame.dock.autoHide,"Fullscreen exit did not restore the panels");
                     }
                 }
-                Config.set("themeAnimations",0);
+                Config.set("motionStyle",0);
                 send({WindowFocusChanged:{id:1}}); wait(30);
                 const dockRepeater=frame.dock.container.children.find(child=>child.itemAtIndex!==undefined);
                 const dockItem=Array.from({length:dockRepeater.count},(_,index)=>dockRepeater.itemAtIndex(index).item)
@@ -1401,7 +1433,7 @@ ShellRoot {
                 const fake=ServiceCompositor.windowLayouts;
                 fullscreen(false); check(ServiceCompositor.windowLayouts===fake,"Identical layout events allocate state");
                 send({WindowClosed:{id:2}}); check(!ServiceCompositor.fullscreenOnOutput("B") && ServiceCompositor.windowLayouts[2]===undefined,"Closing fullscreen window left stale output state");
-                console.log("SURFACES_PASSED per-output empty-workspace reveal, fullscreen suppresses panel hover and input on all edges/modes, island input preserved, normal smooth reveal, menu holds, margins and recovery");
+                console.log("SURFACES_PASSED per-output empty-workspace reveal, fullscreen hides the bar, dock and island on all edges and animation modes, normal dock auto-hide, menu holds, margins and recovery");
             }
         }
         Timer { interval:100; running:true; onTriggered: { try { input.exercise(); } catch(error) { console.error("SURFACES_FAILED fullscreen",error); } Qt.quit(); } }
@@ -1411,10 +1443,12 @@ ShellRoot {
 
 
 def island_transition_fixture(base):
+    frame = base / "modules/ui/frame/Frame.qml"
+    frame.write_text(frame.read_text().replace("Quickshell.screens.some(output", "ServiceIsland.testScreens.some(output"))
     service = base / "modules/services/ServiceIsland.qml"
     service.write_text(service.read_text().replace("id: island", 'id: island\n    property var testScreens: [{name:"A"},{name:"B"}]', 1)
                        .replace("primaryOutputFor(Quickshell.screens, Config.barScreens)", "primaryOutputFor(testScreens, Config.barScreens)"))
-    (base / "modules/services/ServiceRecording.qml").write_text('pragma Singleton\nimport QtQuick\nimport Quickshell\nSingleton { property bool active:false; property string detail:"Capture fixture"; }')
+    (base / "modules/services/ServiceRecording.qml").write_text('pragma Singleton\nimport QtQuick\nimport Quickshell\nSingleton { property bool active:false; property bool cameraActive:false; property string detail:"Capture fixture"; }')
     (base / "shell.qml").write_text(r'''import QtQuick
 import QtQuick.Window
 import QtTest
@@ -1428,6 +1462,25 @@ ShellRoot {
         id: window; visible:true; width:1280; height:720
         QtObject {id:outputA;property string name:"A"}
         QtObject {id:outputB;property string name:"B"}
+        QtObject {
+            id: player
+            property string dbusName: "org.example.Player"
+            property string trackTitle: "A song"
+            property string trackArtist: "An artist"
+            property string trackAlbum: ""
+            property string trackArtUrl: ""
+            property string identity: "Fixture"
+            property bool isPlaying: false
+            property bool canSeek: false
+            property bool canGoPrevious: false
+            property bool canGoNext: false
+            property bool canTogglePlaying: false
+            property bool lengthSupported: false
+            property bool positionSupported: false
+            property bool shuffle: false
+            property bool shuffleSupported: false
+            property bool loopSupported: false
+        }
         Frame {id:first;screen:outputA;width:640;height:720}
         Frame {id:second;screen:outputB;x:640;width:640;height:720}
         function check(ok,message) {if(!ok)throw new Error(message);}
@@ -1438,7 +1491,13 @@ ShellRoot {
         }
         TestCase {
             id:input;when:false;optional:true
-            function showValue() {ServiceOSD.show("volume",Icon.volume,"Volume 72%",0.72,false,true,"","",10000);}
+            function showValue(title = "72%") { ServiceOSD.show("volume", Icon.volume, title, 0.72, false, true, "", "", 10000); }
+            function buttonBounds() {
+                return first.bar.inputRegion.regions.slice(0, 2)
+                    .map(region => region.item)
+                    .filter(item => item !== null)
+                    .map(item => item.mapToItem(first, 0, 0, item.width, item.height));
+            }
             function until(test,message,timeout=1800) {
                 let elapsed=0;
                 while(!test()&&elapsed<timeout){wait(20);elapsed+=20;}
@@ -1447,65 +1506,184 @@ ShellRoot {
             function exercise() {
                 const check=window.check,find=window.find;
                 until(()=>Config.initialized&&ServiceCompositor.backend,"Configuration did not load");
-                Config.set("barEnabled",false);Config.set("dockEnabled",false);
+                Config.set("barType",Enums.BarCenter);Config.set("dockType",Enums.PanelDisabled);
                 Config.set("barScreens",["A"]);Config.set("islandEnabled",true);
                 ServiceCompositor.backend.focusedOutput="B";
                 until(()=>first.island!==null&&second.island===null,"Island is not restricted to primary");
-                for(const mode of [0,1,2])for(const side of [0,1,2,3]) {
-                    Config.set("themeAnimations",mode);Config.set("barSide",side);
-                    ServiceRecording.active=true;
-                    const island=first.island,widget=find(island,"dynamicIsland"),dot=find(island,"recordingMark");
-                    until(()=>dot.opacity>0.99&&island.expansionProgress===0,"Recording dot did not settle");
-                    check(island.bodyRect.width===0&&island.bodyRect.height===0,"Recording has an island background");
-                    check(island.inputRegion.regions[0].item===null,"Recording dot captures input");
-                    Config.set("islandRecordingIndicator",false);
-                    until(()=>!dot.visible&&!widget.active,"Disabling indication kept the recording dot visible");
-                    check(ServiceRecording.active&&island.bodyRect.width===0,"Indicator toggle changed recording or left an empty background");
-                    Config.set("islandRecordingIndicator",true);
-                    until(()=>dot.opacity>0.99,"Re-enabling indication did not restore the recording dot");
-                    showValue();wait(mode?120:10);
-                    check(widget.shown.kind==="osd"&&second.island===null,"Secondary-focus value event missed primary");
-                    if(mode) {
-                        check(island.expansionProgress>0&&island.expansionProgress<1,"Dot-to-island transition snaps");
-                        check(dot.opacity>0&&dot.opacity<1&&island.bodyRect.width>10,"Dot does not blend into the growing island");
-                        check(find(widget,"islandCompactContent").opacity<1,"Content appears before its surface expands");
+                Config.set("barSide",Enums.EdgeTop);Config.set("barHideAuto",true);Config.set("barHideSmart",false);
+                mouseMove(first,first.width/2,first.height/2);
+                until(()=>first.barReveal===0,"Auto-hide did not hide the standalone island");
+                check(!first.island.visible && first.reservations[Enums.EdgeTop]===first.layoutThickness
+                    && !first.inputRegion.regions.includes(first.bar.inputRegion),"Hidden island retained its work area or input");
+                mouseMove(first,first.width/2,1);
+                until(()=>first.barReveal===1 && first.island.visible,"Edge hover did not reveal the standalone island");
+                const body=first.island.bodyRect;
+                mouseMove(first,body.x+body.width/2,body.y+body.height/2);
+                wait(Theme.barHideDelay+50);
+                check(first.barReveal===1,"Hovering the island did not keep it revealed");
+                mouseMove(first,first.width/2,first.height/2);
+                until(()=>first.barReveal===0,"Moving off the island did not auto-hide it");
+                ServiceOSD.hide();Config.set("barHideAuto",false);
+                until(() => first.barReveal === 1, "Bar did not settle after disabling auto-hide");
+                ServiceMedia.players = [player];
+                for (const mode of [Enums.MotionDirect, Enums.MotionFluid, Enums.MotionGlide]) {
+                    Config.set("motionStyle", mode);
+                    for (const side of [Enums.EdgeTop, Enums.EdgeBottom, Enums.EdgeLeft, Enums.EdgeRight]) {
+                        Config.set("barSide", side);
+                        const island = first.island, widget = find(island, "dynamicIsland");
+                        const clock = find(widget, "islandRestingClock");
+                        const dot = find(widget, "recordingMark");
+                        const cover = find(widget, "islandAlbumCover"), equalizer = find(widget, "islandEqualizer");
+                        const event = find(widget, "islandEvent");
+                        const hit = find(widget, "islandCompactContent");
+                        const horizontal = side < 2;
+                        const alongStart = rect => horizontal ? rect.x : rect.y;
+                        const alongEnd = rect => horizontal ? rect.x + rect.width : rect.y + rect.height;
+                        const cross = rect => horizontal ? rect.y : rect.x;
+                        const reserve = first.layoutThickness + Theme.barThickness;
+
+                        until(() => clock.visible && island.bodyRect.width > 0 && buttonBounds().length === 2, "Clock or status rows not ready");
+                        check(widget.timeText.length && widget.fullDate.length, "Clock must include the date on every edge");
+                        ServiceRecording.active = true;
+                        until(() => dot.opacity > 0.99, "Recording dot did not appear");
+                        check(clock.visible, "Recording replaced the clock");
+                        Config.set("islandRecordingIndicator", false);
+                        until(() => !dot.visible, "Recording toggle did not hide its dot");
+                        ServiceRecording.cameraActive = true;
+                        until(() => dot.opacity > 0.99, "Camera did not use the capture dot");
+                        Config.set("islandRecordingIndicator", true);
+                        ServiceRecording.cameraActive = false;
+
+                        player.isPlaying = true;
+                        until(() => cover.opacity > 0.99 && equalizer.visible, "Media extras did not appear");
+                        check(clock.visible && (horizontal ? cover.x < equalizer.x : cover.y < equalizer.y), "Media face obscured or misplaced the clock");
+                        const baseline = widget.homeWidth;
+                        until(() => Math.abs(widget.width - baseline) < 0.5, "Media width did not settle");
+
+                        showValue();
+                        until(() => event.opacity > 0.99 && !clock.visible, "OSD did not replace all face content");
+                        check(dot.visible && !cover.visible && !equalizer.visible && widget.width >= Math.floor(baseline)
+                            && second.island === null, "OSD lost the capture dot, shrank, or routed to the wrong screen");
+                        showValue("A much longer system status for this output that needs additional space");
+                        until(() => Math.abs(widget.width - Math.max(widget.homeWidth, widget.heldEventWidth)) < 0.5,
+                            "Long event never reached its available width");
+                        const width = widget.width;
+                        showValue();
+                        wait(Theme.animationDurationBar + 30);
+                        check(widget.width >= width, "An update with shorter text shrank the current event");
+                        ServiceOSD.hide();
+                        until(() => !event.visible && Math.abs(widget.width - baseline) < 0.5, "OSD did not restore the media face");
+                        until(() => {
+                            const bounds = buttonBounds(), body = island.bodyRect;
+                            return Math.abs(alongEnd(bounds[0]) + Theme.panelGap - alongStart(body)) < 1
+                                && Math.abs(alongStart(bounds[1]) - Theme.panelGap - alongEnd(body)) < 1;
+                        }, "Status rows did not settle against the compact Island");
+
+                        const closedBody = island.bodyRect;
+                        const closedButtons = buttonBounds();
+                        mouseClick(hit, hit.width / 2, hit.height / 2, Qt.LeftButton);
+                        check(!island.panelRect.width && !first.inputRegion.regions[0].item,
+                            "An unmeasured menu captured clicks across the output");
+                        until(() => find(island, "islandMenu")?.visible && island.panelRect.width > 0, "Media face did not open the Island menu");
+                        check(first.inputRegion.regions[0].item?.visible && !second.inputRegion.regions[0].item
+                            && ServiceCompositor.focusedOutput === "B", "The menu did not open on its own output without moving focus");
+                        check(MenuState.islandTab === "controls" && find(island, "islandMediaCard")?.visible,
+                            "Media face did not open the Control Center with playback");
+                        until(() => {
+                            const bounds = buttonBounds();
+                            return alongStart(island.panelRect) < alongStart(closedBody) && alongEnd(island.panelRect) > alongEnd(closedBody)
+                                && alongEnd(bounds[0]) <= alongStart(island.panelRect) && alongStart(bounds[1]) >= alongEnd(island.panelRect);
+                        }, "Status bubbles did not clear the expanding menu");
+                        check(cross(buttonBounds()[0]) === cross(closedButtons[0]) && cross(buttonBounds()[1]) === cross(closedButtons[1]),
+                            "Bubbles changed their edge offset on " + side + " in mode " + mode + ": "
+                                + JSON.stringify([closedButtons.map(cross), buttonBounds().map(cross)]));
+                        const near = rect => side === Enums.EdgeBottom ? rect.y + rect.height
+                            : side === Enums.EdgeRight ? rect.x + rect.width : cross(rect);
+                        check(near(island.panelRect) === near(island.bodyRect) && clock.visible && dot.visible,
+                            "The menu detached from the Island or hid the clock or capture dot");
+                        MenuState.close();
+                        check(!first.inputRegion.regions[0].item, "A closing menu still captured clicks across the output");
+                        until(() => island.panelRect.width === 0, "Island menu failed to close");
+                        wait(30);
+                        check(buttonBounds().every((rect, index) => ["x", "y", "width", "height"]
+                            .every(key => Math.abs(rect[key] - closedButtons[index][key]) <= 1)),
+                            "The closed bubbles did not return to their positions on " + side + " in mode " + mode + ": "
+                                + JSON.stringify([closedButtons, buttonBounds(), closedBody, island.bodyRect]));
+                        check(first.reservations[side] === reserve && second.reservations[side] === second.layoutThickness,
+                            "Transient Island content changed reserved space");
+                        player.isPlaying = false;
+                        ServiceRecording.active = false;
+                        until(() => !dot.visible && !cover.visible, "Stopping capture or media left its indicator visible");
                     }
-                    until(()=>island.expansionProgress>0.999,"Expanded island did not settle");
-                    check(!dot.visible,"Expanded island duplicates the standalone capture dot");
-                    ServiceOSD.hide();wait(mode?120:10);
-                    check(widget.recording,"Recording did not return after OSD");
-                    if(mode)check(island.expansionProgress>0&&island.expansionProgress<1&&dot.opacity>0&&dot.opacity<1,"Island-to-dot transition snaps: mode "+mode+", edge "+side+", expansion "+island.expansionProgress+", dot "+dot.opacity);
-                    until(()=>island.expansionProgress===0,"Recording island did not finish collapsing");
-                    check(dot.visible&&island.bodyRect.width===0,"Collapsed capture is not a lone dot");
-                    if(mode===2&&side===0) {
-                        showValue();wait(120);ServiceOSD.hide();wait(35);showValue();
-                        until(()=>widget.shown.kind==="osd"&&island.expansionProgress>0.999,"Interrupted morph did not recover");
-                        ServiceOSD.hide();until(()=>island.expansionProgress===0,"Interrupted morph left a background");
-                        showValue();wait(120);Config.set("themeAnimations",0);wait(0);
-                        check(island.expansionProgress===1&&!dot.visible,"Disabling animations leaves a partial morph");
-                        ServiceOSD.hide();wait(0);
-                        check(island.expansionProgress===0,"Disabled animations leave a recording background");
-                    }
-                    ServiceRecording.active=false;
-                    until(()=>!dot.visible,"Stopped capture keeps its dot");
-                    check(island.bodyRect.width===0,"Stopped capture flashes a background");
                 }
-                Config.set("themeAnimations",0);ServiceRecording.active=true;wait(20);
+                Config.set("motionStyle", Enums.MotionDirect);
+                Config.set("barSide", Enums.EdgeTop);
+                for (const style of [Enums.BarLeft, Enums.BarRight, Enums.BarFull]) {
+                    Config.set("barType", style);
+                    const island = first.island;
+                    let body = island.bodyRect;
+                    const compact = Registry.usesStatusBubbles(style);
+                    Config.set("motionStyle", compact ? Enums.MotionFluid : Enums.MotionDirect);
+                    until(() => {
+                        body = island.bodyRect;
+                        return style === Enums.BarLeft ? body.x === 0
+                            : style === Enums.BarRight ? body.x + body.width === first.width
+                            : Math.abs(body.x + body.width / 2 - first.width / 2) < 1;
+                    }, "Island does not align in bar style " + style);
+                    wait(Theme.animationDurationMorph + 32);
+                    find(island, "dynamicIsland").toggleMenu();
+                    until(() => island.panelRect.width > 0, "Island did not open in bar style " + style);
+                    if (compact) {
+                        const zone = MenuState.menuOwner;
+                        const menu = zone.panel.children.find(item => item.front !== undefined);
+                        const position = () => menu.front.mapToItem(first, menu.front.width / 2, 0).x;
+                        until(() => menu.front.item, "Control Center did not load");
+                        const center = position();
+                        for (let frame = 0; frame < 30 && zone.progress < 1; frame++) {
+                            check(Math.abs(position() - center) <= 1,
+                                "Island content slid while opening style " + style + ": " + center + " to " + position());
+                            wait(20);
+                        }
+                        check(zone.progress === 1 && Math.abs(position() - center) <= 1, "Island content shifted at the end of its reveal");
+                        const left = style === Enums.BarLeft;
+                        until(() => buttonBounds().every(rect => left ? rect.x >= island.panelRect.x + island.panelRect.width
+                            : rect.x + rect.width <= island.panelRect.x), "Status bubbles overlapped the menu in bar style " + style);
+                    }
+                    MenuState.close();
+                    until(() => island.panelRect.width === 0, "Menu did not close in bar style " + style);
+                }
+                Config.set("barType", Enums.BarWaves);
+                for (const side of [Enums.EdgeTop, Enums.EdgeBottom, Enums.EdgeLeft, Enums.EdgeRight]) {
+                    Config.set("barSide", side);
+                    wait(30);
+                    const horizontal = side < 2;
+                    const start = first.surface.startBody, end = first.surface.endBody;
+                    check((horizontal ? start.x : start.y) === 0
+                        && (horizontal ? end.x + end.width === first.width : end.y + end.height === first.height),
+                        "Attached Waves groups do not meet the screen corners");
+                }
+                Config.set("barType", Enums.BarCenter);
+                ServiceRecording.active = true;
+                wait(20);
                 const widget=find(first.island,"dynamicIsland");
                 widget.toggleMenu();wait(30);check(MenuState.menuActive,"Media menu fixture did not open");
                 Config.set("barScreens",["B"]);wait(30);
                 check(first.island===null&&second.island!==null&&!MenuState.menuActive,"Changing primary duplicates the island or leaves its menu");
+                check(first.reservations[Config.barSide] === first.layoutThickness
+                    && second.reservations[Config.barSide] === second.layoutThickness + Theme.barThickness,
+                    "Moving the island left space behind");
                 check(find(second.island,"recordingMark").visible,"Changing primary loses the capture dot");
                 Config.set("barScreens",["A"]);ServiceIsland.testScreens=[{name:"B"}];wait(30);
                 check(first.island===null&&second.island!==null,"Disconnected primary has no live fallback");
                 ServiceIsland.testScreens=[{name:"A"},{name:"B"}];wait(30);
                 check(first.island!==null&&second.island===null,"Reconnecting primary does not restore the island");
-                ServiceLock.locked=true;wait(10);
-                check(!find(first.island,"recordingMark").visible,"Recording dot leaks through lock screen");
-                console.log("SURFACES_PASSED primary-only island, secondary-focus events, hotplug, menu cleanup, dot morphs on all edges and animation modes, interruption and locking");Qt.quit();
+                ServiceLock.locked = true;
+                until(() => !find(first.island,"recordingMark").visible, "Capture dot leaks through lock screen");
+                ServiceMedia.players = [];
+                console.log("SURFACES_PASSED clock and media face, growing OSD, capture indicators, attached menu and synchronized bubbles on all edges, Waves corners, hotplug and lock");Qt.quit();
             }
         }
-        Timer {interval:180;running:Config.initialized;onTriggered:{try{input.exercise();}catch(error){console.error("SURFACES_FAILED",error);Qt.quit();}}}
+        Timer {interval:180;running:Config.initialized;onTriggered:{try{input.exercise();}catch(error){console.error("SURFACES_FAILED",error);ServiceMedia.players=[];Qt.quit();}}}
     }
 }
 ''')
@@ -1626,7 +1804,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="bloodyshell-island-transitions-") as temporary:
         run_fixture(Path(temporary), island_transition_fixture)
     artwork_checks()
-    print("Three surface hosts, frame styles, dock joins, sidebars, dynamic overlays, and island presentation passed.")
+    print("Three surface hosts, bar styles, dock joins, sidebars, dynamic overlays, and island presentation passed.")
 
 
 if __name__ == "__main__":

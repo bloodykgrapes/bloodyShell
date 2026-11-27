@@ -13,10 +13,15 @@ Singleton
     property bool dnd: false
     property double dndUntil: 0
     property int dndMinutes: 0
+    function localized(key, value)
+    {
+        const text = Tr.tr(key);
+        return text.indexOf("%1") >= 0 ? text.arg(value) : text;
+    }
     readonly property var dndOptions: [
-        {label: Tr.tr("service.notifications.minutes").arg(30), value: 30},
-        {label: Tr.tr("service.notifications.hours").arg(1), value: 60},
-        {label: Tr.tr("service.notifications.hours").arg(2), value: 120},
+        {label: localized("service.notifications.minutes", 30), value: 30},
+        {label: localized("service.notifications.hours", 1), value: 60},
+        {label: localized("service.notifications.hours", 2), value: 120},
         {label: Tr.tr("service.notifications.dndIndefinite"), value: 0}
     ]
     readonly property string dndStatus: !dnd ? Tr.tr("common.off") : dndUntil > 0
@@ -124,7 +129,7 @@ Singleton
         if (!t) return "";
         const minutes = Math.floor((now - t) / 60000);
         if (minutes < 1) return Tr.tr("service.notifications.now");
-        if (minutes < 60) return Tr.tr("service.notifications.minutes").arg(minutes);
+        if (minutes < 60) return localized("service.notifications.minutes", minutes);
         const date = new Date(t);
         return date.toDateString() === new Date(now).toDateString() ? Qt.formatTime(date, "hh:mm") : date.toLocaleDateString(Tr.locale, "d MMM");
     }
@@ -177,7 +182,6 @@ Singleton
         if (!n) return;
         const win = ServiceWindowActions.notificationWindow(n);
         const action = (n.actions || []).find(a => a.identifier === "default");
-        SidebarState.close();
         if (action) action.invoke();
         if (win) ServiceCompositor.focusWindow(win.id);
         if (!action) dismiss(n);

@@ -11,15 +11,25 @@ Loader
     enabled: presented
 
     property string pageIcon: ""
-    onLoaded: if (item.pageIcon !== undefined) item.pageIcon = pageIcon
+    property string backTitle: ""
+    signal backRequested()
 
-    function enter(url, direction, icon = "")
+    onLoaded:
+    {
+        if (item.pageIcon !== undefined) item.pageIcon = pageIcon;
+        if (item.backTitle !== undefined) item.backTitle = backTitle;
+        if (item.backRequested !== undefined)
+            item.backRequested.connect(() => settingsPageSlot.backRequested());
+    }
+
+    function enter(url, direction, icon = "", parentTitle = "")
     {
         leaving.stop();
         entering.stop();
         presented = true;
         z = 1;
         pageIcon = icon;
+        backTitle = parentTitle;
         source = url;
 
         if (!Config.animationsEnabled || direction === 0) { opacity = 1; shift = 0; return; }
@@ -72,6 +82,6 @@ Loader
         NumberAnimation { target: settingsPageSlot; property: "opacity"; to: 0; duration: 110; easing.type: Easing.OutQuad }
         NumberAnimation { id: leaveShift; target: settingsPageSlot; property: "shift"; duration: 110; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingAccelerate }
 
-        onFinished: settingsPageSlot.source = ""
+        onFinished: if (!settingsPageSlot.presented) settingsPageSlot.source = ""
     }
 }

@@ -15,8 +15,8 @@ OverlayView
     {
         id: panel
         anchors.centerIn: parent
-        width: Math.max(0, Math.min(Theme.settingsWidth, parent.width - 64))
-        height: Math.max(0, Math.min(Theme.settingsHeight, parent.height - 64))
+        width: Math.max(0, Math.min(Theme.settingsWidth, parent.width - 48))
+        height: Math.max(0, Math.min(Theme.settingsHeight, parent.height - 48))
         reveal: settings.reveal
         revealSurface: true
         surfaceCutout: content.navigationSurface

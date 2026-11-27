@@ -9,7 +9,7 @@ SettingsPage
 {
     id: pageTimeLanguage
 
-    title: Tr.tr("common.timeLanguage")
+    title: Tr.tr("settings.structure.region")
     subtitle: Tr.tr("settings.timeLanguage.description")
 
     property date now: new Date()
@@ -181,7 +181,7 @@ SettingsPage
     SettingsRowGroup
     {
         objectName: "keyboardSettings"
-        title: Tr.tr("settings.timeLanguage.keyboard")
+        title: Tr.tr("settings.structure.layout")
         visible: ServiceCompositor.supports("keyboard")
 
         SettingsRow

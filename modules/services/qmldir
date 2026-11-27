@@ -15,6 +15,7 @@ singleton ServiceGreeter             1.0 ServiceGreeter.qml
 singleton ServiceIdle                1.0 ServiceIdle.qml
 singleton ServiceIsland              1.0 ServiceIsland.qml
 singleton ServiceKeyboard            1.0 ServiceKeyboard.qml
+singleton ServiceLayout              1.0 ServiceLayout.qml
 singleton ServiceLock                1.0 ServiceLock.qml
 singleton ServiceMedia               1.0 ServiceMedia.qml
 singleton ServiceNetwork             1.0 ServiceNetwork.qml

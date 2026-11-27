@@ -7,22 +7,18 @@ import Quickshell.Io
 import "../../../../common"
 import "../../../../core"
 
-SettingsDisclosure
+SettingsRowGroup
 {
     id: effects
 
     required property bool active
-    property var state: ({installed: false, running: false, bypass: null, command: [], presets: {output: [], input: []}, current: {output: "", input: ""}})
+    property var effectState: ({installed: false, running: false, bypass: null, command: [], presets: {output: [], input: []}, current: {output: "", input: ""}})
     property bool scanned: false
     property string error: ""
     readonly property bool busy: probe.busy || action.busy
     readonly property var helper: Paths.commandFor("easyeffects")
 
-    title: "EasyEffects"
-    description: Tr.tr("settings.easyEffects.description")
-    icon: Icon.audioEffects
-    summary: !scanned ? Tr.tr("common.checking") : !state.installed ? Tr.tr("common.notInstalled")
-        : !state.running ? Tr.tr("settings.easyEffects.stopped") : Tr.tr("settings.easyEffects.running")
+    title: Tr.tr("settings.easyEffects.effects")
 
     function refresh()
     {
@@ -31,25 +27,24 @@ SettingsDisclosure
     }
     function apply(args)
     {
-        if (!active || busy || !state.running) return;
+        if (!active || busy || !effectState.running) return;
         error = "";
         action.run(helper.concat(args));
     }
     function receive(text)
     {
-        try { state = JSON.parse(text); scanned = true; error = state.error || ""; }
+        try { effectState = JSON.parse(text); scanned = true; error = effectState.error || ""; }
         catch (failure) { error = Tr.tr("settings.easyEffects.failed"); }
     }
 
     onActiveChanged: if (active) refresh()
-    onExpandedChanged: if (expanded) refresh()
     Component.onCompleted: refresh()
 
     Timer
     {
         interval: 2500
         repeat: true
-        running: effects.active && effects.expanded
+        running: effects.active
         onTriggered: effects.refresh()
     }
     CommandProcess
@@ -75,43 +70,43 @@ SettingsDisclosure
 
     SettingsRow
     {
-        visible: effects.scanned && !effects.state.installed
+        visible: effects.scanned && !effects.effectState.installed
         label: Tr.tr("common.notInstalled")
         description: Tr.tr("settings.easyEffects.installHint")
         Button
         {
             objectName: "easyEffectsDependencies"
             text: Tr.tr("common.updates")
-            onClicked: OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "updates")
+            onClicked: OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "hub")
         }
     }
     SettingsRow
     {
-        visible: effects.state.installed
-        label: Tr.tr(effects.state.running ? "settings.easyEffects.running" : "settings.easyEffects.stopped")
-        description: effects.state.running ? "" : Tr.tr("settings.easyEffects.startHint")
+        visible: effects.effectState.installed
+        label: Tr.tr(effects.effectState.running ? "settings.easyEffects.running" : "settings.easyEffects.stopped")
+        description: effects.effectState.running ? "" : Tr.tr("settings.easyEffects.startHint")
         Button
         {
             objectName: "openEasyEffects"
             text: Tr.tr("settings.easyEffects.open")
-            enabled: !effects.busy && effects.state.command.length > 0
+            enabled: !effects.busy && effects.effectState.command.length > 0
             onClicked:
             {
-                Quickshell.execDetached(effects.state.command);
+                Quickshell.execDetached(effects.effectState.command);
                 OverlayState.hide("settings");
             }
         }
     }
     SettingsRow
     {
-        visible: effects.state.installed
+        visible: effects.effectState.installed
         label: Tr.tr("settings.easyEffects.effects")
         description: Tr.tr("settings.easyEffects.effectsHint")
         Toggle
         {
             objectName: "easyEffectsEnabled"
-            checked: effects.state.running && effects.state.bypass === false
-            enabled: effects.state.running && !effects.busy && effects.error === ""
+            checked: effects.effectState.running && effects.effectState.bypass === false
+            enabled: effects.effectState.running && !effects.busy && effects.error === ""
             onToggled: value => effects.apply(["effects", value ? "true" : "false"])
         }
     }
@@ -125,8 +120,8 @@ SettingsDisclosure
         {
             id: presetRow
             required property var modelData
-            readonly property var presets: effects.state.presets[modelData.pipeline] || []
-            visible: effects.state.installed
+            readonly property var presets: effects.effectState.presets[modelData.pipeline] || []
+            visible: effects.effectState.installed
             label: modelData.label
             description: presets.length === 0 ? Tr.tr("settings.easyEffects.noPresets") : ""
             SettingsDropdown
@@ -134,9 +129,9 @@ SettingsDisclosure
                 objectName: "easyEffectsPreset-" + presetRow.modelData.pipeline
                 preferredWidth: 300
                 options: presetRow.presets
-                current: effects.state.current[presetRow.modelData.pipeline] || ""
+                current: effects.effectState.current[presetRow.modelData.pipeline] || ""
                 placeholderText: Tr.tr("settings.select")
-                enabled: effects.state.running && !effects.busy && effects.error === "" && options.length > 0
+                enabled: effects.effectState.running && !effects.busy && effects.error === "" && options.length > 0
                 onSelected: value => effects.apply(["preset", presetRow.modelData.pipeline, value])
             }
         }

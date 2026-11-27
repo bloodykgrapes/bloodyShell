@@ -93,7 +93,18 @@ def copy_image(path):
         raise ValueError(result.stderr.decode(errors="replace").strip() or "Clipboard copy failed")
 
 
-def publish(directory, save, destination=""):
+def file_name(pattern):
+    if (not isinstance(pattern, str) or not pattern.strip() or len(pattern) > 200
+            or any(char in pattern for char in "\\/\x00") or any(ord(char) < 32 for char in pattern)):
+        raise ValueError("Invalid screenshot file name")
+    name = datetime.datetime.now().strftime(pattern).strip()
+    if (not name or name in (".", "..") or len(name) > 255
+            or any(char in name for char in "\\/\x00") or any(ord(char) < 32 for char in name)):
+        raise ValueError("Invalid screenshot file name")
+    return name + ".png"
+
+
+def publish(directory, save, destination="", pattern="%Y-%m-%d_%H.%M.%S"):
     source = session(directory) / "result.png"
     png_size(source)
     if not save:
@@ -103,13 +114,25 @@ def publish(directory, save, destination=""):
     if not folder.is_absolute():
         raise ValueError("Choose an absolute screenshot save path")
     folder.mkdir(parents=True, exist_ok=True)
-    name = "Screenshot " + datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S-%f")
-    target = folder / (name + ".png")
+    name = file_name(pattern)
+    stem, suffix = os.path.splitext(name)
+    stream = None
+    target = None
+    for index in range(1000):
+        candidate = folder / (stem + ("" if index == 0 else "-" + str(index)) + suffix)
+        try:
+            stream = candidate.open("xb")
+            target = candidate
+            break
+        except FileExistsError:
+            continue
+    if target is None:
+        raise ValueError("Could not choose a unique screenshot file name")
     created = False
     try:
-        with source.open("rb") as stream, target.open("xb") as destination:
-            created = True
-            shutil.copyfileobj(stream, destination)
+        created = True
+        with source.open("rb") as source_stream, stream:
+            shutil.copyfileobj(source_stream, stream)
     except BaseException:
         if created:
             target.unlink(missing_ok=True)
@@ -117,7 +140,7 @@ def publish(directory, save, destination=""):
     return dict(saved=True, path=str(target))
 
 
-def export(directory, save, x, y, width, height, destination=""):
+def export(directory, save, x, y, width, height, destination="", pattern="%Y-%m-%d_%H.%M.%S"):
     directory = session(directory)
     image_width, image_height = png_size(directory / "screen.png")
     if x < 0 or y < 0 or width < 1 or height < 1 or x + width > image_width or y + height > image_height:
@@ -132,7 +155,7 @@ def export(directory, save, x, y, width, height, destination=""):
         result = subprocess.run(command, capture_output=True, text=True, timeout=15)
         if result.returncode:
             raise ValueError(result.stderr.strip() or "Screenshot cropping failed")
-    return publish(directory, save, destination)
+    return publish(directory, save, destination, pattern)
 
 
 def interrupted(signum, frame):
@@ -145,13 +168,14 @@ def main():
     try:
         if len(args) in (4, 5) and args[0] == "capture":
             result = capture(args[1], float(args[2]), float(args[3]), float(args[4]) if len(args) == 5 else 1)
-        elif len(args) == 8 and args[0] == "export" and args[2] in ("copy", "save"):
-            result = export(args[1], args[2] == "save", *(int(value) for value in args[3:7]), args[7])
+        elif len(args) in (8, 9) and args[0] == "export" and args[2] in ("copy", "save"):
+            pattern = args[8] if len(args) == 9 else "%Y-%m-%d_%H.%M.%S"
+            result = export(args[1], args[2] == "save", *(int(value) for value in args[3:7]), args[7], pattern)
         elif len(args) == 2 and args[0] == "cleanup":
             shutil.rmtree(session(args[1]), ignore_errors=True)
             return 0
         else:
-            raise ValueError("Usage: screenshot capture OUTPUT WIDTH HEIGHT [SCALE] | export SESSION copy/save X Y WIDTH HEIGHT PATH | cleanup SESSION")
+            raise ValueError("Usage: screenshot capture OUTPUT WIDTH HEIGHT [SCALE] | export SESSION copy/save X Y WIDTH HEIGHT PATH [PATTERN] | cleanup SESSION")
         print(json.dumps(result))
         return 0
     except (OSError, ValueError, subprocess.TimeoutExpired) as error:

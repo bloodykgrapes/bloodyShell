@@ -10,7 +10,7 @@ SettingsPage
 {
     id: pageShortcuts
 
-    title: Tr.tr("settings.shortcuts.title")
+    title: Tr.tr("settings.structure.shortcuts")
     subtitle: Tr.tr("settings.shortcuts.description")
 
     readonly property var sections:

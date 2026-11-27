@@ -53,7 +53,7 @@ def check_sources():
         for key in re.findall(r'Tr\.tr\("([^"\n]+)"\)', path.read_text()):
             assert key in english, f"{path}: missing translation {key}"
     enums = (ROOT / "modules/core/Enums.qml").read_text()
-    enum_names = set(re.findall(r"\b([A-Z]\w+)\s*=\s*\d+", enums))
+    enum_names = set(re.findall(r"\b([A-Z]\w+)\s*=\s*-?\d+", enums))
     for path in ROOT.glob("modules/**/*.qml"):
         text = path.read_text()
         assert not re.search(r"\bLoad\.", text), f"{path}: obsolete Load owner"
@@ -268,12 +268,15 @@ def main():
         put(base, "src/Clients.js", (ROOT / "modules/src/Clients.js").read_text())
         put(base, "src/ModelSync.js", (ROOT / "modules/src/ModelSync.js").read_text())
         put(base, "src/AppIdentity.js", (ROOT / "modules/src/AppIdentity.js").read_text())
+        put(base, "animations/OverlayMotion.js", (ROOT / "modules/animations/OverlayMotion.js").read_text())
         stub(base, "core", "Config", '''
     property bool debug: false
     property bool dockMerge: true
+    property bool animationsFluid: false
     property var dockPinned: []
     function set(key, value) { this[key] = value }
 ''')
+        stub(base, "core", "Theme", "property int animationDurationClose: 140\nproperty int animationDurationOpen: 220")
         stub(base, "core", "Registry", 'readonly property var windows: ["launcher", "power", "settings", "wallpapers"]')
         stub(base, "services", "ServiceCompositor", '''
     property var windowList: []

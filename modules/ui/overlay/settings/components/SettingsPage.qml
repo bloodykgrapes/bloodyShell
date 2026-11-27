@@ -14,7 +14,12 @@ Flickable
     property string title: ""
     property string subtitle: ""
     property string pageIcon: ""
+    property string backTitle: ""
     readonly property bool active: activity.active
+    readonly property bool hasBack: backTitle !== ""
+    readonly property real backOffset: hasBack ? 38 : 0
+    signal backRequested()
+    signal revealRequested(var item)
 
     RenderActivity { id: activity; target: settingsPage }
 
@@ -123,10 +128,21 @@ Flickable
             color: Theme.settingsColorBackground
         }
         MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; hoverEnabled: true }
+        Button
+        {
+            x: settingsPage.pagePadding
+            y: 14
+            visible: settingsPage.hasBack
+            compact: true
+            icon: Icon.chevronLeft
+            text: settingsPage.backTitle
+            maximumWidth: Math.max(0, parent.width - settingsPage.pagePadding * 2)
+            onClicked: settingsPage.backRequested()
+        }
         Heading
         {
             id: fixedHeading
-            x: settingsPage.pagePadding; y: 20
+            x: settingsPage.pagePadding; y: 20 + settingsPage.backOffset
             width: Math.max(0, parent.width - settingsPage.pagePadding * 2)
         }
         Column

@@ -70,7 +70,8 @@ Singleton
         saving = Config.screenshotsAction === "save";
         phase = "publishing";
         publisher.run(helper.concat(["export", capture.directory, saving ? "save" : "copy",
-            String(region.x), String(region.y), String(region.width), String(region.height), Config.screenshotsPath || Config.screenshotsDefault()]));
+            String(region.x), String(region.y), String(region.width), String(region.height),
+            Config.screenshotsPath || Config.screenshotsDefault(), Config.screenshotsFileName]));
     }
 
     CommandProcess

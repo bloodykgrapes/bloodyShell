@@ -6,11 +6,9 @@ import "../../../../common"
 import "../../../../core"
 import "../../../../services"
 
-SettingsDisclosure
+SettingsRowGroup
 {
     title: Tr.tr("settings.defaultApplications.title")
-    description: Tr.tr("settings.defaultApplications.description")
-    icon: Icon.defaultApplications
 
     Repeater
     {

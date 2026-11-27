@@ -6,7 +6,7 @@ import "../../../../common"
 import "../../../../core"
 import "../../../../services"
 
-SettingsDisclosure
+SettingsRowGroup
 {
     id: plymouth
 
@@ -19,20 +19,11 @@ SettingsDisclosure
 
     signal revealRequested(Item item)
 
-    title: "Plymouth"
-    description: Tr.tr("settings.plymouth.description")
-    icon: Icon.computerReboot
-    summary: !ServicePlymouth.scanned ? (ServicePlymouth.readError ? Tr.tr("common.actionFailed") : Tr.tr("common.checking"))
-        : !snapshot.installed ? Tr.tr("common.notInstalled") : currentName
+    title: Tr.tr("settings.plymouth.theme")
 
     onActiveChanged:
     {
         if (active) ServicePlymouth.refresh();
-        else stagedTheme = "";
-    }
-    onExpandedChanged:
-    {
-        if (expanded && active) ServicePlymouth.refresh();
         else stagedTheme = "";
     }
     onSnapshotChanged:
@@ -50,7 +41,7 @@ SettingsDisclosure
         Button
         {
             text: Tr.tr("common.updates")
-            onClicked: OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "updates")
+            onClicked: OverlayState.settingsPage = Registry.settings.findIndex(page => page.id === "hub")
         }
     }
 
@@ -85,7 +76,7 @@ SettingsDisclosure
                     theme: modelData
                     current: plymouth.snapshot.current === modelData.id
                     selected: plymouth.selectedTheme === modelData.id
-                    loadArtwork: plymouth.active && plymouth.expanded
+                    loadArtwork: plymouth.active
                     busy: ServicePlymouth.busy
                     applying: ServicePlymouth.applying
                     canApply: plymouth.snapshot.canApply

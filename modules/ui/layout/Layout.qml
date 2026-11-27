@@ -41,7 +41,6 @@ Scope
         WlrLayershell.namespace: isCanvas ? "bloodyShell:layout" : "bloodyShell:reserve-" + edge
         WlrLayershell.layer: isCanvas ? WlrLayer.Overlay : WlrLayer.Top
         WlrLayershell.keyboardFocus: !isCanvas || !scene ? WlrKeyboardFocus.None
-            : scene.sidebarHere ? WlrKeyboardFocus.Exclusive
             : scene.keyboardWanted ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
         Region { id: emptyInput }

@@ -128,9 +128,18 @@ ShellRoot {
     }
     Window {
         id: window; visible: true; width: 820; height: 740
-        FrameSurface { id: frame; anchors.fill: parent; materialEnabled: true }
+        FrameSurface
+        {
+            id: frame
+            anchors.fill: parent
+            materialEnabled: true
+            centerBody: Qt.rect(330, inset, 160, 44)
+            centerPanel: Qt.rect(250, inset, 320, 240)
+        }
         ShellSurface { id: sample; x: 24; y: 50; width: 120; height: 80; radius: 16 }
         PageAppearance { id: page; anchors.fill: parent }
+        PageSurfaces { id: surfaces; width: parent.width; height: parent.height; visible: false }
+        PageWallpaper { id: wallpaper; width: parent.width; height: parent.height; visible: false }
     }
     Timer {
         interval: 80; running: true; repeat: true
@@ -144,25 +153,35 @@ ShellRoot {
                     tests.check(Config.syncSystemAppearance === undefined, "Removed color scheme toggle remains available");
                     tests.check(!tests.find(page, "portalSettings") && !tests.find(page, "installedPortals") && !tests.find(page, "refreshPortals"), "Portal settings remain visible");
                     tests.check(!tests.find(page, "controlStyleSelector"), "Removed control style picker remains visible");
-                    const transitions = tests.find(page, "wallpaperTransitionSelector");
+                    const transitions = tests.find(wallpaper, "wallpaperTransitionSelector");
                     tests.check(transitions.options.length === 14, "Wallpaper selector does not offer every awww transition");
                     for (const option of transitions.options) {
                         transitions.selected(option.value);
                         tests.check(Config.wallpaperTransition === option.value, "Wallpaper transition cannot be selected: " + option.value);
                     }
                     Config.set("wallpaperTransition", "grow");
-                    const surface = tests.find(page, "shellSurfaceSelector");
+                    const surface = tests.find(surfaces, "shellSurfaceSelector");
                     tests.check(surface.options.length === 3 && Config.shellSurface === Enums.SurfaceSolid
                         && sample.color.a === 1 && !sample.blurActive, "Solid is not the default shell surface");
-                    for (const option of surface.options) {
-                        const card = tests.find(surface, "surfaceStyle-" + option.value);
-                        tests.check(card?.surfaceStyle && tests.find(card, "shellSurfacePreview"), "Missing shell surface preview card");
-                    }
+                    const materialPreview = tests.find(surfaces, "shellSurfacePreview");
+                    tests.check(materialPreview?.mode === Enums.SurfaceSolid, "Missing live shell surface preview");
+                    const corners = vector => [vector.x, vector.y, vector.z, vector.w].join(",");
+                    const islandCorners = corners(frame.centerCorners), menuCorners = corners(frame.panelCorners);
+                    tests.find(surfaces, "frameRadius").moved(0);
+                    tests.check(frame.cornerRadius === 0 && corners(frame.centerCorners) === islandCorners && corners(frame.panelCorners) === menuCorners,
+                        "Frame corners control the radius of another surface");
+                    tests.find(surfaces, "menuRadius").moved(8);
+                    tests.check(Config.menuRadius === 8 && frame.panelCorners.z === 8 && corners(frame.centerCorners) === islandCorners,
+                        "Menu slider did not round the menu independently");
+                    Config.set("frameRadius", 22);
+                    Config.set("menuRadius", 22);
                     ServiceCompositor.backend.runningVersion = "niri 26.04";
-                    tests.find(surface, "surfaceStyle-" + Enums.SurfaceBlur).clicked();
+                    surface.selected(Enums.SurfaceBlur);
+                    tests.check(materialPreview.mode === Enums.SurfaceBlur, "Preview did not update to Blur");
                     tests.checkFrostedTint();
                     Config.set("wallpaperCurrent", Quickshell.env("TEST_APPEARANCE_BASE") + "/fixture.png");
-                    tests.find(surface, "surfaceStyle-" + Enums.SurfaceBackdrop).clicked();
+                    surface.selected(Enums.SurfaceBackdrop);
+                    tests.check(materialPreview.mode === Enums.SurfaceBackdrop, "Preview did not update to Backdrop");
                     tests.check(ServiceAppearance.colorScheme === "prefer-light", "System scheme did not follow the light shell theme");
                     tests.check(ServiceAppearance.iconTheme === "FixtureIcons" && ServiceAppearance.fontFamily === "Noto Sans", "Remaining appearance settings did not load");
                     Config.set("shellLanguage", "ru");
@@ -175,7 +194,8 @@ ShellRoot {
                     if (!texture || texture.status !== Image.Ready || frame.wallpaperStrength <= 0) return;
                     tests.check(sample.color.a === 1 && !sample.blurActive, "Backdrop did not stay opaque");
                     ServiceCompositor.backend.runningVersion = "niri 25.11";
-                    tests.find(page, "surfaceStyle-" + Enums.SurfaceBlur).clicked();
+                    const surface = tests.find(surfaces, "shellSurfaceSelector");
+                    surface.selected(Enums.SurfaceBlur);
                     tests.check(ShellMaterial.backdrop && sample.color.a === 1, "Older Niri did not fall back to Backdrop");
                     ServiceCompositor.backend.runningVersion = "niri 26.04";
                     tests.check(ShellMaterial.blur && sample.color.a < 1 && frame.paintColor.a < 1
@@ -183,7 +203,7 @@ ShellRoot {
                     tests.checkFrostedTint();
                     sample.visible = false;
                     tests.check(!ShellMaterial.regionsFor(frame.Window.window).includes(sample.blurMask), "Hidden surface left a blur region behind");
-                    tests.find(page, "surfaceStyle-" + Enums.SurfaceSolid).clicked();
+                    surface.selected(Enums.SurfaceSolid);
                     tests.check(sample.color.a === 1 && frame.paintColor.a === 1 && ShellMaterial.blurClients.length === 0, "Returning to Solid left blur enabled");
                     tests.check(!tests.hasThemeSelector(page), "Removed translated theme selectors remain visible");
                     tests.check(ServiceAppearance.colorScheme === "prefer-dark", "System scheme did not follow the dark shell theme");
@@ -206,7 +226,7 @@ ShellRoot {
                         Config.set("wallpaperCurrent", Quickshell.env("TEST_APPEARANCE_BASE") + "/fixture.png");
                         tests.phase++;
                     } else {
-                        console.log("APPEARANCE_PASSED surface preview cards, automatic wallpaper theme, scheme synchronization, wallpaper transitions, and translations"); Qt.quit();
+                        console.log("APPEARANCE_PASSED live surface preview, automatic wallpaper theme, scheme synchronization, wallpaper transitions, and translations"); Qt.quit();
                     }
                 }
             } catch (error) { console.error("APPEARANCE_FAILED", error); Qt.quit(); }
@@ -473,7 +493,7 @@ Singleton {
     property color accent: "#8ecbff"
     property bool wallpaperBusy: false
     property string videoPath: ""
-    property Component videoComponent: Component { Rectangle { color: "red" } }
+    property Component videoComponent: Component { Rectangle { property string outputName; color: "red" } }
     function isVideo(path) { return path.endsWith(".mkv"); }
     function fileUrl(path) { return "file://" + path; }
 }
@@ -497,11 +517,12 @@ ShellRoot {
             function until(test, message) {
                 for(let i=0;i<120;i++) { if(test()) return; wait(20); }
                 const image = findChild(a, "wallpaperBlurImage");
-                throw new Error(message + " " + JSON.stringify({mode:Config.desktopBlur, animations:Config.themeAnimations, requested:a.blurRequested,
+                throw new Error(message + " " + JSON.stringify({enabled:Config.wallpaperBlur, motion:Config.motionStyle, requested:a.blurRequested,
                     progress:a.blurProgress, changing:a.changing, imagePath:a.imagePath, source:String(image.source), status:image.status}));
             }
             function send(event) { ServiceCompositor.backend.event(JSON.stringify(event)); }
             function exercise() {
+                Config.set("motionStyle", Enums.MotionDirect);
                 const equalizer = findChild(desktop, "desktopEqualizer");
                 equalizer.samples = [2, 1.5, 1];
                 for (const size of [Qt.size(1920,1080), Qt.size(1080,1920), Qt.size(640,1280), Qt.size(3840,2160)]) {
@@ -530,25 +551,27 @@ ShellRoot {
                 equalizer.samples = null;
                 Config.set("wallpaperCurrent", Qt.resolvedUrl("fixture.png").toString().slice(7));
                 const image = findChild(a, "wallpaperBlurImage");
-                check(Config.desktopBlur === Enums.BlurDisabled && a.blurProgress === 0 && image.source.toString() === "", "Blur is not disabled by default");
-                Config.set("desktopBlur", 3); Config.set("desktopBlur", -1);
-                check(Config.desktopBlur === 0, "Invalid blur mode was accepted");
-                Config.set("desktopBlur", Enums.BlurAlways);
-                until(()=>a.blurProgress === 1 && b.blurProgress === 1, "Always mode did not load the wallpaper");
-                check(image.sourceSize.width === 432 && image.sourceSize.height === 332 && image.parent.layer.textureSize === image.sourceSize,
-                      "Blur did not downsample the wallpaper and its effect texture together");
+                check(!Config.wallpaperBlur && a.blurProgress === 0 && String(image.source) === "", "Blur is not disabled by default");
                 send({WorkspacesChanged:{workspaces:[
                     {id:10,idx:1,output:"A",is_active:true,is_focused:true},
                     {id:11,idx:2,output:"A",is_active:false,is_focused:false},
                     {id:20,idx:1,output:"B",is_active:true,is_focused:false}
                 ]}});
+                Config.applyObject({desktopBlur:2});
+                check(Config.wallpaperBlur && !("desktopBlur" in Config.snapshot()), "Legacy blur mode did not migrate to the toggle");
+                check(a.blurProgress === 0 && b.blurProgress === 0, "Enabled blur affected empty workspaces");
                 send({WindowsChanged:{windows:[{id:1,workspace_id:11},{id:2,workspace_id:20}]}});
-                Config.set("desktopBlur", Enums.BlurWindowPresented);
-                check(a.blurProgress === 0 && b.blurProgress === 1, "Hidden workspace or other output triggered blur");
+                until(()=>a.blurProgress === 0 && b.blurProgress === 1, "Hidden workspace or other output triggered blur");
+                Config.applyObject({desktopBlur:2, wallpaperBlur:false});
+                check(!Config.wallpaperBlur && a.blurProgress === 0 && b.blurProgress === 0, "Legacy blur mode overrode the disabled toggle");
+                Config.set("wallpaperBlur", true);
+                until(()=>b.blurProgress === 1, "Re-enabling blur did not apply it to the occupied workspace");
                 send({WorkspaceActivated:{id:20,focused:true}});
                 check(a.blurProgress === 0 && b.blurProgress === 1, "Global focus changed wallpaper blur");
                 send({WindowOpenedOrChanged:{window:{id:3,workspace_id:10,is_floating:true}}});
                 until(()=>a.blurProgress === 1, "Opening a floating window did not blur the wallpaper");
+                check(image.sourceSize.width === 432 && image.sourceSize.height === 332 && image.parent.layer.textureSize === image.sourceSize,
+                      "Blur did not downsample the wallpaper and its effect texture together");
                 send({WindowClosed:{id:3}});
                 check(a.blurProgress === 0, "Closing the last window did not remove blur");
                 send({WorkspaceActivated:{id:11,focused:true}});
@@ -557,13 +580,13 @@ ShellRoot {
                 check(a.blurProgress === 0 && !ServiceCompositor.workspaceHasWindowsOnOutput("missing"), "Unknown output counted as occupied");
                 a.outputName = "A";
                 until(()=>a.blurProgress === 1, "Returning to an occupied output did not restore blur");
-                Config.set("themeAnimations", 1);
-                Config.set("desktopBlur", Enums.BlurDisabled);
+                Config.set("motionStyle", Enums.MotionFluid);
+                Config.set("wallpaperBlur", false);
                 wait(60);
                 check(a.blurProgress > 0 && a.blurProgress < 1, "Blur did not fade out");
                 until(()=>a.blurProgress === 0 && image.source.toString() === "", "Disabled blur retained the wallpaper texture");
-                Config.set("themeAnimations", 0);
-                Config.set("desktopBlur", Enums.BlurAlways);
+                Config.set("motionStyle", Enums.MotionDirect);
+                Config.set("wallpaperBlur", true);
                 until(()=>a.blurProgress === 1, "Blur did not recover after reloading the image");
                 ServiceAppearance.wallpaperBusy = true;
                 check(a.blurProgress === 0, "Blur hid the wallpaper transition");
@@ -571,11 +594,14 @@ ShellRoot {
                 until(()=>a.blurProgress === 1 && !a.changing, "Blur did not return after the transition");
                 ServiceAppearance.videoPath = "/fixture.mkv";
                 until(()=>a.videoActive && a.blurProgress === 1, "Video wallpaper did not receive blur");
-                Config.set("desktopBlur", Enums.BlurDisabled);
+                Config.set("wallpaperBlurStrength", 0);
+                check(a.videoActive && a.blurProgress === 0, "Zero blur strength retained wallpaper blur");
+                Config.set("wallpaperBlurStrength", 35);
+                Config.set("wallpaperBlur", false);
                 check(a.videoActive && a.blurProgress === 0, "Disabling blur stopped video playback");
                 ServiceAppearance.videoPath = "";
                 check(!a.videoActive, "Static wallpaper retained video rendering");
-                console.log("DESKTOP_BLUR_PASSED: modes, per-output workspaces, floating windows, animations, transitions and video");
+                console.log("DESKTOP_BLUR_PASSED per-output occupancy, migration, toggle, strength, transitions and video");
                 Qt.quit();
             }
         }

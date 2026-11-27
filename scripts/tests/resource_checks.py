@@ -136,17 +136,14 @@ def checks():
                     raise AssertionError("Invalid import target accepted: " + name)
 
             installed = base / "installed"
-            installed.mkdir()
+            shutil.copytree(ROOT / "dots/niri", installed / "dots/niri")
+            (installed / "dots/config/kitty").mkdir(parents=True)
+            (installed / "dots/config/kitty/kitty.conf").write_text("bundled config")
+            (installed / "dots/sddm").mkdir()
+            (installed / "dots/sddm/Main.qml").write_text("greeter")
             (installed / "scripts/lib").mkdir(parents=True)
-            (installed / "scripts/lib/system.sh").write_text('test -f "$BLOODYSHELL_RESOURCE_DIR/dots/sddm/Main.qml"\nprintf "%s" "$BLOODYSHELL_RESOURCE_DIR" > "$HOME/greeter-source"\n')
-            archive = base / "repository.tar.gz"
-            with tarfile.open(archive, "w:gz") as package:
-                for name, text in (("dots/sddm/Main.qml", "greeter"), ("dots/config/kitty/kitty.conf", "remote config"), ("outside/unused", "unused")):
-                    member = tarfile.TarInfo("repository-main/" + name)
-                    contents = text.encode()
-                    member.size = len(contents)
-                    member.mode = 0o644
-                    package.addfile(member, io.BytesIO(contents))
+            (installed / "scripts/lib/system.sh").write_text(
+                'set -e\nroot="$(dirname -- "$0")/../.."\ncp "$root/dots/sddm/Main.qml" "$HOME/imported-greeter"\n')
 
             wallpaper_archive = base / "wallpapers.tar.gz"
             with tarfile.open(wallpaper_archive, "w:gz") as package:
@@ -158,28 +155,22 @@ def checks():
 
             def download(url, target=None):
                 downloads.append(url)
-                wallpapers = "/" + api["WALLPAPERS_REPO"] + "/" in url
-                if target:
-                    expected = f"https://github.com/{api['WALLPAPERS_REPO']}/archive/refs/heads/main.tar.gz" if wallpapers else f"https://github.com/{api['REPO']}/archive/refs/tags/{api['REF']}.tar.gz"
-                    assert url == expected, url
-                    shutil.copyfile(wallpaper_archive if wallpapers else archive, target)
-                else:
-                    assert "/git/trees/" in url and "recursive=1" in url, url
-                    names = ["images/repo.png"] if wallpapers else ["dots/config/kitty/kitty.conf", "dots/sddm/Main.qml"]
-                    return json.dumps(dict(tree=[dict(type="blob", path=name) for name in names]))
+                assert target and url == f"https://github.com/{api['WALLPAPERS_REPO']}/archive/refs/heads/main.tar.gz", url
+                shutil.copyfile(wallpaper_archive, target)
 
             with patch.dict(scope, ROOT=installed, download=download):
                 assert api["programs"]() == ["kitty"]
-                remote = api["import_resource"]("dots/kitty")
-                assert (config / "kitty/kitty.conf").read_text() == "remote config"
-                assert (Path(remote["backup"]) / "kitty.conf").read_text() == "new config"
+                bundled = api["import_resource"]("dots/kitty")
+                assert (config / "kitty/kitty.conf").read_text() == "bundled config"
+                assert (Path(bundled["backup"]) / "kitty.conf").read_text() == "new config"
+                api["import_resource"]("compositor")
+                assert (installed_niri / "config.kdl").read_bytes() == (installed / "dots/niri/config.kdl").read_bytes()
+                api["import_resource"]("greeter")
+                assert (home / "imported-greeter").read_text() == "greeter"
+                assert not downloads
                 api["import_resource"]("wallpapers")
                 assert (personal / "repo.png").read_text() == "remote wallpaper"
-                assert downloads[-1] == "https://github.com/" + api["WALLPAPERS_REPO"] + "/archive/refs/heads/main.tar.gz", "Wallpapers used the shell release archive"
-                api["import_resource"]("greeter")
-                assert (home / "greeter-source").read_text()
-                assert not Path((home / "greeter-source").read_text()).exists(), "Temporary repository files were not cleaned up"
-                assert not list(base.rglob("unused"))
+                assert len(downloads) == 1
                 before_images = {path: path.read_bytes() for path in personal.rglob("*") if path.is_file()}
                 for name, kind in (("images/../escape.png", tarfile.REGTYPE), ("images/link.png", tarfile.SYMTYPE)):
                     with tarfile.open(wallpaper_archive, "w:gz") as package:
@@ -194,20 +185,8 @@ def checks():
                     else:
                         raise AssertionError("Unsafe wallpaper archive was accepted")
                     assert before_images == {path: path.read_bytes() for path in personal.rglob("*") if path.is_file()}, "Rejected wallpaper archive changed personal images"
-                for unsafe, kind in (("repository-main/dots/config/kitty/../../escape", tarfile.REGTYPE), ("repository-main/dots/config/kitty/link", tarfile.SYMTYPE)):
-                    with tarfile.open(archive, "w:gz") as package:
-                        member = tarfile.TarInfo(unsafe)
-                        member.type = kind
-                        member.linkname = "/tmp/escape"
-                        package.addfile(member)
-                    try:
-                        api["import_resource"]("dots/kitty")
-                    except ValueError:
-                        pass
-                    else:
-                        raise AssertionError("Unsafe archive was accepted")
             assert (personal / "one.png").read_bytes() == b"personal image"
-    print("Wallpaper imports, collision handling, repeated imports, unchanged settings, dotfile backups, remote imports and archive checks passed without changing user files.")
+    print("Offline bundled imports, import backups, and wallpaper download and archive checks passed.")
 
 
 def availability_checks():
@@ -216,7 +195,7 @@ def availability_checks():
     with tempfile.TemporaryDirectory(prefix="bloodyShell-import-source-") as temporary:
         base = Path(temporary)
         source, installed = base / "source folder", base / "installed"
-        files = {"version": api["VERSION"], "shell.qml": "fixture", "dots/config/kitty/kitty.conf": "config",
+        files = {"dots/config/kitty/kitty.conf": "config",
                  "dots/niri/config.kdl": "compositor", "dots/sddm/Main.qml": "greeter"}
         for name, value in files.items():
             path = source / name
@@ -232,9 +211,8 @@ def availability_checks():
         calls = []
         def remote(url, destination=None):
             calls.append((url, destination))
-            assert destination is None, "Listing resources downloaded an archive"
-            paths = ["images/video.webm"] if api["WALLPAPERS_REPO"] in url else ["dots/config/kitty/kitty.conf"]
-            return json.dumps(dict(tree=[dict(type="blob", path=name) for name in paths]))
+            assert destination is None and api["WALLPAPERS_REPO"] + "/git/trees/main?recursive=1" in url
+            return json.dumps(dict(tree=[dict(type="blob", path="images/video.webm")]))
         with patch.dict(os.environ, env):
             with patch.dict(scope, ROOT=source, download=remote):
                 catalog = api["resource_catalog"]()
@@ -245,27 +223,27 @@ def availability_checks():
             calls.clear()
             with patch.dict(scope, ROOT=installed, download=remote):
                 catalog = api["status"]()
+                for name in ("dots/kitty", "compositor", "greeter"):
+                    try:
+                        api["import_resource"](name)
+                    except ValueError as error:
+                        assert "Bundled dots folder is missing" in str(error)
+                    else:
+                        raise AssertionError("An import succeeded without the bundled dots folder")
             entries = {entry["id"]: entry for entry in catalog["entries"]}
-            assert len(calls) == 2 and "/git/trees/" + api["REF"] in calls[0][0]
-            assert api["WALLPAPERS_REPO"] + "/git/trees/main?recursive=1" in calls[1][0]
-            assert "cli" not in entries and entries["dots"]["available"] and entries["wallpapers"]["available"]
-            assert not any(entries[name]["available"] for name in ("greeter", "compositor")) and catalog["error"]
+            assert len(calls) == 1
+            assert "cli" not in entries and entries["wallpapers"]["available"]
+            assert not any(entries[name]["available"] for name in ("dots", "greeter", "compositor"))
+            assert "Bundled dots folder is missing" in catalog["error"]
             with patch.dict(scope, ROOT=source, download=lambda *args: (_ for _ in ()).throw(RuntimeError("repository unavailable"))):
                 unavailable = api["resource_catalog"]()
             assert not unavailable["available"]["wallpapers"] and all(unavailable["available"][name] for name in ("dots", "greeter", "compositor"))
             assert "Wallpapers:" in unavailable["error"], "Wallpaper failure hid independent shell resources"
-            def missing_shell(url, destination=None):
-                if api["WALLPAPERS_REPO"] not in url:
-                    raise RuntimeError("release unavailable")
-                return remote(url, destination)
-            with patch.dict(scope, ROOT=installed, download=missing_shell):
-                unavailable = api["resource_catalog"]()
-            assert unavailable["available"]["wallpapers"] and not any(unavailable["available"][name] for name in ("dots", "greeter", "compositor"))
             for response in (dict(tree=[], truncated=True), dict(tree=[]), dict(tree=[dict(type="blob", mode="120000", path="images/link.png")])):
                 with patch.dict(scope, ROOT=source, download=lambda *args: json.dumps(response)):
                     unavailable = api["resource_catalog"]()
                 assert not unavailable["available"]["wallpapers"] and unavailable["error"]
-    print("Independent wallpaper repository availability, lightweight catalogs, pinned shell releases, local configs and isolated failures passed.")
+    print("Local import catalogs and independent wallpaper availability checks passed.")
 
 
 def cli_checks():
@@ -514,54 +492,6 @@ with files["operation_signals"]():
     print("Managed workers stop on SIGTERM, terminal hangup and timeout, including children that ignore SIGTERM.")
 
 
-def release_tag_checks():
-    api = runpy.run_path(str(ROOT / "scripts/lib/resources.py"))
-    scope = api["programs"].__globals__
-    refs = [api["REF"], api["VERSION"].removeprefix("v")]
-    calls = []
-    def operation(reference):
-        calls.append(reference)
-        if reference == refs[0]:
-            raise api["DownloadError"]("HTTP 404", 404)
-        return reference
-    assert api["release_resource"](operation) == refs[1] and calls == refs
-    for status in (403, 429, 500, 0):
-        calls.clear()
-        def failed(reference):
-            calls.append(reference)
-            raise api["DownloadError"]("Unavailable", status)
-        try:
-            api["release_resource"](failed)
-        except api["DownloadError"]:
-            pass
-        else:
-            raise AssertionError("Failed download was accepted")
-        assert calls == refs[:1], "Non-404 failure tried another tag"
-    with tempfile.TemporaryDirectory(prefix="bloodyshell-release-tags-") as temporary:
-        base = Path(temporary)
-        archive = base / "source.tar.gz"
-        with tarfile.open(archive, "w:gz") as package:
-            member = tarfile.TarInfo("repository/dots/config/kitty/kitty.conf")
-            contents = b"config from plain version tag"
-            member.size = len(contents)
-            package.addfile(member, io.BytesIO(contents))
-        urls = []
-        def download(url, destination=None):
-            urls.append(url)
-            if refs[0] in url:
-                raise api["DownloadError"]("HTTP 404", 404)
-            if destination:
-                shutil.copyfile(archive, destination)
-            else:
-                return json.dumps(dict(tree=[dict(type="blob", path="dots/config/kitty/kitty.conf")]))
-        with patch.dict(scope, ROOT=base / "installed", download=download):
-            assert api["programs"]() == ["kitty"]
-            with api["source_for"]("dots/kitty") as source:
-                assert (source / "dots/config/kitty/kitty.conf").read_bytes() == contents
-        assert len(urls) == 4 and refs[1] in urls[1] and refs[1] in urls[3]
-    print("Prefixed/plain release tags work for catalogs and archive imports; rate limits, server and connection failures do not fall back.")
-
-
 if __name__ == "__main__":
     checks()
     availability_checks()
@@ -570,4 +500,3 @@ if __name__ == "__main__":
     file_checks()
     backend_checks()
     cancellation_checks()
-    release_tag_checks()

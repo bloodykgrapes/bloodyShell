@@ -1,4 +1,4 @@
-"""Versioned resource imports, CLI refresh and login-screen appearance export."""
+"""Bundled resource imports, wallpaper downloads and login-screen appearance export."""
 
 from contextlib import contextmanager, ExitStack, nullcontext
 from datetime import datetime
@@ -19,17 +19,13 @@ import sys
 import tarfile
 import tempfile
 import uuid
-from urllib.parse import quote
 
 
 ROOT = Path(__file__).resolve().parents[2]
 FILES = runpy.run_path(str(Path(__file__).with_name("files.py")))
 COMPOSITORS = runpy.run_path(str(Path(__file__).with_name("compositors") / "__init__.py"))
-REPO = "bloodykgrapes/bloodyShell"
 WALLPAPERS_REPO = "bloodykgrapes/bloodyShell.wallpapers"
 WALLPAPERS_REF = "main"
-VERSION = (ROOT / "version").read_text().strip()
-REF = "v" + VERSION.removeprefix("v")
 IMAGES = {".jpg", ".jpeg", ".jfif", ".png", ".webp", ".bmp", ".gif"}
 VIDEOS = {".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi"}
 TRANSITIONS = {"none", "simple", "fade", "left", "right", "top", "bottom", "wipe", "wave", "grow", "center", "any", "outer", "random"}
@@ -54,46 +50,33 @@ def program_name(value):
     return value
 
 
-class DownloadError(RuntimeError):
-    def __init__(self, message, status):
-        super().__init__(message)
-        self.status = status
-
-
 def download(url, destination=None):
-    command = ["curl", "-fsSL", "--retry", "1", "--max-time", "120" if destination else "20", "-w", "\n%{http_code}"]
+    command = ["curl", "-fsSL", "--retry", "1", "--max-time", "120" if destination else "20"]
     if destination:
         command += ["-o", str(destination)]
     result = FILES["run"](command + [url], capture_output=True, text=True, timeout=130)
-    body, _, status = result.stdout.rpartition("\n")
     if result.returncode:
-        raise DownloadError(result.stderr.strip() or "Could not download repository files", int(status) if status.isdigit() else 0)
-    return body
+        raise RuntimeError(result.stderr.strip() or "Could not download wallpaper repository files")
+    return result.stdout
 
 
-def release_resource(operation):
-    references = tuple(dict.fromkeys((REF, VERSION.removeprefix("v"))))
-    for index, reference in enumerate(references):
-        try:
-            return operation(reference)
-        except DownloadError as error:
-            if error.status != 404 or index == len(references) - 1:
-                raise
-
-
-def repository_paths(repository, reference):
-    ref = quote(reference, safe="")
-    data = json.loads(download(f"https://api.github.com/repos/{repository}/git/trees/{ref}?recursive=1"))
+def wallpaper_paths():
+    data = json.loads(download(f"https://api.github.com/repos/{WALLPAPERS_REPO}/git/trees/{WALLPAPERS_REF}?recursive=1"))
     if not isinstance(data, dict) or not isinstance(data.get("tree"), list) or data.get("truncated"):
         raise ValueError("Could not read the complete import file list.")
     return {item["path"] for item in data["tree"] if isinstance(item, dict) and item.get("type") == "blob"
             and isinstance(item.get("path"), str) and item.get("mode") != "120000"}
 
 
+def bundled_dots():
+    directory = ROOT / "dots"
+    if not directory.is_dir():
+        raise ValueError("Bundled dots folder is missing. Update or reinstall bloodyShell to restore it.")
+    return directory
+
+
 def shell_paths():
-    if (ROOT / "dots").is_dir():
-        return {path.relative_to(ROOT).as_posix() for path in (ROOT / "dots").rglob("*") if path.is_file() and not path.is_symlink()}
-    return release_resource(lambda reference: repository_paths(REPO, reference))
+    return {path.relative_to(ROOT).as_posix() for path in bundled_dots().rglob("*") if path.is_file() and not path.is_symlink()}
 
 
 def config_programs(paths):
@@ -110,12 +93,10 @@ def resource_catalog():
         compositor = COMPOSITORS["load"]()["INFO"]
         available.update(dots=bool(names), greeter=all("dots/sddm/" + name in paths for name in GREETER_FILES),
                          compositor=all(compositor["resource"] + "/" + name in paths for name in compositor["files"]))
-        if not (ROOT / "dots").is_dir() and not all(available[key] for key in ("dots", "greeter", "compositor")):
-            errors.append("Import files are missing from release " + VERSION + ".")
     except (OSError, RuntimeError, ValueError) as error:
         errors.append("Shell files: " + str(error))
     try:
-        paths = repository_paths(WALLPAPERS_REPO, WALLPAPERS_REF)
+        paths = wallpaper_paths()
         available["wallpapers"] = any(path.startswith("images/") and Path(path).suffix.lower() in IMAGES | VIDEOS for path in paths)
         if not available["wallpapers"]:
             errors.append("No wallpapers are available in " + WALLPAPERS_REPO + "/images.")
@@ -148,24 +129,17 @@ def resource_path(resource):
 @contextmanager
 def source_for(resource):
     relative = resource_path(resource)
-    if resource == "wallpapers":
-        repository, namespace, reference = WALLPAPERS_REPO, "heads", WALLPAPERS_REF
-    else:
-        if (ROOT / "dots").is_dir():
-            if not (ROOT / relative).is_dir():
-                raise ValueError("Missing resource folder: " + str(ROOT / relative))
-            yield ROOT
-            return
-        repository, namespace, reference = REPO, "tags", REF
+    if resource != "wallpapers":
+        bundled_dots()
+        if not (ROOT / relative).is_dir():
+            raise ValueError("Missing bundled resource folder: " + str(ROOT / relative))
+        yield ROOT
+        return
     with tempfile.TemporaryDirectory(prefix="bloodyShell-import-") as temporary:
         stage = Path(temporary)
         archive, extracted = stage / "source.tar.gz", stage / "source"
         extracted.mkdir()
-        ref = quote(reference, safe="")
-        if resource == "wallpapers":
-            download(f"https://github.com/{repository}/archive/refs/{namespace}/{ref}.tar.gz", archive)
-        else:
-            release_resource(lambda tag: download(f"https://github.com/{repository}/archive/refs/tags/{quote(tag, safe='')}.tar.gz", archive))
+        download(f"https://github.com/{WALLPAPERS_REPO}/archive/refs/heads/{WALLPAPERS_REF}.tar.gz", archive)
         FILES["extract_archive"](archive, extracted, prefix=relative)
         if not (extracted / relative).is_dir():
             raise ValueError("The repository does not contain this resource")
@@ -277,8 +251,7 @@ def import_resource(resource, transaction=None, names=None):
             return import_dots(source / relative, names, transaction)
         if resource.startswith("dots/"):
             return import_config(source / relative, resource[5:], transaction)
-        environment = dict(os.environ, BLOODYSHELL_RESOURCE_DIR=str(source))
-        result = subprocess.run(["bash", str(ROOT / "scripts/lib/system.sh")], env=environment)
+        result = subprocess.run(["bash", str(source / "scripts/lib/system.sh")])
         if result.returncode:
             raise RuntimeError("Greeter setup failed")
         return dict(destination="/usr/share/sddm/themes/bloodyShell")
@@ -385,7 +358,10 @@ def write_export(source, directory, keyboard_layouts=None, *, initialize_wallpap
     avatars = directory / "avatars"
     if avatars.is_symlink():
         raise ValueError("Login-screen avatar storage must not be a symlink")
-    settings = dict(animationLevel=str(data.get("themeAnimations", 1)) if data.get("themeAnimations", 1) in (0, 1, 2) else "1",
+    motion_reduce = data.get("motionReduce") is True
+    motion_style = data.get("motionStyle") if data.get("motionStyle") in (0, 1, 2) else None
+    animation_level = 0 if motion_reduce or motion_style == 0 else 2 if motion_style == 2 else 1
+    settings = dict(animationLevel=str(animation_level),
                     widgetClock24="false" if data.get("barWidgetClock24") is False else "true",
                     shellLanguage=data.get("shellLanguage") if data.get("shellLanguage") in ("en", "ru", "system") else "system")
     if keyboard_layouts is not None:
@@ -611,6 +587,7 @@ def wallpaper_main():
     parser.add_argument("action", choices=("list", "preview", "apply", "inspect"))
     parser.add_argument("path", nargs="?", default="")
     parser.add_argument("--transition", choices=sorted(TRANSITIONS), default="grow")
+    parser.add_argument("--duration", type=int, default=1200, choices=range(200, 3001))
     args = parser.parse_args()
     try:
         if args.action == "list":
@@ -644,7 +621,7 @@ def wallpaper_main():
         if args.action == "apply":
             command = ["setpriv", "--pdeathsig", "TERM", "awww", "img", data["preview"],
                        "--transition-type", args.transition, "--transition-pos", "center",
-                       "--transition-duration", "1.2", "--transition-fps", "120",
+                       "--transition-duration", f"{args.duration / 1000:.3f}", "--transition-fps", "120",
                        "--transition-bezier", "0.16,0.85,0.2,1.0"]
             result = FILES["run"](command, capture_output=True, text=True, timeout=10)
             if result.returncode:

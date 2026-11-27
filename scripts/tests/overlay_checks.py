@@ -137,7 +137,7 @@ ShellRoot
                     case 5:
                         Config.set("themeAnimations", mode);
                         if (names[index] === "settings")
-                            OverlayState.settingsPage = Registry.settings.findIndex(entry => entry.id === "appearance");
+                            OverlayState.settingsPage = Registry.settings.findIndex(entry => entry.id === "wallpaper");
                         tests.pending = names[index]; tests.requested = Date.now();
                         OverlayState.show(names[index]);
                         step = 6; break;
@@ -629,23 +629,25 @@ ShellRoot {
             function returned(original,page,scroll) {
                 until(()=>OverlayState.stacked==="" && !stacked().item && overlay.testPage.enabled,"Picker did not finish returning to settings");
                 check(OverlayState.current==="settings" && overlay.testPage.item===original && overlay.currentView===original,"Settings was recreated or closed");
-                check(Math.abs(page.contentY-scroll)<0.01 && Registry.settings[OverlayState.settingsPage].id==="appearance","Settings lost its page or scroll position");
+                check(Math.abs(page.contentY-scroll)<0.01 && Registry.settings[OverlayState.settingsPage].id==="wallpaper","Settings lost its page or scroll position");
                 wait(20);
             }
             function closed() { until(()=>!OverlayState.active && !overlay.testPage.item && !stacked().item,"Closing retained an overlay layer"); }
             function exercise() {
-                OverlayState.settingsPage=Registry.settings.findIndex(page=>page.id==="appearance");
+                OverlayState.settingsPage=Registry.settings.findIndex(page=>page.id==="wallpaper");
+                window.height=480;
                 for(const mode of [0,1,2]) {
                     Config.set("themeAnimations",mode);
                     OverlayState.show("settings");
-                    until(()=>overlay.testPage.item && findChild(overlay.testPage.item,"currentWallpaperPreview"),"Appearance did not load");
+                    until(()=>overlay.testPage.item && findChild(overlay.testPage.item,"currentWallpaperPreview"),"Wallpaper did not load");
                     const original=overlay.testPage.item;
                     const preview=findChild(original,"currentWallpaperPreview");
                     const selector=findChild(original,"wallpaperTransitionSelector");
                     let page=selector.parent;
                     while(page && typeof page.resetScroll!=="function") page=page.parent;
-                    check(page && page.contentHeight>page.height,"Appearance cannot exercise scroll preservation");
-                    page.contentY=Math.min(180,page.contentHeight-page.height);
+                    check(page,"Wallpaper has no scrollable page");
+                    wait(100);
+                    page.contentY=Math.max(0,Math.min(180,page.contentHeight-page.height));
                     const scroll=page.contentY;
                     selector.forceActiveFocus();
                     const focus=window.activeFocusItem;

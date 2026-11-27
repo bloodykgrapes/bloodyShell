@@ -13,23 +13,29 @@ Region
     readonly property bool horizontal: side === Enums.EdgeTop || side === Enums.EdgeBottom
     readonly property bool far: side === Enums.EdgeRight || side === Enums.EdgeBottom
 
-    function position(along, radius)
+    function position(along, depth)
     {
-        const across = far ? edge.face - radius : edge.face;
+        const across = far ? edge.face - depth : edge.face;
         return horizontal ? Qt.point(along, across) : Qt.point(across, along);
     }
 
     FrameJoinCornerRegion
     {
-        cornerSize: region.edge.startRadius
-        origin: region.position(region.edge.start - cornerSize, cornerSize)
+        readonly property int depth: region.edge.startRadius
+        readonly property int reach: depth > 0 ? region.edge.reach ?? depth : 0
+        cornerWidth: region.horizontal ? reach : depth
+        cornerHeight: region.horizontal ? depth : reach
+        origin: region.position(region.edge.start - reach, depth)
         roundRight: region.horizontal || region.far
         roundBottom: !region.horizontal || region.far
     }
     FrameJoinCornerRegion
     {
-        cornerSize: region.edge.endRadius
-        origin: region.position(region.edge.end, cornerSize)
+        readonly property int depth: region.edge.endRadius
+        readonly property int reach: depth > 0 ? region.edge.reach ?? depth : 0
+        cornerWidth: region.horizontal ? reach : depth
+        cornerHeight: region.horizontal ? depth : reach
+        origin: region.position(region.edge.end, depth)
         roundRight: !region.horizontal && region.far
         roundBottom: region.horizontal && region.far
     }

@@ -13,10 +13,25 @@ Item
     property bool paintBackground: true
     property Item navigationSurfaceHost: null
     readonly property alias navigationSurface: sidebar.surface
-    readonly property var tabs: Registry.settings
-    readonly property int current: Math.max(0, Math.min(tabs.length - 1, OverlayState.settingsPage))
+    readonly property var pages: Registry.settings
+    readonly property var tabs: Registry.settingsPages
+    readonly property int current: Math.max(0, Math.min(pages.length - 1, OverlayState.settingsPage))
+    readonly property int currentTab: Registry.settingsTabIndex(current)
+    readonly property var currentPage: pages[current]
+    readonly property var parentPage: Registry.settingsParent(current)
 
-    function select(index) { OverlayState.settingsPage = Math.max(0, Math.min(tabs.length - 1, index)) }
+    function select(index) { OverlayState.settingsPage = Math.max(0, Math.min(pages.length - 1, index)) }
+    function selectID(id)
+    {
+        const index = Registry.settingsIndex(id);
+        if (index >= 0) select(index);
+    }
+    function goBack() { if (parentPage) selectID(parentPage.id) }
+    function moveTab(offset)
+    {
+        const index = Math.max(0, Math.min(tabs.length - 1, currentTab + offset));
+        if (tabs[index]) selectID(tabs[index].id);
+    }
 
     clip: true
 
@@ -25,12 +40,13 @@ Item
 
     Keys.onPressed: event =>
     {
-        if (event.key === Qt.Key_Escape)          OverlayState.hide("settings");
+        if (event.key === Qt.Key_Escape && settingsContent.parentPage) goBack();
+        else if (event.key === Qt.Key_Escape)     OverlayState.hide("settings");
         else if (!settingsContent.activeFocus)               return;
-        else if (event.key === Qt.Key_Up)         select(current - 1);
-        else if (event.key === Qt.Key_Down)       select(current + 1);
-        else if (event.key === Qt.Key_Home)       select(0);
-        else if (event.key === Qt.Key_End)        select(tabs.length - 1);
+        else if (event.key === Qt.Key_Up)         moveTab(-1);
+        else if (event.key === Qt.Key_Down)       moveTab(1);
+        else if (event.key === Qt.Key_Home)       selectID(tabs[0].id);
+        else if (event.key === Qt.Key_End)        selectID(tabs[tabs.length - 1].id);
         else return;
         event.accepted = true;
     }
@@ -60,17 +76,17 @@ Item
 
         tabs: settingsContent.tabs
         groups: Registry.settingsGroups
-        current: settingsContent.current
-        onSelected: index =>
+        current: settingsContent.currentTab
+        onSelected: id =>
         {
-            settingsContent.select(index);
+            settingsContent.selectID(id);
             settingsContent.forceActiveFocus();
         }
     }
 
     Item
     {
-        id: pages
+        id: pagesView
 
         property int  shown: -1
         property bool flip: false
@@ -84,8 +100,9 @@ Item
             flip = !flip;
 
             (flip ? slotB : slotA).leave(direction);
-            const entry = settingsContent.tabs[index];
-            (flip ? slotA : slotB).enter(entry.page, direction, entry.icon);
+            const entry = settingsContent.pages[index];
+            const parent = Registry.settingsParent(index);
+            (flip ? slotA : slotB).enter(entry.page, direction, entry.icon, parent ? parent.title : "");
         }
 
         x: sidebar.x + sidebar.width + 4
@@ -95,10 +112,10 @@ Item
         clip: true
 
         Component.onCompleted: present(settingsContent.current)
-        Connections { target: settingsContent; function onCurrentChanged() { pages.present(settingsContent.current) } }
+        Connections { target: settingsContent; function onCurrentChanged() { pagesView.present(settingsContent.current) } }
 
-        SettingsPageSlot { id: slotA; anchors.fill: parent }
-        SettingsPageSlot { id: slotB; anchors.fill: parent }
+        SettingsPageSlot { id: slotA; anchors.fill: parent; onBackRequested: settingsContent.goBack() }
+        SettingsPageSlot { id: slotB; anchors.fill: parent; onBackRequested: settingsContent.goBack() }
     }
 
     Button

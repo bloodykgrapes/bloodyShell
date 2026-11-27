@@ -13,6 +13,7 @@ Widget
 
     WidgetButton
     {
+        bubble: Registry.usesStatusBubbles(Config.barType)
         icon: Icon.tray
         active: widgetTray.menuOpen
         onClicked: widgetTray.toggleMenu()

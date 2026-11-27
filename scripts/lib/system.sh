@@ -330,14 +330,10 @@ refresh_greeter()
 
 apply_greeter()
 (
-    local resource="${BLOODYSHELL_RESOURCE_DIR:-$PACKAGE}"
-    if [[ ! -d "$resource/dots/sddm" ]]; then
-        python3 "$PACKAGE/scripts/bloodyShell" internal resources import greeter --human
-        return
-    fi
+    [[ -d "$PACKAGE/dots/sddm" ]] || { warn "Missing bundled login-screen files: $PACKAGE/dots/sddm"; return 1; }
     if ! interactive && ! sudo -n true 2> /dev/null; then warn "Needs sudo in a terminal: login screen skipped"; return 0; fi
     local line sddm_dependency=""
-    check_greeter_theme "$resource" || return 1
+    check_greeter_theme "$PACKAGE" || return 1
     local family; family="$(distro_family)"
     local missing=() dependencies=() niri_dependency=""
     local catalog
@@ -362,7 +358,7 @@ apply_greeter()
     command -v sddm > /dev/null && command -v sddm-greeter-qt6 > /dev/null && command -v niri > /dev/null || { warn "Install SDDM with its Qt 6 greeter and niri first"; return 1; }
     getent passwd sddm > /dev/null || { warn "The SDDM system account is missing: reinstall the sddm package"; return 1; }
     [[ ! -L "$GREETER_STATE" && ( ! -e "$GREETER_STATE" || -d "$GREETER_STATE" ) ]] || { warn "Login-screen storage must be a directory, not a symlink"; return 1; }
-    niri validate -c "$resource/dots/sddm/niri.kdl" || return 1
+    niri validate -c "$PACKAGE/dots/sddm/niri.kdl" || return 1
     sudo -v || return 1
 
     local stage; stage="$(mktemp -d)"
@@ -383,7 +379,7 @@ apply_greeter()
     trap 'exit 143' TERM
     niri_bin="$(command -v niri)"
     install_native_support "$family"
-    if ! prepare_greeter_theme "$resource" "$stage/theme"; then
+    if ! prepare_greeter_theme "$PACKAGE" "$stage/theme"; then
         warn "Could not prepare the login-screen keyboard"; rm -rf "$stage"; return 1
     fi
     local config_stage="$stage/sddm.conf"

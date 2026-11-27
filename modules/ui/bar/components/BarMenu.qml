@@ -97,16 +97,9 @@ Item
         settle.restart();
     }
 
-    function schedule()
-    {
-        syncTimer.restart();
-    }
-
-    onActiveChanged:       schedule()
-    onMenuChanged:         schedule()
-    Component.onCompleted: schedule()
-
-    Timer { id: syncTimer; interval: 0; onTriggered: barMenu.sync() }
+    onActiveChanged: Qt.callLater(sync)
+    onMenuChanged: Qt.callLater(sync)
+    Component.onCompleted: Qt.callLater(sync)
 
     Timer
     {

@@ -30,6 +30,7 @@ def fixture(base):
                XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"),
                XDG_DATA_HOME=str(base / "data"),
                XDG_RUNTIME_DIR=str(base / "runtime"), XDG_BIN_HOME=str(base / "custom commands"),
+               SHELL="/bin/bash",
                TEST_UNINSTALL_BASE=str(base), PATH=str(base / "bin") + os.pathsep + os.environ["PATH"])
     tool = base / "bin/qs"
     tool.write_text('''#!/usr/bin/env python3

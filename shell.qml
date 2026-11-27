@@ -28,7 +28,7 @@ ShellRoot
         void ServiceCompositor.windowList;
     }
 
-    Variants { model: Config.initialized && ServiceCompositor.supports("overviewBackdrop") ? Quickshell.screens : []; OverviewBackdrop { } }
+    Variants { model: Config.initialized && Config.overviewBackdrop && ServiceCompositor.supports("overviewBackdrop") ? Quickshell.screens : []; OverviewBackdrop { } }
     Variants { model: Config.initialized ? Quickshell.screens : []; Desktop { } }
     Variants { model: Config.initialized ? Quickshell.screens : []; Layout { } }
 

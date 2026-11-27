@@ -47,7 +47,8 @@ Singleton
         flush.restart();
     }
 
-    readonly property int effectiveThemeStyle: Config.themeStyle !== Enums.ThemeAuto ? Config.themeStyle
+    readonly property bool followsWallpaperTheme: Config.themeStyle === Enums.ThemeAuto || Config.themeStyle === Enums.ThemeWallpaper
+    readonly property int effectiveThemeStyle: !followsWallpaperTheme ? Config.themeStyle
         : Config.wallpaperCurrent && wallpaperThemeSample.light ? Enums.ThemeLight : Enums.ThemeDark
     readonly property string colorSchemeWanted: effectiveThemeStyle === Enums.ThemeLight ? "prefer-light" : "prefer-dark"
     function syncColorScheme() { if (!schemeSyncFailed && Config.initialized && loaded && colorScheme !== colorSchemeWanted) setColorScheme(colorSchemeWanted) }
@@ -202,7 +203,7 @@ Singleton
     property var pendingWallpaperSnapshot: null
     readonly property string wallpaperImage: isVideo(Config.wallpaperCurrent)
         ? (wallpaperSnapshot.path === Config.wallpaperCurrent ? wallpaperSnapshot.preview : "") : Config.wallpaperCurrent
-    readonly property string wallpaperThemeRequest: Config.initialized && Config.themeStyle === Enums.ThemeAuto && wallpaperImage
+    readonly property string wallpaperThemeRequest: Config.initialized && followsWallpaperTheme && wallpaperImage
         ? JSON.stringify([wallpaperImage, wallpaperRevision]) : ""
     property var wallpaperThemeSample: ({key: "", light: false})
 
@@ -287,7 +288,9 @@ Singleton
             return false;
         }
         previousWallpaper = Config.wallpaperCurrent;
-        return wallpaperWriter.run(Paths.commandFor("wallpaper", ["apply", path, "--transition", Config.animationsEnabled ? Config.wallpaperTransition : "none"]));
+        const transition = Config.animationsEnabled && Config.wallpaperTransitionEnabled ? Config.wallpaperTransition : "none";
+        return wallpaperWriter.run(Paths.commandFor("wallpaper", ["apply", path, "--transition", transition,
+            "--duration", String(Config.wallpaperTransitionDuration)]));
     }
     function clearPendingWallpaper()
     {

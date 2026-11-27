@@ -87,7 +87,7 @@ Menu
     {
         order: 2
         caption: Tr.tr("common.input")
-        sliderLabel: Tr.tr("sidebar.microphone")
+        sliderLabel: Tr.tr("common.microphone")
         icon: ServiceAudio.micMuted ? Icon.microphoneOff : Icon.microphone
         value: ServiceAudio.pendingMicVolume >= 0 ? ServiceAudio.pendingMicVolume : ServiceAudio.micVolume
         muted: ServiceAudio.micMuted

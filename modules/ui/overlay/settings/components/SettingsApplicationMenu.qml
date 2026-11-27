@@ -14,6 +14,8 @@ SettingsPopup
     property Item sourceItem: null
     property point origin: Qt.point(0, 0)
     readonly property string appId: application ? application.id : ""
+    readonly property var startupEntry: ServiceApplications.autostartEntries.find(entry =>
+        entry.appId === appId.replace(/\.desktop$/, "") || entry.id === appId)
     signal deleteRequested(var application)
 
     component Action: ButtonList
@@ -138,7 +140,25 @@ SettingsPopup
                 toggleName: "applicationNotificationsToggle"
                 onToggled: value => ServiceNotifications.setEnabledFor(menu.appId, value)
                 KeyNavigation.up: pinItem
+                KeyNavigation.down: startupItem.visible ? startupItem : launchItem
+            }
+            ToggleAction
+            {
+                id: startupItem
+                objectName: "applicationAutostart"
+                visible: menu.appId !== "" && menu.startupEntry?.system !== true
+                enabled: !ServiceApplications.autostartBusy
+                text: Tr.tr("settings.autostart.title")
+                icon: Icon.autostart
+                checked: menu.startupEntry?.enabled ?? false
+                toggleName: "applicationAutostartToggle"
+                KeyNavigation.up: notificationsItem
                 KeyNavigation.down: launchItem
+                onToggled: value =>
+                {
+                    if (menu.startupEntry) ServiceApplications.setAutostartEnabled(menu.startupEntry.id, value);
+                    else if (value) ServiceApplications.addAutostart(menu.appId);
+                }
             }
             MenuSeparator {}
             Action
@@ -148,7 +168,7 @@ SettingsPopup
                 text: Tr.tr("settings.applications.launch")
                 icon: Icon.mediaPlay
                 enabled: menu.application !== null
-                KeyNavigation.up: notificationsItem
+                KeyNavigation.up: startupItem.visible ? startupItem : notificationsItem
                 KeyNavigation.down: deleteItem
                 onClicked:
                 {

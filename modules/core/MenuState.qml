@@ -16,6 +16,7 @@ Singleton
     property var    menuOwner: null
     property var    menuWidget: null
     property bool   menuKeyboard: false
+    property string islandTab: "controls"
 
     function requestKeyboard(item)
     {

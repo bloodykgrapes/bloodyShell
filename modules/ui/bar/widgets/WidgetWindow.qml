@@ -39,8 +39,20 @@ Widget
 
     Item
     {
-        implicitWidth: widgetWindow.vertical ? Theme.barWidgetHeight : label.width
-        implicitHeight: widgetWindow.vertical ? label.width : Theme.barWidgetHeight
+        readonly property bool hasBackground: !Config.barAttach
+        readonly property real length: label.width + (hasBackground ? 20 : 0)
+        readonly property real thickness: hasBackground ? Theme.barStandaloneWidgetHeight : Theme.barWidgetHeight
+        implicitWidth: widgetWindow.vertical ? thickness : length
+        implicitHeight: widgetWindow.vertical ? length : thickness
+
+        Rectangle
+        {
+            anchors.fill: parent
+            radius: Math.min(width, height) / 2
+            color: parent.hasBackground ? Theme.panelButtonBackground : "transparent"
+            Tint on color {}
+        }
+
         Text
         {
             id: label

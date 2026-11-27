@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 
 import "../../../../common"
 import "../../../../core"
@@ -10,10 +11,52 @@ SettingsPage
 {
     id: pageDisplay
 
-    title: Tr.tr("common.display")
+    title: Tr.tr("settings.structure.displays")
     subtitle: Tr.tr("settings.display.description")
 
     Parts.SettingsDisplayControls { active: pageDisplay.active }
+
+    SettingsRowGroup
+    {
+        visible: Quickshell.screens.length > 1
+        title: Tr.tr("settings.structure.screens")
+
+        SettingsRow
+        {
+            label: Tr.tr("settings.structure.mainScreen")
+            description: Tr.tr("settings.display.mainScreenHint")
+
+            SettingsDropdown
+            {
+                objectName: "primaryScreen"
+                preferredWidth: 240
+                options: Quickshell.screens.map(screen => ({ label: screen.name, value: screen.name }))
+                current: {
+                    const connected = Quickshell.screens.some(screen => screen.name === Config.primaryScreen);
+                    return connected ? Config.primaryScreen : ServiceIsland.primaryOutput;
+                }
+                onSelected: value => Config.set("primaryScreen", value)
+            }
+        }
+
+        PanelMonitors { panel: "bar"; label: Tr.tr("common.bar") }
+        PanelMonitors { panel: "dock"; label: Tr.tr("common.dock") }
+    }
+
+    component PanelMonitors: SettingsRow
+    {
+        id: monitorRow
+        required property string panel
+        readonly property string key: panel + "Screens"
+
+        SettingsToggles
+        {
+            objectName: monitorRow.panel + "Monitors"
+            options: Quickshell.screens.map(screen => ({label: screen.name, value: screen.name}))
+            checked: Config.screensShown(monitorRow.key)
+            onToggled: (value, on) => Config.toggleScreen(monitorRow.key, value, on)
+        }
+    }
 
     property date now: new Date()
     Timer { interval: 60000; running: pageDisplay.active; repeat: true; onTriggered: pageDisplay.now = new Date() }

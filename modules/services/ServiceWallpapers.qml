@@ -17,6 +17,27 @@ Singleton
     readonly property bool loading: scan.busy || scanAgain
     property string error: ""
 
+    Component.onCompleted: refresh()
+    onFolderChanged: refresh(true)
+
+    function shuffle()
+    {
+        const paths = catalog?.paths || [];
+        if (!Config.wallpaperShuffle || paths.length < 2 || ServiceAppearance.wallpaperBusy) return;
+        const candidates = paths.filter(path => path !== Config.wallpaperCurrent);
+        const next = candidates[Math.floor(Math.random() * candidates.length)];
+        if (next) ServiceAppearance.applyWallpaper(next);
+    }
+
+    Timer
+    {
+        interval: Math.max(1, Config.wallpaperShuffleMinutes) * 60000
+        running: Config.wallpaperShuffle && (service.catalog?.paths.length || 0) > 1
+        repeat: true
+        onRunningChanged: if (running) restart()
+        onTriggered: service.shuffle()
+    }
+
     function refresh(force = false)
     {
         if (scan.busy)

@@ -37,25 +37,23 @@ SettingsRowGroup
     {
         label: Tr.tr("settings.devices.acceleration")
         enabled: mouseSettings.available
-        SettingsChoices
+        Toggle
         {
             objectName: mouseSettings.namePrefix + "Acceleration"
-            options: [{label: Tr.tr("common.off"), value: "flat"}, {label: Tr.tr("settings.devices.adaptive"), value: "adaptive"}]
-            current: ServiceDevices.mouse.profile
-            onSelected: value => ServiceDevices.setMouse("profile", value)
+            checked: ServiceDevices.mouse.profile === "adaptive"
+            onToggled: value => ServiceDevices.setMouse("profile", value ? "adaptive" : "flat")
         }
     }
     SettingsRow
     {
-        visible: mouseSettings.advanced
-        label: Tr.tr("settings.devices.primaryButton")
+        label: Tr.tr("settings.devices.leftHanded")
+        description: Tr.tr("settings.devices.leftHandedHint")
         enabled: mouseSettings.available
-        SettingsChoices
+        Toggle
         {
-            objectName: mouseSettings.namePrefix + "PrimaryButton"
-            options: [{label: Tr.tr("settings.devices.leftButton"), value: false}, {label: Tr.tr("settings.devices.rightButton"), value: true}]
-            current: ServiceDevices.mouse.leftHanded
-            onSelected: value => ServiceDevices.setMouse("leftHanded", value)
+            objectName: mouseSettings.namePrefix + "LeftHanded"
+            checked: ServiceDevices.mouse.leftHanded
+            onToggled: value => ServiceDevices.setMouse("leftHanded", value)
         }
     }
     SettingsRow

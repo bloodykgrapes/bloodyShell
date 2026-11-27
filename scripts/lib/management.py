@@ -379,7 +379,7 @@ def rollback_path_plan(planned):
 
 
 RUNTIME_FILES = ("shell.qml", "version")
-RUNTIME_DIRS = ("assets", "modules", "scripts", "translations")
+RUNTIME_DIRS = ("assets", "dots", "modules", "scripts", "translations")
 
 
 def runtime_member(relative):
@@ -398,6 +398,8 @@ def stage_runtime(source, target, binary):
     for name in RUNTIME_FILES:
         if not (source / name).is_file() or (source / name).is_symlink():
             raise RuntimeError("Missing runtime file: " + name)
+    if not (source / "dots").is_dir():
+        raise RuntimeError("Package is missing the bundled dots folder")
     package_data(source)
     paths = [source / name for name in RUNTIME_FILES]
     for name in RUNTIME_DIRS:
@@ -666,15 +668,17 @@ def update_main():
                     raise RuntimeError("No releases are available")
                 tag = max(candidates)[1]
             release_key = version_key(tag)
-            up_to_date = not options.force and release_key <= version_key(current)
-            retry_login = up_to_date and pending_tag and pending_tag.removeprefix("v") == current.removeprefix("v")
-            if up_to_date and not retry_login:
+            current_key = version_key(current)
+            repair_bundle = release_key == current_key and not (target / "dots").is_dir()
+            if not options.force and release_key <= current_key and not repair_bundle:
+                if pending_tag and pending_tag.removeprefix("v") == current.removeprefix("v"):
+                    refresh_login_screen(target, pending_tag, pending_login)
+                    status("done " + current)
+                    return 0 if not pending_login.exists() else 1
                 install_command(ROOT / "scripts/bloodyShell", binary, state / "backups" / ("cli-" + str(time.time_ns())))
                 print("Up to date · " + current, flush=True)
                 status("done " + current)
                 return 0
-            if retry_login:
-                tag = pending_tag
             step(2, "Downloading " + tag.removeprefix("v"))
             with tempfile.TemporaryDirectory(prefix="bloodyShell-release-") as temporary:
                 temporary = Path(temporary)
@@ -684,10 +688,6 @@ def update_main():
                 FILES["extract_archive"](archive, source, allow_links=True)
                 if (source / "version").read_text().strip().removeprefix("v") != tag.removeprefix("v"):
                     raise ValueError("Package version does not match the release tag")
-                if retry_login:
-                    refresh_login_screen(source, tag, pending_login)
-                    status("done " + current)
-                    return 0 if not pending_login.exists() else 1
                 step(3, "Installing " + tag.removeprefix("v"))
                 backup = state / "backups" / (time.strftime("%Y-%m-%d_%H-%M-%S") + "-update-" + str(time.time_ns()))
                 profiles = path_plan(binary)
@@ -724,7 +724,7 @@ def update_main():
                     raise RuntimeError(message) from failure
                 if restarted is None:
                     print("Startup check skipped outside a Wayland session. Previous version saved in " + str(backup), flush=True)
-                refresh_login_screen(source, tag, pending_login)
+                refresh_login_screen(target, tag, pending_login)
             recovery_file.unlink(missing_ok=True)
             status("done " + tag.removeprefix("v"))
         print("Updated to " + tag.removeprefix("v"), flush=True)

@@ -7,12 +7,25 @@ import time
 import os
 from pathlib import Path
 import runpy
+import socket
 import subprocess
 import tarfile
 import tempfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def unix_sockets_available():
+    probe = Path(tempfile.gettempdir()) / ("bloodyShell-socket-probe-" + str(os.getpid()))
+    try:
+        server = socket.socket(socket.AF_UNIX)
+        server.bind(str(probe))
+        server.close()
+        probe.unlink()
+        return True
+    except OSError:
+        return False
 
 
 def run_checks():
@@ -32,8 +45,15 @@ def run_checks():
         shutil.copytree(ROOT / "scripts/lib", package / "scripts/lib")
         shutil.copy2(ROOT / "scripts/bloodyShell", package / "scripts/bloodyShell")
         shutil.copytree(ROOT / "dots/niri", package / "dots/niri")
+        theme = base / "installed-theme"
+        manager = package / "scripts/lib/management.py"
+        manager.write_text(manager.read_text().replace('Path("/usr/share/sddm/themes/bloodyShell")', f"Path({str(theme)!r})"))
         greeter = package / "scripts/lib/system.sh"
-        greeter.write_text(greeter.read_text() + "\nrefresh_greeter() { return 0; }\n")
+        greeter.write_text(greeter.read_text() + '\nrefresh_greeter() {\n'
+                           '    [[ -d "$TEST_THEME" ]] || return 0\n'
+                           '    printf "%s\n" "$PACKAGE" > "$TEST_THEME/source"\n'
+                           '    cp "$PACKAGE/dots/sddm/Main.qml" "$TEST_THEME/Main.qml"\n'
+                           '}\n')
         (package / "assets").mkdir()
         shutil.copy2(ROOT / "assets/packages.json", package / "assets/packages.json")
         for folder in ("tests", "tools"):
@@ -58,7 +78,7 @@ def run_checks():
         env = dict(os.environ, HOME=str(home), SHELL="/bin/bash", XDG_BIN_HOME=str(base / "commands"),
                    XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"),
                    XDG_DATA_HOME=str(base / "data"),
-                   BLOODYSHELL_STATUS=str(base / "status"), TEST_RELEASE=str(archive), TEST_RELEASES=json.dumps([
+                   BLOODYSHELL_STATUS=str(base / "status"), TEST_THEME=str(theme), TEST_RELEASE=str(archive), TEST_RELEASES=json.dumps([
                        dict(tag_name="v100.0.0", draft=True, prerelease=False),
                        dict(tag_name="v10.0.0-beta.1", draft=False, prerelease=True),
                        dict(tag_name="nightly", draft=False, prerelease=False),
@@ -93,7 +113,9 @@ def run_checks():
         assert (target / "shell.qml").read_text() == "release shell\n"
         assert not (target / "CHANGELOG.md").exists(), "Changelog is fetched from GitHub, not installed"
         assert not (target / "scripts/lib/README.md").exists(), "Runtime includes unrelated documentation"
-        assert not (target / "images").exists() and not (target / "dots").exists()
+        assert not (target / "images").exists()
+        for name in ("config/kitty/kitty.conf", "niri/config.kdl", "sddm/Main.qml"):
+            assert (target / "dots" / name).read_bytes() == (package / "dots" / name).read_bytes()
         assert (pictures / "personal.png").read_bytes() == b"personal wallpaper"
         assert settings.read_bytes() == original_settings, "Updates must preserve shell settings"
         niri_settings = (fragments / "08-settings.kdl").read_text()
@@ -122,7 +144,27 @@ def run_checks():
         assert not list(home.glob(".local/state/bloodyShell/backups/*/launcher/bashrc"))
         assert invoke("update", "--tag", "v9.8.7").returncode == 0
         first_rc = (home / ".bashrc").read_text()
-        assert invoke("update", "--tag", "v9.8.7", "--force").returncode == 0
+        theme.mkdir()
+        (theme / "Main.qml").write_text("edited theme")
+        (fragments / "07-binds.kdl").write_text("// edited managed binds\n")
+        result = subprocess.run([str(command), "update", "--tag", "v9.8.7", "--force"], env=env, capture_output=True, text=True, timeout=10)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert (theme / "source").read_text().strip() == str(target)
+        assert (theme / "Main.qml").read_bytes() == (target / "dots/sddm/Main.qml").read_bytes()
+        assert (fragments / "07-binds.kdl").read_bytes() == (target / "dots/niri/bloodyShell/07-binds.kdl").read_bytes()
+        assert (fragments / "08-settings.kdl").read_text() == niri_settings
+        assert (fragments / "09-user.kdl").read_text() == old_user
+        pending = base / "cache/bloodyShell/login-screen-update.pending"
+        assert not pending.exists()
+        pending.write_text("v9.8.7\n")
+        (theme / "Main.qml").write_text("refresh pending")
+        result = subprocess.run([str(command), "update", "--tag", "v9.8.7"], env=dict(env, TEST_RELEASE=str(base / "missing-archive")),
+                                capture_output=True, text=True, timeout=10)
+        assert result.returncode == 0 and not pending.exists(), result.stdout + result.stderr
+        assert (theme / "Main.qml").read_bytes() == (target / "dots/sddm/Main.qml").read_bytes()
+        (target / "dots").rename(base / "removed-bundle")
+        repaired = invoke("update", "--tag", "v9.8.7")
+        assert repaired.returncode == 0 and (target / "dots/sddm/Main.qml").is_file(), repaired.stdout + repaired.stderr
         assert untouched == {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in pictures.iterdir()}, "Later updates must leave personal wallpapers untouched"
         assert (home / ".bashrc").read_text() == first_rc, "Updates must preserve startup files"
         info = subprocess.run([str(command), "path"], env=env, capture_output=True, text=True, timeout=5)
@@ -171,7 +213,6 @@ elif '--daemonize' in sys.argv:
         env.pop("WAYLAND_DISPLAY")
         qs.unlink()
         release_cli.write_bytes(original_cli)
-        manager = package / "scripts/lib/management.py"
         original_manager = manager.read_text()
         manager.write_text("def install_main():\n    return 1\n")
         with tarfile.open(archive, "w:gz") as tar:
@@ -329,6 +370,9 @@ def runtime_transaction_checks():
 
 def startup_health_checks():
     """Exercise the readiness handshake through Quickshell's actual IPC transport."""
+    if not unix_sockets_available():
+        print("SKIP startup IPC health check: UNIX domain sockets are unavailable in this environment")
+        return
     api = runpy.run_path(str(ROOT / "scripts/lib/management.py"))
     cli = runpy.run_path(str(ROOT / "scripts/bloodyShell"))
     with tempfile.TemporaryDirectory(prefix="bloodyShell-startup-") as temporary:

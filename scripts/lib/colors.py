@@ -30,7 +30,16 @@ KITTY_COLORS = {
     "inactive_tab_foreground": "on_surface_variant",
 }
 KITTY_ROLES = frozenset(KITTY_COLORS.values())
-ROLES = KITTY_ROLES | {"source_color"}
+SHELL_FALLBACKS = {
+    "surface_dim": "surface",
+    "surface_bright": "surface_container_low",
+    "surface_container_lowest": "surface",
+    "surface_container": "surface_container_low",
+    "surface_container_high": "surface_container_low",
+    "surface_container_highest": "surface_container_low",
+    "outline": "outline_variant",
+}
+ROLES = KITTY_ROLES | {"source_color"} | set(SHELL_FALLBACKS)
 
 
 def checked_colors(roles):
@@ -43,11 +52,16 @@ def normalize_palette(output):
     colors = json.loads(output)["colors"]
     palettes = {}
     for mode in ("light", "dark"):
-        if mode in colors:
-            roles = {role: colors[mode][role] for role in ROLES}
-        else:
-            roles = {role: colors[role][mode] for role in ROLES}
-        palettes[mode] = checked_colors(roles)
+        roles = dict(colors[mode]) if mode in colors else {
+            role: values[mode] for role, values in colors.items()
+            if isinstance(values, dict) and mode in values
+        }
+        missing = sorted((KITTY_ROLES | {"source_color"}) - roles.keys())
+        if missing:
+            raise ValueError(f"Missing palette colors: {', '.join(missing)}")
+        for role, fallback in SHELL_FALLBACKS.items():
+            roles.setdefault(role, roles[fallback])
+        palettes[mode] = checked_colors({role: roles[role] for role in ROLES})
     return palettes
 
 

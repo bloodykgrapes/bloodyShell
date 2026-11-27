@@ -89,7 +89,6 @@ Item
         y: dockPopup.horizontal ? (dockPopup.side === Enums.EdgeTop ? dockPopup.gap : 0) : 0
         width: dockPopup.panelW
         height: dockPopup.panelH
-        radius: Theme.menuControlRadius
         origin: dockPopup.horizontal ? Qt.point(0.5, dockPopup.side === Enums.EdgeTop ? 0 : 1)
             : Qt.point(dockPopup.side === Enums.EdgeLeft ? 0 : 1, 0.5)
 

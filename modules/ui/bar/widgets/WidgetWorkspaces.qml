@@ -26,8 +26,10 @@ Widget
 
     MouseArea
     {
-        width: dots.width
-        height: widgetWorkspaces.vertical ? dots.height : Theme.barWidgetHeight
+        readonly property bool standalone: !Config.barAttach
+        width: dots.width + (standalone ? 10 : 0)
+        height: widgetWorkspaces.vertical ? dots.height + (standalone ? 10 : 0)
+            : standalone ? Theme.barStandaloneWidgetHeight : Theme.barWidgetHeight
 
         acceptedButtons: Qt.NoButton
         onWheel: wheel =>
@@ -36,11 +38,19 @@ Widget
             if (steps !== 0) ServiceCompositor.focusWorkspaceRelative(widgetWorkspaces.outputName, -steps);
         }
 
+        Rectangle
+        {
+            anchors.fill: parent
+            radius: Math.min(width, height) / 2
+            color: parent.standalone ? Theme.panelButtonBackground : "transparent"
+            Tint on color {}
+        }
+
         Grid
         {
             id: dots
 
-            anchors.verticalCenter: widgetWorkspaces.vertical ? undefined : parent.verticalCenter
+            anchors.centerIn: parent
 
             columns: widgetWorkspaces.vertical ? 1 : 1000
             spacing: 1

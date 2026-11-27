@@ -67,7 +67,6 @@ OverlayView
             y: Math.max(8, Math.min(desktopMenu.originY, content.height - height - 8))
             width: Math.min(240, Math.max(0, content.width - 16))
             height: entries.implicitHeight + 16
-            radius: Theme.radiusLarge
             color: Theme.colorSolid
             progress: Config.animationsEnabled ? desktopMenu.reveal : desktopMenu.open ? 1 : 0
             origin: Qt.point((desktopMenu.originX - x) / Math.max(1, width), (desktopMenu.originY - y) / Math.max(1, height))

@@ -21,8 +21,11 @@ with tempfile.TemporaryDirectory(prefix="bloodyshell-island-") as temporary:
     island_source.write_text(island_source.read_text().replace("id: island", 'id: island\n    property int testRemovals: 0\n    property var testScreens: [{name:"A"},{name:"B"}]', 1)
                             .replace("primaryOutputFor(Quickshell.screens, Config.barScreens)", "primaryOutputFor(testScreens, Config.barScreens)")
                             .replace("function remove(notification)\n    {", "function remove(notification)\n    {\n        island.testRemovals++;"))
-    shutil.copy2(ROOT / "modules/services/ServiceRecording.qml", base / "services/ServiceRecording.qml")
-    stub(base, "core", "Config", 'property bool notificationsEnabled: true\nproperty int notificationsDuration: 100\nproperty var barScreens: ["A"]\nproperty bool islandRecordingIndicator: true\nproperty bool islandMedia: true')
+    recording = (ROOT / "modules/services/ServiceRecording.qml").read_text()
+    put(base, "services/ServiceRecording.qml", recording.replace(
+        "    readonly property var streams:", "    property var testLinks: []\n    readonly property var streams:",
+        1).replace("(Pipewire.links?.values ?? [])", "testLinks"))
+    stub(base, "core", "Config", 'property bool notificationsEnabled: true\nproperty int notificationsDuration: 100\nproperty var barScreens: ["A"]\nproperty bool islandRecordingIndicator: true\nproperty bool islandCameraIndicator: false\nproperty bool islandMedia: true')
     stub(base, "core", "Icon", 'property string bell: ""; property string recording: ""')
     stub(base, "core", "Tr", 'function tr(key) { return key + " %1"; }')
     stub(base, "services", "ServiceLock", 'property bool locked: false')
@@ -53,6 +56,7 @@ with tempfile.TemporaryDirectory(prefix="bloodyshell-island-") as temporary:
     put(base, "shell.qml", r'''import QtQuick
 import Quickshell
 import Quickshell.Services.Notifications
+import Quickshell.Services.Pipewire
 import "core"
 import "services"
 
@@ -87,28 +91,42 @@ ShellRoot
                 {
                     case 0:
                         tests.check(ServiceIsland.view("A").kind === "", "Idle island was visible");
+                        Config.islandCameraIndicator = true;
+                        const source = {type: PwNodeType.Video, name: "v4l2_input.fixture", isStream: false, isSink: false};
+                        const target = {isStream: true};
+                        ServiceRecording.testLinks = [{state: PwLinkState.Paused, source, target}];
+                        tests.check(!ServiceIsland.cameraActive, "Paused camera link set the indicator");
+                        ServiceRecording.testLinks = [{state: PwLinkState.Active, source, target}];
+                        tests.check(ServiceIsland.cameraActive && ServiceIsland.view("A").kind === "", "Camera took over the clock");
+                        Config.islandCameraIndicator = false;
+                        tests.check(!ServiceIsland.cameraActive, "Camera indicator ignored its setting");
+                        Config.islandCameraIndicator = true;
+                        ServiceRecording.testLinks = [{state: PwLinkState.Active, source: Object.assign({}, source, {name: "niri-screen-cast"}), target}];
+                        tests.check(!ServiceIsland.cameraActive, "Screen casting was reported as camera use");
+                        ServiceRecording.testLinks = [];
                         ServiceCompositor.captureStreams = [{id:1, active:false, output:"A"}];
                         tests.check(!ServiceRecording.active, "Paused recording is marked active");
                         ServiceCompositor.captureStreams = [{id:1, active:true, output:"A"}];
                         ServiceCompositor.fullscreenOutputs = ["A"];
                         ServiceNotifications.dnd = true;
-                        tests.check(ServiceRecording.active && ServiceIsland.view("A").kind === "recording" && ServiceIsland.view("B").kind === "", "Recording is hidden on primary or duplicated on secondary");
+                        tests.check(ServiceRecording.active && ServiceIsland.recordingActive && ServiceIsland.view("A").kind === "",
+                            "Recording replaced the clock instead of setting the capture flag");
                         Config.islandRecordingIndicator = false;
                         tests.check(ServiceRecording.active && !ServiceIsland.active && ServiceIsland.view("A").kind === "", "Disabling the indicator kept the island visible or changed capture detection");
                         ServiceOSD.show();
                         tests.check(ServiceIsland.view("A").kind === "osd", "Disabling recording indication hid value changes");
                         ServiceOSD.hide();
                         Config.islandRecordingIndicator = true;
-                        tests.check(ServiceIsland.active && ServiceIsland.view("A").kind === "recording", "Re-enabling indication did not restore an active capture");
+                        tests.check(ServiceIsland.active && ServiceIsland.recordingActive, "Re-enabling indication did not restore an active capture");
                         Config.barScreens = ["B"];
-                        tests.check(ServiceIsland.primaryOutput === "B" && ServiceIsland.view("B").kind === "recording" && ServiceIsland.view("A").kind === "", "Changing primary did not move the island");
+                        tests.check(ServiceIsland.primaryOutput === "B" && ServiceIsland.recordingActive, "Changing primary lost capture state");
                         Config.barScreens = ["A"];
                         ServiceIsland.testScreens = [{name:"B"}];
-                        tests.check(ServiceIsland.primaryOutput === "B" && ServiceIsland.view("B").kind === "recording", "Disconnected primary has no fallback");
+                        tests.check(ServiceIsland.primaryOutput === "B" && ServiceIsland.recordingActive, "Disconnected primary has no fallback");
                         ServiceIsland.testScreens = [{name:"A"},{name:"B"}];
                         tests.check(ServiceIsland.primaryOutput === "A", "Reconnecting the preferred display did not restore primary");
                         ServiceLock.locked = true;
-                        tests.check(ServiceIsland.view("A").kind === "", "Recording leaked through the lock screen");
+                        tests.check(!ServiceIsland.active && ServiceIsland.view("A").kind === "", "Recording leaked through the lock screen");
                         ServiceLock.locked = false;
                         ServiceNotifications.dnd = false;
                         ServiceCompositor.captureStreams = [];

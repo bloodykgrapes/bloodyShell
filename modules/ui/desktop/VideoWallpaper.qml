@@ -12,7 +12,12 @@ Item
 {
     id: wallpaper
     readonly property string path: ServiceAppearance.videoPath
-    readonly property bool paused: ServiceLock.locked || !activity.active
+    property string outputName: ""
+    readonly property bool livePaused:
+        Config.wallpaperLivePause === Enums.PauseFullscreen && ServiceCompositor.fullscreenOnOutput(outputName)
+        || Config.wallpaperLivePause === Enums.PauseCovered && ServiceCompositor.workspaceHasWindowsOnOutput(outputName)
+        || Config.wallpaperPauseOnBattery && ServicePowerProfiles.onBattery
+    readonly property bool paused: ServiceLock.locked || !activity.active || livePaused
     property bool revealed: false
     clip: true
 

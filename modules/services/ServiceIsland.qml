@@ -16,12 +16,15 @@ Singleton
     property var notificationWatchers: []
     readonly property string primaryOutput: primaryOutputFor(Quickshell.screens, Config.barScreens)
     readonly property bool recordingActive: Config.islandRecordingIndicator && ServiceRecording.active
+    readonly property bool cameraActive: ServiceRecording.cameraActive === true
     readonly property bool mediaActive: Config.islandMedia && ServiceMedia.playing
-    readonly property bool active: !ServiceLock.locked && (ServiceOSD.active || notice !== null || recordingActive || mediaActive)
+    readonly property bool active: !ServiceLock.locked && (ServiceOSD.active || notice !== null || recordingActive || cameraActive || mediaActive)
 
     function plain(text) { return String(text || "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim() }
     function primaryOutputFor(screens, preferred)
     {
+        if (Config.primaryScreen && screens.some(screen => screen.name === Config.primaryScreen))
+            return Config.primaryScreen;
         for (const name of preferred)
             if (screens.some(screen => screen.name === name)) return name;
         return screens.length > 0 ? screens[0].name : "";
@@ -45,8 +48,6 @@ Singleton
         if (notice)
             return { kind: "notification", title: notice.title, subtitle: notice.body || notice.app,
                 notification: notice.notification, value: -1, icon: Icon.bell };
-        if (recordingActive)
-            return {kind: "recording", title: Tr.tr("recording.active"), subtitle: ServiceRecording.detail, icon: Icon.recording, value: -1};
         if (mediaActive && !ServiceCompositor.fullscreenOnOutput(output))
             return mediaView();
         return { kind: "" };

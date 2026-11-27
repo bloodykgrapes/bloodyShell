@@ -31,19 +31,25 @@ Item
             LockReveal
             {
                 objectName: "lockClockReveal"
-                LockClock { width: parent.width }
+                visible: Config.lockClock || Config.lockDate
+                LockClock
+                {
+                    width: parent.width
+                    showDate: Config.lockDate
+                    showClock: Config.lockClock
+                }
             }
             Column
             {
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: 380
                 spacing: 12
-                visible: ServiceMedia.available || (Config.lockNotifications && notifications.count > 0)
+                visible: (Config.lockMusic && ServiceMedia.available) || (Config.lockNotifications && notifications.count > 0)
 
                 LockReveal
                 {
                     order: 1
-                    visible: ServiceMedia.available
+                    visible: Config.lockMusic && ServiceMedia.available
                     LockMedia { width: parent.width }
                 }
                 LockReveal

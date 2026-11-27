@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import runpy
 import shutil
+import socket
 import subprocess
 import tempfile
 
@@ -203,6 +204,15 @@ ShellRoot {
 
 
 def niri_ipc_checks():
+    probe = Path(tempfile.gettempdir()) / ("bs-niri-socket-probe-" + str(os.getpid()))
+    try:
+        server = socket.socket(socket.AF_UNIX)
+        server.bind(str(probe))
+        server.close()
+        probe.unlink()
+    except (OSError, PermissionError):
+        print("SKIP niri IPC: UNIX domain sockets are unavailable in this environment")
+        return
     prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
     with tempfile.TemporaryDirectory(prefix="bs-niri-ipc-") as temporary:
         base = Path(temporary)

@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 
 import "../../../../common"
@@ -9,11 +11,24 @@ SettingsPage
 {
     id: pageDevices
 
-    onActiveChanged: ServiceDevices.setWatching(pageDevices, active)
-    Component.onCompleted: ServiceDevices.setWatching(pageDevices, active)
-    Component.onDestruction: ServiceDevices.setWatching(pageDevices, false)
+    onActiveChanged:
+    {
+        ServiceDevices.setWatching(pageDevices, active);
+        ServiceDevices.setTouchpadWatching(pageDevices, active);
+    }
+    Component.onCompleted:
+    {
+        ServiceDevices.setWatching(pageDevices, active);
+        ServiceDevices.setTouchpadWatching(pageDevices, active);
+        ServiceKeyboard.refresh();
+    }
+    Component.onDestruction:
+    {
+        ServiceDevices.setWatching(pageDevices, false);
+        ServiceDevices.setTouchpadWatching(pageDevices, false);
+    }
 
-    title: Tr.tr("menu.bluetooth.devices")
+    title: Tr.tr("settings.devices.title")
     subtitle: Tr.tr("settings.devices.description")
 
     function themed(names, fallback)
@@ -49,19 +64,92 @@ SettingsPage
         return pageDevices.themed(["drive-removable-media-usb", "media-removable"], Icon.usb);
     }
 
-    SettingsDisclosure
+    SettingsRowGroup
     {
-        objectName: "mouseOptions"
-        title: Tr.tr("settings.devices.mouse")
-        icon: Icon.mouse
-        SettingsMouse { title: "" }
+        objectName: "keyboardOptions"
+        title: Tr.tr("settings.devices.keyboard")
+
+        SettingsRow
+        {
+            label: Tr.tr("settings.devices.repeatDelay")
+            description: Tr.tr("settings.devices.repeatDelayHint")
+            SettingsStepper
+            {
+                objectName: "keyboardRepeatDelay"
+                value: ServiceKeyboard.repeatDelay
+                from: 150; to: 1000; step: 10; suffix: " ms"
+                onEdited: value => ServiceKeyboard.set("repeatDelay", Math.round(value))
+            }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.devices.repeatSpeed")
+            description: Tr.tr("settings.devices.repeatSpeedHint")
+            SettingsStepper
+            {
+                objectName: "keyboardRepeatSpeed"
+                value: ServiceKeyboard.repeatRate
+                from: 10; to: 50; step: 1; suffix: "/s"
+                onEdited: value => ServiceKeyboard.set("repeatRate", Math.round(value))
+            }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.devices.numLock")
+            description: Tr.tr("settings.devices.numLockHint")
+            Toggle
+            {
+                objectName: "keyboardNumLock"
+                checked: ServiceKeyboard.numlock
+                onToggled: value => ServiceKeyboard.set("numlock", value)
+            }
+        }
     }
 
-    SettingsDisclosure
+    SettingsMouse { objectName: "mouseOptions"; advanced: false }
+
+    SettingsRowGroup
+    {
+        objectName: "touchpadOptions"
+        title: Tr.tr("settings.devices.trackpad")
+        visible: ServiceCompositor.supports("touchpad")
+
+        SettingsRow
+        {
+            visible: !ServiceDevices.touchpadLoaded || !ServiceDevices.touchpadAvailable || ServiceDevices.touchpadError !== ""
+            label: ServiceDevices.touchpadLoaded ? Tr.tr("settings.devices.touchpadUnavailable") : Tr.tr("common.loading")
+            description: ServiceDevices.touchpadError
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.devices.ignoreWhileTyping")
+            description: Tr.tr("settings.devices.ignoreWhileTypingHint")
+            Toggle
+            {
+                objectName: "touchpadIgnoreWhileTyping"
+                checked: ServiceDevices.touchpad.ignoreWhileTyping
+                enabled: ServiceDevices.touchpadLoaded && ServiceDevices.touchpadAvailable
+                onToggled: value => ServiceDevices.setTouchpad("ignoreWhileTyping", value)
+            }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.devices.ignoreExternalMouse")
+            description: Tr.tr("settings.devices.ignoreExternalMouseHint")
+            Toggle
+            {
+                objectName: "touchpadIgnoreExternalMouse"
+                checked: ServiceDevices.touchpad.ignoreExternalMouse
+                enabled: ServiceDevices.touchpadLoaded && ServiceDevices.touchpadAvailable
+                onToggled: value => ServiceDevices.setTouchpad("ignoreExternalMouse", value)
+            }
+        }
+    }
+
+    SettingsRowGroup
     {
         objectName: "usbDevices"
         title: "USB"
-        icon: Icon.usb
 
         SettingsRow
         {

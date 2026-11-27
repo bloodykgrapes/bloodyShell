@@ -17,6 +17,17 @@ Item
     readonly property alias container: dockContainer
     readonly property alias view: dockView
     readonly property bool hovered: containerHover.hovered
+    readonly property bool bridged: content.host.attached
+
+    SurfaceShadow
+    {
+        surface: dockContainer
+        cornerRadius: dockContainer.radius
+        frosted: dockContainer.frosted
+        z: 0
+        opacity: dockContainer.reveal
+        visible: !content.bridged && dockContainer.visible
+    }
 
     ShellSurface
     {
@@ -29,14 +40,13 @@ Item
 
         width:  content.host.isHorizontal ? length : content.host.thickness
         height: content.host.isHorizontal ? content.host.thickness : length
-        radius: Math.min(Theme.dockRadius, content.host.thickness / 2)
-
-        baseColor: content.host.islands ? Theme.frameColor : "transparent"
-        border.width: content.host.islands ? Theme.panelBorderWidth : 0
+        radius: Math.min(Theme.dockRadius, Math.min(width, height) / 2)
+        baseColor: content.bridged ? "transparent" : Theme.frameColor
+        border.width: content.bridged ? 0 : Theme.panelBorderWidth
         border.color: Theme.colorPanelEdge
+        z: 1
 
-        readonly property real hidden: content.host.inFrame ? content.host.thickness + content.host.edgeGap + Theme.barRadius
-                                                   : content.host.thickness + content.host.edgeGap + 4
+        readonly property real hidden: content.host.thickness + content.host.edgeGap + Theme.dockRadius
         property real reveal: content.host.revealed ? 1 : 0
         Glide on reveal { enabled: Config.animationsEnabled && content.host.initialized }
 
@@ -62,7 +72,6 @@ Item
 
             x: Theme.dockPadding
             y: Theme.dockPadding
-            opacity: content.host.inFrame ? Math.min(1, dockContainer.reveal * 1.6) : 1
             width:  content.host.isHorizontal ? contentWidth : content.host.base
             height: content.host.isHorizontal ? content.host.base : contentHeight
 

@@ -5,14 +5,11 @@ import "../../../../common"
 import "../../../../core"
 import "../../../../services"
 
-SettingsDisclosure
+SettingsRowGroup
 {
     id: autostart
 
     title: Tr.tr("settings.autostart.title")
-    description: Tr.tr("settings.autostart.description")
-    icon: Icon.autostart
-    summary: String(entries.length)
 
     readonly property var entries: ServiceApplications.autostartEntries.filter(entry => !entry.system)
 

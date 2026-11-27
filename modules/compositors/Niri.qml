@@ -14,7 +14,7 @@ Scope
 
     readonly property string name: "niri"
     readonly property string displayName: "niri"
-    readonly property var capabilities: ({windows:true, workspaces:true, keyboardLayout:true, displays:true, keyboard:true, mouse:true, cursor:true, logout:true, powerOutputs:true,
+    readonly property var capabilities: ({windows:true, workspaces:true, keyboardLayout:true, displays:true, keyboard:true, mouse:true, touchpad:true, cursor:true, logout:true, powerOutputs:true,
         overviewBackdrop: Settings.hasOverviewBackdrop(configText, layerRules), backgroundBlur: backgroundBlur})
     readonly property var versionCommand: ["niri", "--version"]
     readonly property var logoutCommand: ["niri", "msg", "action", "quit", "--skip-confirmation"]
@@ -127,6 +127,7 @@ Scope
     function outputWriteArgs(all) { return ["outputs", Settings.outputs(all)]; }
     function keyboardWriteArgs(settings) { return ["keyboard", Settings.keyboard(settings, "")]; }
     function keyboardSettings(text, defaults) { return Settings.keyboardSettings(text, defaults); }
+    function touchpadWriteArgs(settings) { return ["touchpad", JSON.stringify(settings)]; }
 
     function applyOutput(name, key, state)
     {

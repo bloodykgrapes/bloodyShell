@@ -76,6 +76,8 @@ Singleton
     readonly property string microphone:    path + "microphone.svg"
     readonly property string microphoneOff: path + "microphone_off.svg"
     readonly property string music:         path + "music.svg"
+    readonly property string calendar:      path + "calendar.svg"
+    readonly property string weather:       path + "weather.svg"
     readonly property string mediaPlay:     path + "media_play.svg"
     readonly property string mediaPause:    path + "media_pause.svg"
     readonly property string mediaNext:     path + "media_next.svg"
@@ -141,6 +143,7 @@ Singleton
     readonly property string computerPowerOff: path + "poweroff.svg"
 
     readonly property string settingsGeneral: path + "settings.svg"
+    readonly property string settingsHome:    path + "home.svg"
     readonly property string settingsUpdates: path + "update.svg"
 
     readonly property string profileSaver:       path + "profile_saver.svg"
@@ -158,6 +161,9 @@ Singleton
     readonly property string settingsTimeLanguage: path + "language.svg"
 
     readonly property string settingsAppearance:   path + "palette.svg"
+    readonly property string settingsSurfaces:    path + "surfaces.svg"
+    readonly property string settingsWindows:     path + "windows.svg"
+    readonly property string plymouth:            path + "plymouth.svg"
     readonly property string settingsDesktop:      path + "desktop.svg"
     readonly property string settingsBar:          path + "bar.svg"
     readonly property string settingsDock:         path + "dock.svg"

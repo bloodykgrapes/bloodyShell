@@ -18,7 +18,11 @@ Singleton
     property var mouseWatchClients: []
     readonly property int mouseWatchers: mouseWatchClients.length
     readonly property bool mouseWatching: watching || mouseWatchers > 0
+    property var touchpadWatchClients: []
+    readonly property int touchpadWatchers: touchpadWatchClients.length
+    readonly property bool touchpadWatching: watching || touchpadWatchers > 0
     onMouseWatchingChanged: if (mouseWatching && !watching) refreshMouse()
+    onTouchpadWatchingChanged: if (touchpadWatching && !watching) refreshTouchpad()
     onWatchingChanged:
     {
         if (watching) refresh();
@@ -35,11 +39,17 @@ Singleton
         mouseWatchClients = Clients.update(mouseWatchClients, client, active);
     }
 
+    function setTouchpadWatching(client, active)
+    {
+        touchpadWatchClients = Clients.update(touchpadWatchClients, client, active);
+    }
+
     function refresh()
     {
         usbReader.running = true;
         printersReader.running = true;
         refreshMouse();
+        refreshTouchpad();
     }
 
     property var mouse: ({speed: 0, profile: "adaptive", naturalScroll: false, leftHanded: false,
@@ -96,8 +106,8 @@ Singleton
     {
         path: ServiceCompositor.configFiles.input || ""
         printErrors: false
-        watchChanges: serviceDevices.mouseWatching
-        onFileChanged: { reload(); serviceDevices.refreshMouse(); }
+        watchChanges: serviceDevices.mouseWatching || serviceDevices.touchpadWatching
+        onFileChanged: { reload(); serviceDevices.refreshMouse(); serviceDevices.refreshTouchpad(); }
     }
     CommandProcess
     {
@@ -144,6 +154,100 @@ Singleton
                 serviceDevices.mouseError = errorMessage(Tr.tr("service.devices.mouseSaveFailed"));
             }
             serviceDevices.refreshMouse();
+        }
+    }
+
+    property var touchpad: ({ignoreWhileTyping: true, ignoreExternalMouse: false})
+    property bool touchpadLoaded: false
+    property bool touchpadAvailable: false
+    property string touchpadError: ""
+    property var pendingTouchpad: ({})
+    property int touchpadRevision: 0
+    readonly property bool touchpadBusy: touchpadWriter.busy || touchpadFlush.running
+
+    function refreshTouchpad()
+    {
+        if (!ServiceCompositor.supports("touchpad") || (!watching && touchpadWatchClients.length === 0) || touchpadBusy) return;
+        if (touchpadReader.busy) { touchpadReader.again = true; return; }
+        touchpadReader.again = false;
+        touchpadReader.revision = touchpadRevision;
+        touchpadReader.run(ServiceCompositor.configuration(["touchpad-read"]));
+    }
+    function receiveTouchpad(text)
+    {
+        const data = JSON.parse(text);
+        touchpadAvailable = data.available;
+        touchpad = Object.assign({}, data.touchpad, pendingTouchpad);
+        touchpadLoaded = true;
+    }
+    function setTouchpad(key, value)
+    {
+        if (!touchpadLoaded || !touchpadAvailable || touchpad[key] === undefined) return;
+        if (touchpad[key] === value) return;
+        touchpadRevision++;
+        touchpad = Object.assign({}, touchpad, {[key]: value});
+        pendingTouchpad = Object.assign({}, pendingTouchpad, {[key]: value});
+        touchpadError = "";
+        touchpadFlush.restart();
+    }
+    Timer
+    {
+        id: touchpadFlush
+        interval: 350
+        onTriggered:
+        {
+            if (touchpadWriter.busy) { restart(); return; }
+            if (Object.keys(serviceDevices.pendingTouchpad).length === 0) return;
+            const changes = serviceDevices.pendingTouchpad;
+            serviceDevices.pendingTouchpad = {};
+            touchpadWriter.run(ServiceCompositor.configuration(["touchpad", JSON.stringify(changes)]));
+        }
+    }
+    CommandProcess
+    {
+        id: touchpadReader
+        property bool again: false
+        property int revision: 0
+        stdout: StdioCollector { id: touchpadReadResult }
+        onCompleted: code =>
+        {
+            if (!serviceDevices.touchpadBusy && revision === serviceDevices.touchpadRevision)
+            {
+                if (code === 0)
+                {
+                    try
+                    {
+                        if (!serviceDevices.touchpadAvailable) serviceDevices.touchpadError = "";
+                        serviceDevices.receiveTouchpad(touchpadReadResult.text);
+                    }
+                    catch (error) { serviceDevices.touchpadError = String(error); }
+                }
+                else
+                {
+                    serviceDevices.touchpadAvailable = false;
+                    serviceDevices.touchpadLoaded = true;
+                    serviceDevices.touchpadError = errorMessage(Tr.tr("service.devices.touchpadReadFailed"));
+                }
+            }
+            if (again) serviceDevices.refreshTouchpad();
+        }
+    }
+    CommandProcess
+    {
+        id: touchpadWriter
+        stdout: StdioCollector { id: touchpadWriteResult }
+        onCompleted: code =>
+        {
+            if (code === 0)
+            {
+                try { serviceDevices.receiveTouchpad(touchpadWriteResult.text); }
+                catch (error) { serviceDevices.touchpadError = String(error); }
+            }
+            else
+            {
+                serviceDevices.touchpadError = errorMessage(Tr.tr("service.devices.touchpadSaveFailed"));
+            }
+            serviceDevices.refreshTouchpad();
         }
     }
 

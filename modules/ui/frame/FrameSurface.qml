@@ -3,26 +3,30 @@ import Quickshell
 
 import "../../common"
 import "../../core"
+import "FrameJoinGeometry.js" as JoinGeometry
 
 ShaderEffect
 {
     id: frame
 
     property bool materialEnabled: false
-    property bool detachedBar: false
     property real thickness: Theme.frameThickness
     property rect startBody: Qt.rect(0, 0, 0, 0)
     property rect centerBody: Qt.rect(0, 0, 0, 0)
     property rect endBody: Qt.rect(0, 0, 0, 0)
     property rect centerPanel: Qt.rect(0, 0, 0, 0)
     property rect dockBody: Qt.rect(0, 0, 0, 0)
+    property bool barAttached: Config.barAttach
+    property bool dockAttached: Config.dockAttach
+    readonly property vector2d bodyCurves: Qt.vector2d(
+        barAttached ? JoinGeometry.curveScale(Config.barAttachCurve) : 0,
+        dockAttached ? JoinGeometry.curveScale(Config.dockAttachCurve) : 0)
 
     readonly property vector2d screenSize: Qt.vector2d(width, height)
     readonly property real inset: frosted ? Math.floor(thickness) : thickness
     property real cornerRadius: Theme.frameRadius
-    property real bodyRadius: Theme.barRadius
-    property real smoothing: Theme.frameSmoothing
-    readonly property real barSmoothing: detachedBar ? 0 : smoothing
+    readonly property real barRadius: Theme.barRadius
+    readonly property real menuRadius: Theme.menuRadius
     readonly property real menuSide: Config.barSide
     // The shader and the Wayland mask consume the same rounded geometry.
     readonly property rect startShape: startRegion.bounds
@@ -46,6 +50,7 @@ ShaderEffect
     readonly property color paintColor: ShellMaterial.fill(fillColor, frosted)
     readonly property Item wallpaperTexture: wallpaper
     readonly property real wallpaperStrength: wallpaper.status === Image.Ready ? ShellMaterial.wallpaperStrength(fillColor) : 0
+    property real blurGrain: frosted ? ShellMaterial.blurGrain : 0
     readonly property vector2d wallpaperScale:
     {
         const aspect = width / Math.max(1, height);
@@ -82,11 +87,19 @@ ShaderEffect
                 radius: frame.cornerRadius
             }
         }
-        FrameBodyBlurRegion { id: startRegion; surface: frame; area: frame.startBody; join: frame.barSmoothing }
-        FrameBodyBlurRegion { id: centerRegion; surface: frame; area: frame.centerBody; join: frame.smoothing }
-        FrameBodyBlurRegion { id: endRegion; surface: frame; area: frame.endBody; join: frame.barSmoothing }
-        FrameBodyBlurRegion { id: panelRegion; surface: frame; area: frame.centerPanel; join: frame.smoothing }
-        FrameBodyBlurRegion { id: dockRegion; surface: frame; area: frame.dockBody; join: frame.smoothing }
+        FrameBodyBlurRegion { id: startRegion; surface: frame; area: frame.startBody; bodyRadius: frame.barRadius; curveScale: frame.bodyCurves.x }
+        FrameBodyBlurRegion { id: centerRegion; surface: frame; area: frame.centerBody; bodyRadius: frame.barRadius; curveScale: frame.bodyCurves.x }
+        FrameBodyBlurRegion { id: endRegion; surface: frame; area: frame.endBody; bodyRadius: frame.barRadius; curveScale: frame.bodyCurves.x }
+        FrameBodyBlurRegion
+        {
+            id: panelRegion
+            surface: frame
+            area: frame.centerPanel
+            bodyRadius: frame.menuRadius
+            joinLimit: frame.barRadius
+            curveScale: frame.bodyCurves.x
+        }
+        FrameBodyBlurRegion { id: dockRegion; surface: frame; area: frame.dockBody; bodyRadius: Theme.dockRadius; curveScale: frame.bodyCurves.y }
 
         FrameMenuJoinRegion { id: centerAttachment; surface: frame; bar: frame.centerBody; menu: frame.centerPanel }
     }

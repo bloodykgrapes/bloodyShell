@@ -51,6 +51,7 @@ WidgetButton
     }
 
     icon: ServiceApplications.trayIcon(trayItem ? trayItem.icon : "")
+    idleColor: "transparent"
     acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
 
     property real grow: Config.animationsFluid ? 0 : 1

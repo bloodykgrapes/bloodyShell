@@ -56,28 +56,17 @@ SettingsPage
         width: parent.width
         height: Math.max(96, identity.implicitHeight + 32)
 
-        gradient: Gradient
-        {
-            orientation: Gradient.Horizontal
-            GradientStop
-            {
-                position: 0
-                color: Qt.tint(Theme.settingsColorCard, Theme.accentShell ? Theme.accentAlpha(0.12) : Theme.inkAlpha(0.04))
-            }
-            GradientStop { position: 0.72; color: Theme.settingsColorCard }
-            GradientStop { position: 1; color: Theme.settingsColorCard }
-        }
-
-        RowLayout
+        Column
         {
             id: identity
             anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 16 }
-            spacing: 14
+            spacing: 8
 
             Rectangle
             {
-                Layout.preferredWidth: 60
-                Layout.preferredHeight: 60
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: 60
+                height: 60
                 radius: Theme.controlRadius
                 color: Theme.settingsColorCard
 
@@ -102,11 +91,10 @@ SettingsPage
 
             Column
             {
-                Layout.fillWidth: true
-                Layout.preferredWidth: 0
+                width: parent.width
                 spacing: 4
 
-                ShellText { width: parent.width; label: banner.caption; size: 11; color: Theme.text3; wrapMode: Text.Wrap }
+                ShellText { width: parent.width; label: banner.caption; size: 11; color: Theme.text3; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter }
                 ShellText
                 {
                     width: parent.width
@@ -116,8 +104,9 @@ SettingsPage
                     font.weight: Font.DemiBold
                     color: Theme.text1
                     wrapMode: Text.Wrap
+                    horizontalAlignment: Text.AlignHCenter
                 }
-                ShellText { width: parent.width; label: banner.subtitle; size: 12; color: Theme.text2; wrapMode: Text.Wrap }
+                ShellText { width: parent.width; label: banner.subtitle; size: 12; color: Theme.text2; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter }
             }
         }
     }
@@ -215,124 +204,116 @@ SettingsPage
                 DetailTile { label: Tr.tr("settings.about.runtime");      detail: "Quickshell" + (Qt.application.version ? " " + Qt.application.version : "") }
                 DetailTile { label: Tr.tr("settings.about.computerName"); detail: ServiceSystem.hostname }
             }
-        }
-    }
 
-    SettingsRowGroup
-    {
-        title: Tr.tr("settings.about.hardware")
-
-        DetailGrid
-        {
-            DetailTile
+            DetailGrid
             {
-                objectName: "aboutDevice"
-                visible: ServiceSystem.device !== ""
-                label: Tr.tr("settings.about.device")
-                detail: ServiceSystem.device
-                icon: Icon.settingsDesktop
-            }
-            DetailTile
-            {
-                label: Tr.tr("settings.about.memory")
-                detail: ServiceSystem.memoryKiB > 0 ? (ServiceSystem.memoryKiB / 1048576).toLocaleString(Tr.locale, "f", 1) + " GiB" : ""
-                icon: Icon.memory
-            }
-            DetailTile
-            {
-                objectName: "aboutProcessor"
-                label: Tr.tr("settings.about.processor")
-                detail: ServiceSystem.processor
-                description: ServiceSystem.threads > 0 ? Tr.tr("settings.about.threads").arg(ServiceSystem.threads) : ""
-                icon: Icon.processor
-            }
-            DetailTile
-            {
-                objectName: "aboutGraphics"
-                label: Tr.tr("settings.about.graphics")
-                detail: ServiceSystem.graphics.join("\n")
-                icon: Icon.settingsDisplay
+                DetailTile
+                {
+                    objectName: "aboutDevice"
+                    visible: ServiceSystem.device !== ""
+                    label: Tr.tr("settings.about.device")
+                    detail: ServiceSystem.device
+                    icon: Icon.settingsDesktop
+                }
+                DetailTile
+                {
+                    label: Tr.tr("settings.about.memory")
+                    detail: ServiceSystem.memoryKiB > 0 ? (ServiceSystem.memoryKiB / 1048576).toLocaleString(Tr.locale, "f", 1) + " GiB" : ""
+                    icon: Icon.memory
+                }
+                DetailTile
+                {
+                    objectName: "aboutProcessor"
+                    label: Tr.tr("settings.about.processor")
+                    detail: ServiceSystem.processor
+                    description: ServiceSystem.threads > 0 ? Tr.tr("settings.about.threads").arg(ServiceSystem.threads) : ""
+                    icon: Icon.processor
+                }
+                DetailTile
+                {
+                    objectName: "aboutGraphics"
+                    label: Tr.tr("settings.about.graphics")
+                    detail: ServiceSystem.graphics.join("\n")
+                    icon: Icon.settingsDisplay
+                }
             }
         }
     }
 
     SettingsRowGroup
     {
-        title: Tr.tr("settings.about.project")
+        title: Tr.tr("common.shell")
 
-        Column
+        IdentityBanner
         {
-            width: parent.width
-            spacing: 8
+            objectName: "aboutShellCard"
+            branded: true
+            artwork: Qt.resolvedUrl("../../../../../assets/icons/logo.png")
+            name: "bloodyShell"
+            caption: Tr.tr(ServiceUpdate.installed ? "settings.about.installed" : "settings.updates.developmentCopy")
+            subtitle: (ServiceUpdate.versionReady ? Tr.tr("settings.about.versionLabel").arg(ServiceUpdate.version) : Tr.tr("common.loading")) + " · GPL-3.0"
+        }
 
-            IdentityBanner
+        SettingsRow
+        {
+            label: Tr.tr("settings.about.documentation")
+
+            Button
             {
-                objectName: "aboutShellCard"
-                branded: true
-                artwork: Qt.resolvedUrl("../../../../../assets/icons/logo.png")
-                name: "bloodyShell"
-                caption: Tr.tr(ServiceUpdate.installed ? "settings.about.installed" : "settings.updates.developmentCopy")
-                subtitle: (ServiceUpdate.versionReady ? Tr.tr("settings.about.versionLabel").arg(ServiceUpdate.version) : Tr.tr("common.loading")) + " · GPL-3.0"
+                text: Tr.tr("common.open")
+                Accessible.name: Tr.tr("settings.about.documentation")
+                onClicked: Qt.openUrlExternally(pageAbout.projectUrl + "/wiki")
             }
-
-            SettingsDisclosure
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.structure.reportBug")
+            Button
             {
-                objectName: "aboutMaintenance"
-                title: Tr.tr("settings.about.maintenance")
-                icon: Icon.configuration
+                text: Tr.tr("common.open")
+                Accessible.name: Tr.tr("settings.structure.reportBug")
+                onClicked: Qt.openUrlExternally(pageAbout.projectUrl + "/issues/new")
+            }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.about.source")
 
-                SettingsRow
-                {
-                    label: Tr.tr("settings.about.documentation")
+            Button
+            {
+                text: Tr.tr("common.open")
+                Accessible.name: Tr.tr("settings.about.source")
+                onClicked: Qt.openUrlExternally(pageAbout.projectUrl)
+            }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("helper.setup")
+            description: Tr.tr("helper.openHint")
+            Button { text: Tr.tr("common.open"); icon: Icon.setup; onClicked: OverlayState.show("helper") }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.about.debugLogging")
+            description: Tr.tr("settings.about.debugLoggingHint")
 
-                    Button
-                    {
-                        text: Tr.tr("common.open")
-                        Accessible.name: Tr.tr("settings.about.documentation")
-                        onClicked: Qt.openUrlExternally(pageAbout.projectUrl + "/wiki")
-                    }
-                }
-                SettingsRow
-                {
-                    label: Tr.tr("settings.about.source")
+            Toggle
+            {
+                checked: Config.debug
+                onToggled: value => Config.set("debug", value)
+            }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.about.resetAllSettings")
+            description: Tr.tr("settings.about.resetHint")
 
-                    Button
-                    {
-                        text: Tr.tr("common.open")
-                        Accessible.name: Tr.tr("settings.about.source")
-                        onClicked: Qt.openUrlExternally(pageAbout.projectUrl)
-                    }
-                }
-                SettingsRow
-                {
-                    label: Tr.tr("helper.setup")
-                    description: Tr.tr("helper.openHint")
-                    Button { text: Tr.tr("common.open"); icon: Icon.setup; onClicked: OverlayState.show("helper") }
-                }
-                SettingsRow
-                {
-                    label: Tr.tr("settings.about.debugLogging")
-                    description: Tr.tr("settings.about.debugLoggingHint")
-
-                    Toggle
-                    {
-                        checked: Config.debug
-                        onToggled: value => Config.set("debug", value)
-                    }
-                }
-                SettingsRow
-                {
-                    label: Tr.tr("settings.about.resetAllSettings")
-                    description: Tr.tr("settings.about.resetHint")
-
-                    Button
-                    {
-                        danger: true
-                        objectName: "requestReset"
-                        text: Tr.tr("settings.about.reset")
-                        onClicked: pageAbout.confirmReset = true
-                    }
-                }
+            Button
+            {
+                danger: true
+                objectName: "requestReset"
+                text: Tr.tr("settings.about.reset")
+                onClicked: pageAbout.confirmReset = true
             }
         }
     }

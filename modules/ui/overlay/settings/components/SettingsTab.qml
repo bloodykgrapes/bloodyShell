@@ -36,7 +36,7 @@ Common.InteractiveControl
     Rectangle
     {
         anchors.fill: parent
-        radius: 9
+        radius: height / 2
 
         color: Qt.tint(Theme.settingsColorSidebar, Theme.colorHover)
         opacity: settingsTab.highlighted && !settingsTab.selected ? 1 : 0
@@ -56,7 +56,7 @@ Common.InteractiveControl
             anchors.verticalCenter: parent.verticalCenter
             width: 24
             height: 24
-            radius: 7
+            radius: height / 2
             color: settingsTab.selected ? Theme.inkAlpha(0.1) : Theme.colorField
             Tint on color {}
             ShellIcon

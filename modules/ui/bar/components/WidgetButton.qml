@@ -26,29 +26,50 @@ Common.InteractiveControl
     property string text: ""
     property string textReserve: ""
     property color  color: Theme.text2
-    property real radius: Math.min(Theme.barWidgetRadius, height / 2)
-    property color backgroundColor: pressed || active ? Theme.colorPressed
+    property bool bubble: false
+    property bool circular: bubble
+    property color idleColor: !bubble && !Config.barAttach ? Theme.panelButtonBackground : "transparent"
+    readonly property bool standalone: bubble || idleColor.a > 0
+    property real radius: standalone ? Math.min(width, height) / 2 : Math.min(Theme.barWidgetRadius, height / 2)
+    readonly property color stateColor: pressed || active ? Theme.colorPressed
         : containsMouse ? Theme.colorHover : "transparent"
+    property color backgroundColor: standalone ? Qt.tint(idleColor, stateColor) : stateColor
 
-    property real iconSize: 16
-    padding: 7
+    property real iconSize: circular ? Theme.barBubbleIconSize : 16
+    padding: standalone ? 10 : 7
     spacing: 4
 
     readonly property bool hasIcon: icon !== ""
     readonly property bool hasText: text !== ""
 
-    implicitHeight: Math.max(Theme.barWidgetHeight, Math.ceil(content.implicitHeight + padding))
-    implicitWidth: hasText
-        ? Math.ceil(content.implicitWidth + padding * 2)
+    implicitHeight: circular ? Theme.barBubbleSize
+        : Math.max(standalone ? Theme.barStandaloneWidgetHeight : Theme.barWidgetHeight,
+            Math.ceil(content.implicitHeight + padding))
+    implicitWidth: circular ? implicitHeight
+        : hasText ? Math.ceil(content.implicitWidth + padding * 2)
         : Math.max(implicitHeight, Math.ceil(content.implicitWidth))
 
     cursorShape: Qt.PointingHandCursor
 
     readonly property bool lit: containsMouse || active
 
-    scale: pressed ? 0.94 : containsMouse ? 1.1 : 1
+    scale: pressed ? 0.95 : containsMouse && !bubble ? 1.1 : 1
 
     Spring on scale {}
+
+    Loader
+    {
+        anchors.fill: parent
+        active: widgetButton.bubble && widgetButton.visible && widgetButton.width > 0 && widgetButton.height > 0
+        sourceComponent: ShellSurface
+        {
+            objectName: "statusBubbleSurface"
+            radius: widgetButton.radius
+            baseColor: Theme.frameColor
+            border.color: Theme.colorPanelEdge
+            border.width: Theme.panelBorderWidth
+        }
+    }
 
     Rectangle
     {

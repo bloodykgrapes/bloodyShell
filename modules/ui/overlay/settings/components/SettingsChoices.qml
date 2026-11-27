@@ -60,7 +60,7 @@ Item
     Rectangle
     {
         anchors.fill: parent
-        radius: Theme.radiusMedium
+        radius: settingsChoices.flowing ? Theme.radiusLarge : height / 2
         color: Theme.colorField
     }
 
@@ -78,7 +78,7 @@ Item
         y: settingsChoices.inset
         width: target ? target.width : 0
         height: settingsChoices.segmentHeight
-        radius: Theme.radiusMedium - 2
+        radius: height / 2
         color: Theme.colorSelection
         Tint on color {}
 
@@ -148,7 +148,7 @@ Item
                 Rectangle
                 {
                     anchors.fill: parent
-                    radius: Theme.radiusMedium - 2
+                    radius: height / 2
                     color: area.pressed ? Theme.colorPressed : Theme.colorHover
                     opacity: !segment.isCurrent && (area.pressed || area.containsMouse) ? 1 : 0
                     Smooth on opacity {}
@@ -158,7 +158,7 @@ Item
                 Rectangle
                 {
                     anchors.fill: parent
-                    radius: Theme.radiusMedium - 2
+                    radius: height / 2
                     color: Theme.colorSelection
                     visible: settingsChoices.flowing
                     opacity: segment.isCurrent ? 1 : 0

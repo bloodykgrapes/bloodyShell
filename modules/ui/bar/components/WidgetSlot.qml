@@ -81,6 +81,13 @@ Item
             value: widgetSlot.side
             when: loader.status === Loader.Ready
         }
+        Binding
+        {
+            target: loader.item
+            property: "variant"
+            value: widgetSlot.widgetMeta?.variant
+            when: loader.status === Loader.Ready && widgetSlot.widgetMeta?.variant !== undefined
+        }
 
     }
 }

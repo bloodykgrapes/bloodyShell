@@ -11,6 +11,7 @@ Item
     id: dock
 
     required property var screen
+    property bool preview: false
     readonly property bool keyboardWanted: popup.mode === "menu"
     readonly property alias inputRegion: dockInput
 
@@ -21,25 +22,21 @@ Item
     readonly property real  thickness: base + Theme.dockPadding * 2
     readonly property alias container: content.container
 
-    property bool barHere: Config.barEnabled && screen !== null && Config.screensShown("barScreens").indexOf(screen.name) >= 0
-    readonly property bool barOnSide:  barHere && side === Config.barSide
-    readonly property bool inFrame: Config.dockType === Enums.InFrame || filled
-    readonly property bool islands: Config.dockType === Enums.Islands
-    readonly property bool filled: Config.dockType === Enums.Filled
-    readonly property real barDepth: barOnSide ? Theme.barThickness + Theme.frameThickness + (Config.barType === Enums.Islands ? 6 : 0) + 12 : 0
-    readonly property real edgeGap: Math.max(Theme.frameThickness, barDepth) + (inFrame ? 0 : Theme.dockMargin)
+    property real barDepth: 0
+    readonly property bool attached: Config.dockAttach
+    readonly property real edgeGap: Theme.frameThickness + (barDepth > 0 || !attached ? barDepth + Theme.panelGap : 0)
     readonly property rect bodyRect:
     {
-        if (!container.visible || !inFrame) return Qt.rect(0, 0, 0, 0);
-        if (!filled) return Qt.rect(container.x, container.y, container.width, container.height);
-        const r = Theme.barRadius;
-        switch (side)
-        {
-            case Enums.EdgeTop: return Qt.rect(-r, -r, width + r * 2, Math.max(0, container.y + container.height + r));
-            case Enums.EdgeBottom: return Qt.rect(-r, container.y, width + r * 2, Math.max(0, height - container.y + r));
-            case Enums.EdgeLeft: return Qt.rect(-r, -r, Math.max(0, container.x + container.width + r), height + r * 2);
-            default: return Qt.rect(container.x, -r, Math.max(0, width - container.x + r), height + r * 2);
-        }
+        if (!attached || !container.visible || container.reveal <= 0) return Qt.rect(0, 0, 0, 0);
+        const x = container.x, y = container.y;
+        const w = container.width, h = container.height;
+        // Reach back to the frame even when the icons are offset to clear the bar.
+        const offset = edgeGap - Theme.frameThickness;
+        const bridge = Math.max(0, offset - container.slide);
+        if (side === Enums.EdgeTop) return Qt.rect(x, y - bridge, w, h + bridge);
+        if (side === Enums.EdgeBottom) return Qt.rect(x, y, w, h + bridge);
+        if (side === Enums.EdgeLeft) return Qt.rect(x - bridge, y, w + bridge, h);
+        return Qt.rect(x, y, w + bridge, h);
     }
 
     Region
@@ -50,9 +47,9 @@ Item
         Region { item: popupMask }
     }
 
-    readonly property bool fullscreen: screen !== null && ServiceCompositor.fullscreenOnOutput(screen.name)
+    readonly property bool fullscreen: !preview && screen !== null && ServiceCompositor.fullscreenOnOutput(screen.name)
     readonly property bool autoHide: Config.dockHideAuto || fullscreen
-    readonly property bool revealWanted: !fullscreen && (!autoHide
+    readonly property bool revealWanted: !fullscreen && (preview || !autoHide
         || triggerHover.hovered || dockHover.hovered || content.hovered || popup.hovered
         || content.view.dragActive || popup.mode === "menu"
         || (Config.dockHideSmart && screen !== null && ServiceCompositor.workspaceEmptyOnOutput(screen.name)))
@@ -110,7 +107,6 @@ Item
     }
     function menuOpen(item)
     {
-        SidebarState.close();
         MenuState.close();
         previewShow.stop();
         previewHide.stop();
@@ -166,12 +162,6 @@ Item
         target: OverlayState
         function onActiveChanged() { if (OverlayState.active) dock.popupClose() }
     }
-    Connections
-    {
-        target: SidebarState
-        function onActiveChanged() { if (SidebarState.active) dock.popupClose() }
-    }
-
     Item
     {
         focus: true

@@ -109,13 +109,10 @@ SettingsPage
             }
         }
     }
-    SettingsDisclosure
+    SettingsRowGroup
     {
         objectName: "storageMountOptions"
-        title: Tr.tr("settings.storage.mountDisk")
-        description: Tr.tr("settings.storage.mountDiskHint")
-        icon: Icon.mount
-        onExpandedChanged: if (!expanded) ServiceStorage.cancelMount()
+        title: Tr.tr("settings.structure.disks")
 
         SettingsRow
         {

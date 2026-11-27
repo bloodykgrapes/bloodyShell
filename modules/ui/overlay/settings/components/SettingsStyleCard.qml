@@ -13,18 +13,16 @@ Common.InteractiveControl
 {
     id: settingsStyleCard
 
-    property string kind: "frame"
+    required property string kind
     property int value: 0
     property string label: ""
     property bool current: false
     signal clicked()
 
     readonly property bool themeStyle: kind === "theme"
-    readonly property bool surfaceStyle: kind === "surface"
-    readonly property bool frameStyle: kind === "frame"
+    readonly property bool launcherStyle: kind === "launcher"
     readonly property bool equalizerStyle: kind === "equalizer"
     readonly property bool animationStyle: kind === "animation"
-    readonly property bool framed: frameStyle || themeStyle
     readonly property bool automaticTheme: themeStyle && value === Enums.ThemeAuto
     readonly property bool sceneLight: Theme.light
     readonly property var scenePalette: Theme.styles[sceneLight ? Enums.ThemeLight : Enums.ThemeDark]
@@ -39,11 +37,6 @@ Common.InteractiveControl
         canvas: scenePalette[1], frame: sceneFrame, panel: scenePanel, outline: sceneLine,
         ink: sceneInk, muted: sceneMuted, accent: sceneAccent
     })
-    readonly property int sceneStyle: themeStyle ? Config.barType : value
-    readonly property bool inFrame: framed && sceneStyle === Enums.InFrame
-    readonly property bool islands: framed && sceneStyle === Enums.Islands
-    readonly property bool filled: framed && sceneStyle === Enums.Filled
-
     readonly property bool previewing: animationStyle && activity.active && (hovered || visualFocus)
     RenderActivity { id: activity; target: settingsStyleCard }
 
@@ -70,7 +63,7 @@ Common.InteractiveControl
         readonly property color sceneFrame: Theme.frameFor(lightMode)
         readonly property color scenePanel: Theme.styles[lightMode ? Enums.ThemeLight : Enums.ThemeDark][2]
 
-        color: settingsStyleCard.themeStyle ? Theme.styles[lightMode ? Enums.ThemeLight : Enums.ThemeDark][1] : settingsStyleCard.sceneDesktop
+        color: Theme.styles[lightMode ? Enums.ThemeLight : Enums.ThemeDark][1]
 
         FrameSurface
         {
@@ -78,19 +71,17 @@ Common.InteractiveControl
             objectName: "previewBarSurface"
             thickness: 6
             cornerRadius: 10
-            bodyRadius: 9
-            smoothing: 8
-            centerBody: settingsStyleCard.filled ? Qt.rect(-9, -9, width + 18, 37)
-                : settingsStyleCard.inFrame ? Qt.rect((width - 68) / 2, 6, 68, 22)
-                : settingsStyleCard.islands ? Qt.rect((width - 68) / 2, 12, 68, 22) : Qt.rect(0, 0, 0, 0)
-            fillColor: settingsStyleCard.themeStyle ? desktopPreview.sceneFrame : settingsStyleCard.sceneFrame
+            readonly property real barWidth: Math.min(68, width * 0.68)
+            centerBody: Qt.rect((width - barWidth) / 2, 6, barWidth, 22)
+            fillColor: desktopPreview.sceneFrame
             borderWidth: 1
             borderColor: desktopPreview.sceneLine
         }
         Row
         {
+            visible: settingsStyleCard.themeStyle
             anchors.horizontalCenter: parent.horizontalCenter
-            y: settingsStyleCard.islands ? 17 : 11
+            y: 11
             spacing: 5
             Rectangle { width: 12; height: 12; radius: 4; color: desktopPreview.sceneAccent }
             Column
@@ -134,13 +125,12 @@ Common.InteractiveControl
         width: parent.width
         height: Math.round(width * 0.62)
         radius: Theme.radiusLarge
-        color: settingsStyleCard.surfaceStyle ? "transparent"
-            : settingsStyleCard.animationStyle ? settingsStyleCard.scenePalette[1] : settingsStyleCard.sceneDesktop
+        color: settingsStyleCard.animationStyle ? settingsStyleCard.scenePalette[1] : settingsStyleCard.sceneDesktop
 
         Loader
         {
             anchors.fill: parent
-            active: settingsStyleCard.framed
+            active: settingsStyleCard.themeStyle
             sourceComponent: Item
             {
                 id: desktopScene
@@ -167,16 +157,6 @@ Common.InteractiveControl
                         }
                     }
                 }
-            }
-        }
-        Loader
-        {
-            anchors.fill: parent
-            active: settingsStyleCard.surfaceStyle
-            sourceComponent: SettingsSurfacePreview
-            {
-                mode: settingsStyleCard.value
-                colors: settingsStyleCard.sampleColors
             }
         }
         Loader
@@ -218,6 +198,56 @@ Common.InteractiveControl
                 mode: settingsStyleCard.value
                 playing: settingsStyleCard.previewing
                 colors: settingsStyleCard.sampleColors
+            }
+        }
+        Loader
+        {
+            anchors.fill: parent
+            active: settingsStyleCard.launcherStyle
+            sourceComponent: Item
+            {
+                Rectangle
+                {
+                    anchors { fill: parent; margins: 12 }
+                    radius: 9
+                    color: settingsStyleCard.sceneDesktop
+                }
+                Rectangle
+                {
+                    x: parent.width * 0.12
+                    y: parent.height * 0.27
+                    width: parent.width * 0.76
+                    height: parent.height * 0.48
+                    radius: settingsStyleCard.value === Enums.LauncherIsland ? 10 : 13
+                    color: settingsStyleCard.scenePanel
+                    border.width: 1
+                    border.color: settingsStyleCard.sceneLine
+                }
+                Rectangle
+                {
+                    x: parent.width * 0.18
+                    y: parent.height * 0.38
+                    width: parent.width * 0.64
+                    height: 16
+                    radius: 6
+                    color: settingsStyleCard.value === Enums.LauncherIsland
+                        ? settingsStyleCard.sceneFrame : settingsStyleCard.sceneMuted
+                    opacity: 0.8
+                }
+                Repeater
+                {
+                    model: 3
+                    Rectangle
+                    {
+                        required property int index
+                        x: parent.width * (0.22 + index * 0.2)
+                        y: parent.height * 0.63
+                        width: 14
+                        height: 14
+                        radius: 5
+                        color: index === 0 ? settingsStyleCard.sceneAccent : settingsStyleCard.sceneMuted
+                    }
+                }
             }
         }
     }

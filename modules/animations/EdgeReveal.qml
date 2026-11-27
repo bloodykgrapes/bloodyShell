@@ -19,7 +19,7 @@ QtObject
     {
         enabled: reveal.animated
         durationByDistance: true
-        duration: reveal.opened ? (Config.animationsFluid ? 310 : 230) : (Config.animationsFluid ? 210 : 170)
+        duration: Theme.animationDuration(reveal.opened ? (Config.animationsFluid ? 310 : 230) : (Config.animationsFluid ? 210 : 170))
         curve: reveal.opened ? [0.22, 0.38, 0.26, 1.0, 1.0, 1.0] : [0.26, 0.0, 0.58, 1.0, 1.0, 1.0]
     }
 }

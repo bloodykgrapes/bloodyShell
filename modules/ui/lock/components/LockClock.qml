@@ -9,6 +9,8 @@ Column
 
     readonly property date now: clock.date
     property int clockSize: 152
+    property bool showDate: true
+    property bool showClock: true
     SystemClock { id: clock; precision: SystemClock.Minutes }
 
     spacing: 0
@@ -17,6 +19,8 @@ Column
 
     Text
     {
+        visible: lockClock.showDate
+        height: visible ? implicitHeight : 0
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
         text: { const date = lockClock.now.toLocaleDateString(Tr.locale, "dddd, d MMMM"); return date.charAt(0).toUpperCase() + date.slice(1) }
@@ -28,6 +32,8 @@ Column
     }
     Text
     {
+        visible: lockClock.showClock
+        height: visible ? implicitHeight : 0
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
         text: Qt.formatTime(lockClock.now, Config.barWidgetClock24 ? "HH:mm" : "h:mm")
@@ -40,7 +46,7 @@ Column
     Text
     {
         anchors.horizontalCenter: parent.horizontalCenter
-        visible: !Config.barWidgetClock24
+        visible: lockClock.showClock && !Config.barWidgetClock24
         text: Qt.formatTime(lockClock.now, "AP")
         color: "#e2e2e7"
         font.family: Theme.fontText

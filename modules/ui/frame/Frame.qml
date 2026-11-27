@@ -4,44 +4,56 @@ import QtQuick
 import Quickshell
 
 import "../../animations"
+import "../../common"
 import "../../core"
 import "../../services"
 import "../bar"
 import "../dock"
-import "../osd"
-import "../sidebars/left"
-import "../sidebars/right"
 
 FocusScope
 {
     id: frame
 
     required property var screen
-    readonly property bool fullscreen: screen !== null && ServiceCompositor.fullscreenOnOutput(screen.name)
+    property bool preview: false
+    readonly property bool fullscreen: !preview && screen !== null && ServiceCompositor.fullscreenOnOutput(screen.name)
     property real frameReveal: fullscreen ? 0 : 1
     Glide on frameReveal {}
     readonly property var bar: barLoader.item
     readonly property var dock: dockLoader.item
-    readonly property var island: islandLoader.item
-    readonly property bool regularBar: Config.barEnabled && shown("barScreens")
-    readonly property bool sidebarHere: screen && SidebarState.onOutput(screen.name)
-    readonly property bool menuHere: (bar && bar.menuHere) || (island && island.menuHere) || false
+    readonly property var island: bar?.island ?? null
+    readonly property bool barEdgeOccupied: preview || shown("barScreens")
+    readonly property bool islandHere: Config.islandEnabled && barEdgeOccupied
+        && (preview || screen?.name === ServiceIsland.primaryOutput)
+    readonly property real barDepth: Theme.barThickness + (Config.barAttach ? 0 : Theme.panelGap)
+    readonly property bool menuHere: bar?.menuHere ?? false
+    readonly property bool barRevealWanted: barEdgeOccupied && !fullscreen && (preview || !Config.barHideAuto || edgeHover.hovered
+        || bar?.hoveringWidgets || island?.hoveringBody || menuHere
+        || (Config.barHideSmart && ServiceCompositor.workspaceEmptyOnOutput(screen.name)))
+    readonly property bool barRevealed: !fullscreen && barVisibility.revealed
+    property real barReveal: barRevealed ? 1 : 0
+    Glide on barReveal {}
+    readonly property bool barInputActive: !fullscreen && barReveal > 0
+    readonly property point barOffset:
+    {
+        const distance = Math.round((1 - barReveal) * (Theme.frameThickness + barDepth + 4));
+        const side = Config.barSide;
+        return Qt.point(side === Enums.EdgeLeft ? -distance : side === Enums.EdgeRight ? distance : 0,
+            side === Enums.EdgeTop ? -distance : side === Enums.EdgeBottom ? distance : 0);
+    }
     readonly property bool popupHere: popupSurface.children.some(item => item.visible)
-    readonly property bool keyboardWanted: popupHere || sidebarHere || (bar && bar.keyboardWanted) || (dock && dock.keyboardWanted) || (island && island.keyboardWanted) || false
+    readonly property bool keyboardWanted: popupHere || (bar && bar.keyboardWanted) || (dock && dock.keyboardWanted) || false
     readonly property alias popupLayer: popupSurface
     readonly property alias inputRegion: inputMask
     readonly property alias surface: surface
-    readonly property alias leftSidebar: leftView
-    readonly property alias rightSidebar: rightView
     readonly property real layoutThickness: Math.max(0, Math.min(Theme.frameThickness, Math.min(width, height) / 4))
     readonly property real thickness: layoutThickness * frameReveal
-    readonly property bool reserveBar: bar !== null && !Config.barHideAuto
     readonly property bool reserveDock: dock !== null && !Config.dockHideAuto
     // Fullscreen changes visibility, not the work area to which windows return.
     readonly property var reservations:
     {
         const edges = [layoutThickness, layoutThickness, layoutThickness, layoutThickness];
-        if (reserveBar && bar) edges[Config.barSide] = Math.max(edges[Config.barSide], bar.reserve);
+        if (barEdgeOccupied && !Config.barHideAuto) edges[Config.barSide] = layoutThickness + barDepth;
         if (reserveDock && dock && dock.container.visible)
             edges[Config.dockSide] = Math.max(edges[Config.dockSide], dock.thickness + dock.edgeGap);
         return edges.map(value => Math.ceil(value));
@@ -53,39 +65,20 @@ FocusScope
         const selected = Config.screensShown(key);
         return screen && (selected.includes(screen.name) || !Quickshell.screens.some(output => selected.includes(output.name)));
     }
-    readonly property var bodyRects: mergedBodies()
+    function refreshRegions() { if (inputMask) inputMask.changed(); regionsChanged() }
+    onBarOffsetChanged: refreshRegions()
 
-    function mergedBodies()
+    PanelReveal { id: barVisibility; wanted: frame.barRevealWanted; delay: Theme.barHideDelay }
+
+    onFullscreenChanged:
     {
-        const empty = Qt.rect(0, 0, 0, 0);
-        const bodies = [
-            { rect: bar && (bar.inFrame || bar.islands) ? bar.bodyRect(0) : empty, side: Config.barSide, filled: bar ? bar.filled : false },
-            { rect: island ? island.bodyRect : empty, side: Config.barSide, filled: false },
-            { rect: bar && (bar.inFrame || bar.islands) ? bar.bodyRect(2) : empty, side: Config.barSide, filled: bar ? bar.filled : false },
-            { rect: dock ? dock.bodyRect : empty, side: Config.dockSide, filled: dock ? dock.filled : false }
-        ];
-        function covers(outer, inner)
-        {
-            return outer.width > 0 && outer.height > 0
-                && Math.max(0, outer.x) <= Math.max(0, inner.x) + 0.01
-                && Math.max(0, outer.y) <= Math.max(0, inner.y) + 0.01
-                && Math.min(frame.width, outer.x + outer.width) >= Math.min(frame.width, inner.x + inner.width) - 0.01
-                && Math.min(frame.height, outer.y + outer.height) >= Math.min(frame.height, inner.y + inner.height) - 0.01;
-        }
-        return bodies.map((body, index) =>
-        {
-            if (body.rect.width <= 0 || body.rect.height <= 0) return empty;
-            const covered = bodies.some((other, otherIndex) => otherIndex !== index && other.filled && other.side === body.side
-                && covers(other.rect, body.rect) && (!body.filled || !covers(body.rect, other.rect) || otherIndex < index));
-            return covered ? empty : body.rect;
-        });
+        if (!fullscreen) return;
+        barVisibility.revealed = false;
+        Qt.callLater(() => { if (fullscreen && menuHere) MenuState.close(); });
     }
-
-    function refreshRegions() { inputMask.changed(); regionsChanged() }
 
     Keys.onEscapePressed:
     {
-        SidebarState.close();
         MenuState.close();
         if (dock) dock.popupClose();
     }
@@ -94,35 +87,49 @@ FocusScope
     Region
     {
         id: inputMask
-        regions: [dismissInput, popupInput, frame.bar && !frame.fullscreen ? frame.bar.inputRegion : null, frame.dock && !frame.fullscreen ? frame.dock.inputRegion : null, frame.island ? frame.island.inputRegion : null,
-            leftView.inputRegion, rightView.inputRegion].filter(region => region !== null)
+        regions: [dismissInput, popupInput, barEdgeInput, frame.barInputActive ? frame.bar?.inputRegion ?? null : null,
+            frame.dock && !frame.fullscreen ? frame.dock.inputRegion : null].filter(region => region !== null)
     }
     Region { id: dismissInput; item: dismiss.visible ? dismiss : null }
     Region { id: popupInput; item: frame.popupHere ? popupSurface : null }
+    Region { id: barEdgeInput; item: edgeTrigger.visible ? edgeTrigger : null }
+
+    Item
+    {
+        id: edgeTrigger
+        readonly property bool horizontal: Config.barSide === Enums.EdgeTop || Config.barSide === Enums.EdgeBottom
+        visible: frame.barEdgeOccupied && Config.barHideAuto && !frame.fullscreen
+        width: horizontal ? frame.width : Theme.barReveal
+        height: horizontal ? Theme.barReveal : frame.height
+        x: Config.barSide === Enums.EdgeRight ? frame.width - width : 0
+        y: Config.barSide === Enums.EdgeBottom ? frame.height - height : 0
+        HoverHandler { id: edgeHover }
+    }
 
     FrameSurface
     {
         id: surface
         anchors.fill: parent
-        z: -1
+        // Siblings after this item paint above the frame. Negative stacking can
+        // disappear behind the transparent layer-shell surface on some backends.
+        z: 0
+        visible: frame.thickness > 0.001 || (frame.bar?.reveal ?? 0) > 0 || dockBody.width > 0
         materialEnabled: true
-        detachedBar: frame.bar?.islands ?? false
         thickness: frame.thickness
-        startBody: frame.bodyRects[0]
-        centerBody: frame.bodyRects[1]
-        endBody: frame.bodyRects[2]
-        centerPanel: frame.island ? frame.island.panelRect : Qt.rect(0, 0, 0, 0)
-        dockBody: frame.bodyRects[3]
+        startBody: frame.bar ? frame.bar.startBody : Qt.rect(0, 0, 0, 0)
+        centerBody: frame.bar?.centerBody ?? Qt.rect(0, 0, 0, 0)
+        endBody: frame.bar ? frame.bar.endBody : Qt.rect(0, 0, 0, 0)
+        centerPanel: frame.bar?.centerPanel ?? Qt.rect(0, 0, 0, 0)
+        dockBody: frame.dock ? frame.dock.bodyRect : Qt.rect(0, 0, 0, 0)
     }
     MouseArea
     {
         id: dismiss
         anchors.fill: parent
-        visible: frame.sidebarHere || frame.menuHere || (frame.dock && frame.dock.keyboardWanted) || false
+        visible: (frame.bar?.menuPanelVisible ?? false) || (frame.dock && frame.dock.keyboardWanted) || false
         acceptedButtons: Qt.AllButtons
         onClicked:
         {
-            SidebarState.close();
             MenuState.close();
             if (frame.dock) frame.dock.popupClose();
         }
@@ -131,48 +138,31 @@ FocusScope
     {
         id: barLoader
         anchors.fill: parent
-        active: frame.regularBar
-        sourceComponent: Bar { screen: frame.screen }
+        active: frame.barEdgeOccupied
+        sourceComponent: Bar
+        {
+            screen: frame.screen
+            fullscreen: frame.fullscreen
+            revealed: frame.barRevealed
+            reveal: frame.barReveal
+            offset: frame.barOffset
+            hasIsland: frame.islandHere
+        }
         onLoaded: frame.refreshRegions()
     }
     Loader
     {
         id: dockLoader
         anchors.fill: parent
-        active: Config.dockEnabled && frame.shown("dockScreens")
-        sourceComponent: Dock { screen: frame.screen; barHere: frame.regularBar }
-        onLoaded: frame.refreshRegions()
-    }
-    Loader
-    {
-        id: islandLoader
-        anchors.fill: parent
-        active: Config.islandEnabled && frame.screen !== null && frame.screen.name === ServiceIsland.primaryOutput
-        sourceComponent: OSD
+        active: Config.dockType !== Enums.PanelDisabled && (frame.preview || frame.shown("dockScreens"))
+        sourceComponent: Dock
         {
             screen: frame.screen
-            centerLimit: frame.bar ? frame.bar.centerLimit
-                : Math.max(32, (side === Enums.EdgeTop || side === Enums.EdgeBottom ? frame.width : frame.height) - Theme.frameThickness * 2 - 32)
+            preview: frame.preview
+            barDepth: frame.barEdgeOccupied && side === Config.barSide ? frame.barDepth : 0
         }
+        onLoaded: frame.refreshRegions()
     }
-    LeftSidebar
-    {
-        id: leftView
-        anchors.fill: parent
-        screen: frame.screen
-        barSide: frame.bar ? Config.barSide : -1
-        barThickness: frame.bar ? frame.bar.thickness + frame.bar.surfaceGap : 0
-    }
-    RightSidebar
-    {
-        id: rightView
-        anchors.fill: parent
-        screen: frame.screen
-        barSide: leftView.barSide
-        barThickness: leftView.barThickness
-    }
-
-    Connections { target: frame.bar; function onRegionsChanged() { frame.refreshRegions() } }
-
     Item { id: popupSurface; anchors.fill: parent; z: 1000 }
+
 }

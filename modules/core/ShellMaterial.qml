@@ -12,6 +12,8 @@ Singleton
         ? Enums.SurfaceBackdrop : Config.shellSurface
     readonly property bool blur: mode === Enums.SurfaceBlur
     readonly property bool backdrop: mode === Enums.SurfaceBackdrop
+    readonly property real blurStrength: Math.max(0, Math.min(1, Number(Config.surfaceBlurStrength) / 100))
+    readonly property real blurGrain: Math.max(0, Math.min(1, Number(Config.surfaceBlurGrain) / 100))
     readonly property url wallpaper: backdrop && ServiceAppearance.wallpaperImage
         ? ServiceAppearance.fileUrl(ServiceAppearance.wallpaperImage) : ""
     readonly property real preferredWallpaperStrength: Theme.light ? 0.16 : 0.26
@@ -20,12 +22,14 @@ Singleton
     function fill(base, frosted)
     {
         if (!frosted) return base;
-        return Qt.rgba(base.r, base.g, base.b, base.a * readableOpacity(base, 0.52));
+        const preferred = 0.62 - blurStrength * 0.28;
+        return Qt.rgba(base.r, base.g, base.b, base.a * readableOpacity(base, preferred));
     }
 
     function wallpaperStrength(base)
     {
-        return 1 - readableOpacity(base, 1 - preferredWallpaperStrength);
+        const preferred = preferredWallpaperStrength * (0.35 + blurStrength * 0.9);
+        return 1 - readableOpacity(base, 1 - preferred);
     }
 
     function readableOpacity(base, preferred)
@@ -57,6 +61,13 @@ Singleton
     {
         if (!window) return [];
         return blurClients.filter(client => client.surfaceWindow === window).map(client => client.blurMask);
+    }
+
+    function localCanvasFor(item)
+    {
+        for (let node = item.parent; node; node = node.parent)
+            if (node.localMaterialCanvas === true) return node;
+        return null;
     }
 
     function boundsIn(item, target)

@@ -1023,7 +1023,8 @@ ShellRoot {
             function check(ok) { if (!ok) throw new Error("Invalid configuration was accepted"); }
             try {
                 check(Config.scrollSpeed === 2.5 && Config.barSide === 0 && Config.dockPinned.length === 0);
-                check(Config.barType === 0 && Config.snapshot().barMenu === undefined && Config.screenshotMode === Enums.ScreenshotArea && Config.updateCheck === 4 && Config.equalizerStyle === 0);
+                check(Config.barType === Enums.BarCenter && Config.dockType === Enums.InFrame && Config.snapshot().barMenu === undefined
+                    && Config.screenshotMode === Enums.ScreenshotArea && Config.updateCheck === 4 && Config.equalizerStyle === 0);
                 check(!("controlStyle" in Config) && !("controlStyle" in Config.snapshot()));
                 check(!("themeScale" in Config) && !("themeBorder" in Config));
                 check(!("themeScale" in Config.snapshot()) && !("themeBorder" in Config.snapshot()));
@@ -1037,9 +1038,14 @@ ShellRoot {
                 check(Config.dockPinned !== null && Config.scrollSpeed === 2.5);
                 Config.set("scrollSpeed", 1.25);
                 Config.set("desktopEqualizerOpacity", 0.75);
-                Config.set("barType", Enums.Islands);
+                Config.set("barType", Enums.BarRight);
                 Config.set("screenshotMode", Enums.ScreenshotScreen);
-                check(Config.scrollSpeed === 1.25 && Config.desktopEqualizerOpacity === 0.75 && Config.barType === Enums.Islands && Config.screenshotMode === Enums.ScreenshotScreen);
+                check(Config.scrollSpeed === 1.25 && Config.desktopEqualizerOpacity === 0.75 && Config.barType === Enums.BarRight && Config.screenshotMode === Enums.ScreenshotScreen);
+                Config.applyObject({barType: 3, dockType: 1});
+                check(Config.barType === Enums.BarWaves && Config.dockType === Enums.OutFrame);
+                Config.applyObject({barEnabled: true, barType: 1, dockEnabled: false});
+                check(Config.barType === Enums.BarWaves && !Config.barAttach && Config.dockType === Enums.PanelDisabled
+                    && !("barEnabled" in Config.snapshot()) && !("dockEnabled" in Config.snapshot()));
                 events.persistence();
                 console.log("CONFIG_VALIDATION_PASSED");
             } catch (error) { console.error(error); }
@@ -1223,8 +1229,18 @@ ShellRoot {
         backend.keyboardLayouts=["English","Russian"];backend.keyboardLayoutIndex=0;
         const widgets=find(page,"barWidgets"),island=find(page,"barDynamicIsland");
         check(widgets && island && !widgets.expanded && !island.expanded,"Missing collapsed bar foldouts");
+        const styles=find(page,"barStyle");
+        const preview=find(page,"settingsShellPreview");
+        const position=find(page,"barPosition");
+        check(preview && styles?.options.length===5 && styles.options[0].value===Enums.BarCenter && styles.current===Enums.BarCenter,
+            "Bar style order or default is wrong");
+        check(preview.mapToItem(page,0,0).y<styles.mapToItem(page,0,0).y
+            && styles.mapToItem(page,0,0).y<position.mapToItem(page,0,0).y && !find(page,"barMonitors"),"Bar placement controls are wrong");
+        styles.selected(Enums.BarLeft);check(Config.barType===Enums.BarLeft,"Bar style did not apply");
         open(widgets);
-        const title=find(page,"barWindowTitle");reveal(title);title.forceActiveFocus();
+        const title=find(page,"barWindowTitle");check(!title.visible,"Compact bar offers window title settings");
+        styles.selected(Enums.BarFull);check(title.visible,"Full bar lost its window title settings");
+        reveal(title);title.forceActiveFocus();
         events.keyClick(Qt.Key_Home);check(windowTitle.title==="A song — Player","Window title mode failed");
         events.keyClick(Qt.Key_Right);check(windowTitle.title==="Player","Application name mode failed");
         events.keyClick(Qt.Key_Right);check(windowTitle.title==="org.example.Player","Application ID mode failed");
@@ -1248,8 +1264,8 @@ ShellRoot {
         check(ServiceMedia.playing&&ServiceIsland.view(output).kind==="","Media toggle affected playback or failed to hide the island");
         click(find(page,"island-islandMedia"));check(ServiceIsland.view(output).kind==="media","Media toggle did not restore playback status");
         const recording=find(page,"island-islandRecordingIndicator");click(recording);check(!Config.islandRecordingIndicator,"Recording toggle did not apply");
-        Config.set("barEnabled",false);
-        check(ServiceIsland.view(output).kind==="media","Disabling the bar also disabled the independent island");
+        Config.set("barType",Enums.BarWaves);
+        check(ServiceIsland.view(output).kind==="media","Switching layouts interrupted the island");
         for(const language of ["en","ru"]) {
             Config.set("shellLanguage",language);events.wait(50);
             check(title.options.length===3&&title.width<=page.width,"Localized window modes do not fit");

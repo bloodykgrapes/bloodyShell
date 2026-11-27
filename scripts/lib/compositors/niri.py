@@ -256,6 +256,93 @@ def mouse_config(text, changes, defaults=""):
     return text.rstrip() + "\n\ninput {" + mouse + "}\n"
 
 
+TOUCHPAD_DEFAULTS = dict(ignoreWhileTyping=True, ignoreExternalMouse=False)
+TOUCHPAD_NODES = {"ignoreWhileTyping": "dwt", "ignoreExternalMouse": "disabled-on-external-mouse"}
+
+
+def touchpad_nodes(text):
+    outer = kdl_block(text, "input")
+    block = kdl_block(text, "touchpad", outer) if outer else None
+    if not block:
+        return outer, None, []
+    start, end = block[1] + 1, block[2] - 1
+    mask, comments = kdl_mask(text), kdl_mask(text, strings=False)
+    nodes = []
+    for match in re.finditer(r"(?:^|(?<=[;\n{}]))[ \t]*(/-\s*)?([a-zA-Z][\w-]*)\b[^;\n{}]*", mask[start:end]):
+        prefix = mask[start:start + match.start(2)]
+        if match.group(1) or prefix.count("{") != prefix.count("}"):
+            continue
+        first = start + match.start(2)
+        last = start + match.end()
+        last = first + len(comments[first:last].rstrip())
+        nodes.append((match.group(2), first, last, comments[first + len(match.group(2)):last].strip()))
+    return outer, block, nodes
+
+
+def touchpad_settings(text, defaults=""):
+    values = dict(TOUCHPAD_DEFAULTS)
+    _, block, nodes = touchpad_nodes(text)
+    if block is None and defaults:
+        _, _, nodes = touchpad_nodes(defaults)
+    enabled = {name for name, _, _, value in nodes if value.split()[0:1] not in (["false"], ["0"])}
+    for key, name in TOUCHPAD_NODES.items():
+        values[key] = name in enabled
+    return values
+
+
+def touchpad_config(text, changes, defaults=""):
+    if not isinstance(changes, dict) or not changes or any(key not in TOUCHPAD_NODES for key in changes):
+        raise ValueError("Unknown touchpad setting")
+    if any(type(value) is not bool for value in changes.values()):
+        raise ValueError("Invalid touchpad setting")
+
+    outer, block, nodes = touchpad_nodes(text)
+    if block is None and defaults:
+        _, bundled, _ = touchpad_nodes(defaults)
+        if bundled:
+            inherited = "\n    " + defaults[bundled[0]:bundled[2]] + "\n"
+            text = (text[:outer[2] - 1] + inherited + text[outer[2] - 1:] if outer
+                    else text.rstrip() + "\n\ninput {" + inherited + "}\n")
+            outer, block, nodes = touchpad_nodes(text)
+
+    values = touchpad_settings(text) | changes
+    selected = {TOUCHPAD_NODES[key] for key in changes}
+    if block:
+        for name, first, last, _ in reversed(nodes):
+            if name not in selected:
+                continue
+            if text[last:last + 1] == ";":
+                last += 1
+            line_start = text.rfind("\n", 0, first) + 1
+            line_end = text.find("\n", last)
+            if line_end < 0:
+                line_end = len(text)
+            if not text[line_start:first].strip() and not text[last:line_end].strip():
+                first, last = line_start, min(line_end + 1, len(text))
+            text = text[:first] + text[last:]
+
+        outer, block, nodes = touchpad_nodes(text)
+        existing = {name for name, _, _, _ in nodes}
+        missing = [name for key, name in TOUCHPAD_NODES.items() if values[key] and name not in existing]
+        if missing:
+            close = block[2] - 1
+            line_start = text.rfind("\n", 0, close) + 1
+            indent = text[line_start:close]
+            if not indent.strip():
+                indent = "    "
+            return text[:line_start] + "".join(indent + "    " + name + "\n" for name in missing) + text[line_start:]
+        return text
+
+    lines = [name for key, name in TOUCHPAD_NODES.items() if values[key]]
+    if not lines:
+        return text
+    body = "\n".join("        " + line for line in lines)
+    touchpad = "\n    touchpad {\n" + body + "\n    }\n"
+    if outer:
+        return text[:outer[2] - 1] + touchpad + text[outer[2] - 1:]
+    return text.rstrip() + "\n\ninput {" + touchpad + "}\n"
+
+
 def cursor_block(text):
     return kdl_block(text, "cursor")
 
@@ -317,6 +404,206 @@ def outputs_config(text, content):
     return "\n\n".join(part for part in (text.rstrip(), *updates.values()) if part)
 
 
+def replace_named_block(text, name, replacement):
+    spans = list(kdl_blocks(text, name))
+    for start, _, end in reversed(spans):
+        text = text[:start] + text[end:]
+    if replacement:
+        text = text.rstrip() + "\n\n" + replacement + "\n"
+    return text
+
+
+def replace_global_window_rule(text, replacement):
+    for start, opening, end in reversed(list(kdl_blocks(text, "window-rule"))):
+        body = text[opening + 1:end - 1]
+        if re.search(r"(?m)^\s*match\b", kdl_mask(body)):
+            continue
+        text = text[:start] + text[end:]
+    return text.rstrip() + "\n\n" + replacement + "\n"
+
+
+def window_settings_config(text, changes):
+    import math
+    if not isinstance(changes, dict):
+        raise ValueError("Invalid window settings")
+
+    bools = ("centerFocused", "centerSingle", "clip", "animate", "blurBehind")
+    integers = {"gaps": (0, 64), "radius": (0, 20), "borderMode": (0, 2), "borderWidth": (1, 8), "animationStyle": (0, 2)}
+    numbers = {"overviewSize": (0.25, 1.5), "focusOpacity": (0.5, 1.0),
+               "unfocusedOpacity": (0.5, 1.0), "animationSpeed": (0.25, 2.0)}
+    colors = ("borderColor", "focusColor")
+
+    values = {}
+    for key, value in changes.items():
+        if key in bools:
+            if not isinstance(value, bool): raise ValueError("Invalid window setting")
+            values[key] = value
+        elif key in integers:
+            low, high = integers[key]
+            if type(value) is not int or not low <= value <= high: raise ValueError("Invalid window setting")
+            values[key] = value
+        elif key in numbers:
+            low, high = numbers[key]
+            if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
+                raise ValueError("Invalid window setting")
+            values[key] = float(value)
+        elif key in colors:
+            if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?", value):
+                raise ValueError("Invalid window color")
+            values[key] = value
+        else:
+            raise ValueError("Unknown window setting")
+
+    def get(key, fallback):
+        return values.get(key, fallback)
+
+    mode = get("borderMode", 0)
+    width = get("borderWidth", 2)
+    border_color = get("borderColor", "#ffffff")
+    focus_color = get("focusColor", "#ffffff")
+    centered = get("centerFocused", False) or get("centerSingle", False)
+    focus_lines = ["        off"] if mode == 0 else [
+        "        width " + str(width),
+        '        active-color "' + focus_color + '"',
+        '        inactive-color "' + focus_color + '"'
+    ]
+    border_lines = ["        off"] if mode != 2 else [
+        "        width " + str(width),
+        '        active-color "' + border_color + '"',
+        '        inactive-color "' + border_color + '"',
+        '        urgent-color "' + border_color + '"'
+    ]
+    layout = "\n".join([
+        "layout {",
+        "    gaps " + str(get("gaps", 10)),
+        '    center-focused-column "' + ("always" if centered else "never") + '"',
+        "    focus-ring {", *focus_lines, "    }",
+        "    border {", *border_lines, "    }",
+        "}"
+    ])
+    overview = "overview {\n    zoom " + str(round(get("overviewSize", 0.75), 3)) + "\n}"
+
+    style, animate = get("animationStyle", 0), get("animate", True)
+    if not animate or style == 2:
+        animations = "animations {\n    off\n}"
+    else:
+        speed = get("animationSpeed", 1.0)
+        slowdown = round(1.0 / speed, 3)
+        if style == 1:
+            open_lines = ["    window-open {", "        duration-ms 340", '        curve "cubic-bezier" 0.18 0.92 0.24 1.0', "    }"]
+            close_lines = ["    window-close {", "        duration-ms 220", '        curve "cubic-bezier" 0.4 0.0 0.7 0.2', "    }"]
+            movement = "    window-movement {\n        spring damping-ratio=0.62 stiffness=620 epsilon=0.0001\n    }"
+            resize = "    window-resize {\n        spring damping-ratio=0.72 stiffness=650 epsilon=0.0001\n    }"
+        else:
+            open_lines = ["    window-open {", "        duration-ms 240", '        curve "cubic-bezier" 0.05 0.7 0.1 1.0', "    }"]
+            close_lines = ["    window-close {", "        duration-ms 170", '        curve "cubic-bezier" 0.2 0.0 0.0 1.0', "    }"]
+            movement = "    window-movement {\n        spring damping-ratio=0.92 stiffness=850 epsilon=0.0001\n    }"
+            resize = "    window-resize {\n        spring damping-ratio=1.0 stiffness=850 epsilon=0.0001\n    }"
+        animations = "\n".join(["animations {", "    slowdown " + str(slowdown), *open_lines, *close_lines, movement, resize, "}"])
+
+    opacity = round(get("unfocusedOpacity", 1.0), 3)
+    focus_opacity = round(get("focusOpacity", 1.0), 3)
+    rule = "\n".join([
+        "window-rule {",
+        "    geometry-corner-radius " + str(get("radius", 16)),
+        "    clip-to-geometry " + ("true" if get("clip", True) else "false"),
+        "    opacity " + str(opacity),
+        "    draw-border-with-background false",
+        "}",
+        "window-rule {",
+        "    match is-active=true",
+        "    opacity " + str(focus_opacity),
+        "}"
+    ])
+
+    blur = "\n".join([
+        "blur {",
+        "    passes 3",
+        "    offset 3.3",
+        "    noise 0.02",
+        "    saturation 1.3",
+        "}"
+    ]) if get("blurBehind", True) else ""
+
+    text = replace_named_block(text, "layout", layout)
+    text = replace_named_block(text, "overview", overview)
+    text = replace_named_block(text, "animations", animations)
+    text = replace_named_block(text, "blur", blur)
+    return replace_global_window_rule(text, rule)
+
+
+def pointer_settings_config(text, changes):
+    if not isinstance(changes, dict):
+        raise ValueError("Invalid pointer settings")
+    allowed = ("focusFollowsPointer", "pointerJumpsToFocus")
+    values = {}
+    for key, value in changes.items():
+        if key not in allowed or not isinstance(value, bool):
+            raise ValueError("Invalid pointer setting")
+        values[key] = value
+
+    names = ("focus-follows-mouse", "warp-mouse-to-focus")
+    outer = kdl_block(text, "input")
+    if outer:
+        start, opening, close = outer
+        body_start, body_end = opening + 1, close - 1
+        mask = kdl_mask(text)
+        skeleton = kdl_mask(text, strings=False)
+        nodes = []
+        pattern = r"(?:^|(?<=[;\n{}]))[ \t]*(/-\s*)?([a-zA-Z][\w-]*)\b"
+        for match in re.finditer(pattern, skeleton[body_start:body_end]):
+            prefix = skeleton[body_start:body_start + match.start(2)]
+            if match.group(1) or prefix.count("{") != prefix.count("}"):
+                continue
+            first = body_start + match.start(2)
+            depth, last = 0, first
+            while last < body_end:
+                char = skeleton[last]
+                if char == "{": depth += 1
+                elif char == "}":
+                    depth -= 1
+                    if depth <= 0: last += 1; break
+                elif char in ";\n" and depth == 0:
+                    last += 1
+                    break
+                last += 1
+            if mask[first:first + len(match.group(2))] == match.group(2):
+                nodes.append((match.group(2), first, last))
+        for name, first, last in reversed(nodes):
+            if name not in names:
+                continue
+            line_start = text.rfind("\n", 0, first) + 1
+            line_end = text.find("\n", last)
+            if line_end < 0: line_end = len(text)
+            if not text[line_start:first].strip(): first = line_start
+            if not text[last:line_end].strip(): last = min(line_end + 1, len(text))
+            text = text[:first] + text[last:]
+
+    lines = []
+    if values.get("focusFollowsPointer", False):
+        lines.append('focus-follows-mouse max-scroll-amount="0%"')
+    if values.get("pointerJumpsToFocus", False):
+        lines.append("warp-mouse-to-focus")
+    if not lines:
+        return text
+
+    outer = kdl_block(text, "input")
+    if outer:
+        start, opening, close = outer
+        prefix = text[text.rfind("\n", 0, start) + 1:start]
+        indent = prefix if not prefix.strip() else "    "
+        child = indent + "    "
+        closing_line = text.rfind("\n", 0, close - 1) + 1
+        if not text[closing_line:close - 1].strip():
+            added = "".join(child + line + "\n" for line in lines)
+            return text[:closing_line] + added + text[closing_line:]
+        added = "\n" + "\n".join(child + line for line in lines) + "\n" + indent
+        return text[:close - 1] + added + text[close - 1:]
+
+    body = "\n".join("    " + line for line in lines)
+    return text.rstrip() + "\n\ninput {\n" + body + "\n}\n"
+
+
 def configuration_main():
     def terminate(signum, frame):
         raise SystemExit(128 + signum)
@@ -337,14 +624,35 @@ def configuration_main():
             defaults = default_file.read_text() if default_file.is_file() else ""
             values = mouse_settings(current, defaults)
         print(json.dumps(dict(available=available, mouse=values)))
+    elif sys.argv[1:] == ["touchpad-read"] or len(sys.argv) == 3 and sys.argv[1] == "touchpad":
+        available = directory.is_dir() and (directory.parent / "config.kdl").is_file() and shutil.which("niri") is not None
+        default_file = directory / "06-input.kdl"
+        if sys.argv[1] == "touchpad":
+            if not available:
+                raise ValueError("Touchpad settings are unavailable: niri configuration is not installed")
+            def edit(current):
+                defaults = default_file.read_text() if default_file.is_file() else ""
+                return touchpad_config(current, json.loads(sys.argv[2]), defaults)
+            values = touchpad_settings(niri_write(directory, edit))
+        else:
+            current = input_file.read_text() if input_file.is_file() else ""
+            defaults = default_file.read_text() if default_file.is_file() else ""
+            values = touchpad_settings(current, defaults)
+        print(json.dumps(dict(available=available, touchpad=values)))
     elif len(sys.argv) == 3 and sys.argv[1] == "keyboard":
         niri_write(directory, lambda current: keyboard_config(current, sys.argv[2]))
     elif len(sys.argv) == 3 and sys.argv[1] == "outputs":
         niri_write(directory, lambda current: outputs_config(current, sys.argv[2]))
     elif len(sys.argv) == 4 and sys.argv[1] == "cursor":
         niri_write(directory, lambda current: cursor_config(current, sys.argv[2], int(sys.argv[3])))
+    elif len(sys.argv) == 3 and sys.argv[1] == "windows":
+        settings = json.loads(sys.argv[2])
+        niri_write(directory, lambda current: window_settings_config(current, settings))
+    elif len(sys.argv) == 3 and sys.argv[1] == "pointer":
+        settings = json.loads(sys.argv[2])
+        niri_write(directory, lambda current: pointer_settings_config(current, settings))
     else:
-        raise ValueError("Usage: compositor config niri outputs BLOCKS | cursor THEME SIZE | keyboard BLOCK | mouse-read | mouse JSON")
+        raise ValueError("Usage: compositor config niri outputs BLOCKS | cursor THEME SIZE | keyboard BLOCK | mouse-read | mouse JSON | touchpad-read | touchpad JSON | windows JSON | pointer JSON")
     return 0
 
 

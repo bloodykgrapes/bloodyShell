@@ -174,7 +174,7 @@ ShellRoot {
             }
             function exercise() {
                 OverlayState.show("settings");
-                OverlayState.settingsPage=Registry.settings.findIndex(page=>page.id==="components");
+                OverlayState.settingsPage=Registry.settings.findIndex(page=>page.id==="sound");
                 until(()=>find(settings,"easyEffectsSection")!==null,"Components page has no EasyEffects section");
                 section=find(settings,"easyEffectsSection");until(()=>section.scanned&&!section.busy,"Detection did not finish");
                 check(!section.expanded&&!section.state.installed,"Optional section did not start collapsed");

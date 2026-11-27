@@ -21,7 +21,7 @@ Item
         id: fill
         objectName: "floatingPanelFill"
         anchors.fill: parent
-        radius: Theme.barRadius
+        radius: Theme.menuRadius
         baseColor: Theme.frameColor
         border.width: Theme.panelBorderWidth
         border.color: Theme.colorPanelEdge

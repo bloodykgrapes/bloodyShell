@@ -13,7 +13,8 @@ Singleton
 
     readonly property string appearance: JSON.stringify({
         initialized: Config.initialized,
-        animations: Config.themeAnimations,
+        animations: !Config.animationsEnabled ? Enums.AnimationsDisabled
+            : Config.animationsFluid ? Enums.AnimationsFluid : Enums.AnimationsStandard,
         language: Config.shellLanguage,
         clock24: Config.barWidgetClock24,
         avatar: ServiceUser.avatar,

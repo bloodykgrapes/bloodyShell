@@ -15,6 +15,7 @@ Widget
 
     WidgetButton
     {
+        bubble: Registry.usesStatusBubbles(Config.barType)
         onClicked: ServiceUpdate.showPage()
 
         Rectangle

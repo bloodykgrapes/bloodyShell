@@ -20,8 +20,8 @@ Singleton
     property string switchOption: ""
     property string capsOption: ""
     property var    otherOptions: []
-    property int    repeatDelay: 600
-    property int    repeatRate: 25
+    property int    repeatDelay: 350
+    property int    repeatRate: 30
     property string trackLayout: "global"
     property bool   numlock: false
 

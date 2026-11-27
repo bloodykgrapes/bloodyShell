@@ -13,8 +13,6 @@ SettingsPage
     title: Tr.tr("common.updates")
     subtitle: Tr.tr("settings.updates.description")
 
-    Component.onDestruction: { ServiceDependencies.pending = null; ServiceResources.pending = null; }
-
     property double now: Date.now()
     Timer { interval: 30000; running: pageUpdates.active; repeat: true; onTriggered: pageUpdates.now = Date.now() }
 
@@ -23,55 +21,6 @@ SettingsPage
         : phase === "available" || phase === "installing" ? Theme.colorAttention
         : phase === "dev" ? Theme.colorWarning
         : Theme.text3
-
-    function resourceTitle(entry)
-    {
-        if (!entry) return "";
-        if (entry.kind === "compositor") return Tr.tr("settings.about.compositor");
-        if (entry.kind === "dots") return Tr.tr("settings.imports.dots");
-        if (entry.kind === "greeter") return Tr.tr("settings.imports.greeter");
-        return Tr.tr("common.wallpapers");
-    }
-
-    SettingsConfirmation
-    {
-        objectName: "resourceConfirmation"
-        readonly property var resource: ServiceResources.pending
-        readonly property bool clearing: resource !== null && resource.action === "clear"
-        readonly property bool direct: resource !== null && resource.kind === "wallpapers"
-        host: pageUpdates
-        visible: pageUpdates.active && ServiceResources.pending !== null
-        title: clearing ? Tr.tr("settings.imports.clear") + " · " + pageUpdates.resourceTitle(resource)
-            : Tr.tr("settings.imports.confirm") + " · " + pageUpdates.resourceTitle(ServiceResources.pending)
-        description: !ServiceResources.pending ? ""
-            : clearing ? Tr.tr("settings.imports.confirmClearGreeter")
-            : ServiceResources.pending.kind === "greeter" ? Tr.tr("settings.imports.confirmGreeter")
-            : ServiceResources.pending.kind === "compositor" ? Tr.tr("settings.imports.confirmNiri").arg(ServiceUpdate.pretty(ServiceResources.pending.destination))
-            : ServiceResources.pending.kind === "dots" ? Tr.tr("settings.imports.confirmDots").arg((ServiceResources.pending.programs || []).join(", "))
-            : Tr.tr("settings.imports.confirmWallpapers").arg(ServiceUpdate.pretty(ServiceResources.pending.destination))
-        errorText: ServiceResources.error
-        acceptText: direct ? Tr.tr(clearing ? "settings.imports.clear" : "settings.imports.import") : Tr.tr("settings.dependencies.continueInTerminal")
-        danger: clearing
-        acceptEnabled: !ServiceResources.busy && !ServiceUpdate.busy
-        onAccepted: ServiceResources.apply()
-        onRejected: ServiceResources.pending = null
-    }
-
-    SettingsConfirmation
-    {
-        objectName: "dependencyConfirmation"
-        host: pageUpdates
-        visible: pageUpdates.active && ServiceDependencies.pending !== null
-        title: Tr.tr("settings.dependencies.confirm")
-        description: ServiceDependencies.pending
-            ? (ServiceDependencies.pending.remove ? Tr.tr("settings.dependencies.confirmRemove") : Tr.tr("settings.dependencies.confirmInstall")).arg(ServiceDependencies.pending.name) : ""
-        errorText: ServiceDependencies.actionError
-        acceptText: Tr.tr("settings.dependencies.continueInTerminal")
-        acceptEnabled: ServiceDependencies.pending !== null && !ServiceDependencies.checking(ServiceDependencies.pending.required) && ServiceDependencies.operation === ""
-        danger: ServiceDependencies.pending !== null && ServiceDependencies.pending.remove
-        onAccepted: ServiceDependencies.apply()
-        onRejected: ServiceDependencies.pending = null
-    }
 
     SettingsRowGroup
     {
@@ -337,155 +286,18 @@ SettingsPage
         }
     }
 
-    SettingsDisclosure
-    {
-        objectName: "resourceImports"
-        title: Tr.tr("settings.imports.title")
-        description: Tr.tr("settings.imports.description")
-        icon: Icon.importFiles
-        summary: ServiceResources.busy ? Tr.tr("common.working") : ""
-        onExpandedChanged:
-        {
-            if (expanded) ServiceResources.refresh();
-            else ServiceResources.pending = null;
-        }
-
-        SettingsRow
-        {
-            visible: ServiceResources.error !== ""
-            label: Tr.tr("common.error")
-            description: ServiceResources.error
-            Button
-            {
-                text: Tr.tr("common.refresh")
-                enabled: !ServiceResources.busy && !ServiceUpdate.busy && ServiceResources.pending === null
-                onClicked: ServiceResources.refresh()
-            }
-        }
-        Repeater
-        {
-            model: ServiceResources.entries
-            SettingsRow
-            {
-                id: resourceRow
-                required property var modelData
-                objectName: "importRow-" + modelData.id
-                label: pageUpdates.resourceTitle(modelData)
-                icon: modelData.kind === "greeter" ? Icon.loginScreen
-                    : modelData.kind === "compositor" ? Icon.compositor
-                    : modelData.kind === "dots" ? Icon.configuration : Icon.wallpapers
-                description: resourceRow.modelData.kind === "greeter" ? Tr.tr("settings.imports.greeterHint")
-                    : resourceRow.modelData.kind === "compositor" ? Tr.tr("settings.imports.niriHint").arg(ServiceUpdate.pretty(resourceRow.modelData.destination))
-                    : resourceRow.modelData.kind === "dots" ? Tr.tr("settings.imports.dotsHint")
-                    : Tr.tr("settings.imports.wallpapersHint").arg(ServiceUpdate.pretty(resourceRow.modelData.destination))
-                Row
-                {
-                    spacing: 8
-                    Button
-                    {
-                        objectName: "clearResource-" + resourceRow.modelData.id
-                        visible: resourceRow.modelData.kind === "greeter"
-                        text: ServiceResources.operation === resourceRow.modelData.id && ServiceResources.operationAction === "clear" ? Tr.tr("common.working") : Tr.tr("settings.imports.clear")
-                        danger: true
-                        enabled: resourceRow.modelData.installed === true && !ServiceResources.busy && !ServiceUpdate.busy && ServiceResources.pending === null
-                        onClicked: ServiceResources.request(resourceRow.modelData.id, "clear")
-                    }
-                    Button
-                    {
-                        objectName: "importResource-" + resourceRow.modelData.id
-                        text: ServiceResources.operation === resourceRow.modelData.id && ServiceResources.operationAction === "import" ? Tr.tr("common.working") : Tr.tr("settings.imports.import")
-                        enabled: !ServiceResources.busy && !ServiceUpdate.busy && ServiceResources.pending === null
-                            && resourceRow.modelData.available === true
-                        onClicked: ServiceResources.request(resourceRow.modelData.id)
-                    }
-                }
-            }
-        }
-    }
-
-    PackageList
-    {
-        objectName: "requiredDependencies"
-        title: Tr.tr("settings.dependencies.title")
-        description: Tr.tr("settings.dependencies.description")
-        requiredPackages: true
-    }
-
-    PackageList
-    {
-        objectName: "optionalPackages"
-        title: Tr.tr("settings.packages.title")
-        description: Tr.tr("settings.packages.description")
-        requiredPackages: false
-    }
-
-    component PackageList: SettingsDisclosure
-    {
-        id: packageList
-
-        required property bool requiredPackages
-        readonly property var entries: requiredPackages ? ServiceDependencies.dependencies
-            : ServiceDependencies.packages
-
-        readonly property bool checking: ServiceDependencies.checking(requiredPackages)
-        readonly property string error: ServiceDependencies.listError(requiredPackages)
-
-        icon: Icon.packages
-        summary: checking ? Tr.tr("common.checking")
-            : entries.length > 0 ? entries.filter(entry => entry.installed).length + " / " + entries.length : ""
-        onExpandedChanged:
-        {
-            if (expanded) ServiceDependencies.refresh(requiredPackages);
-            else if (ServiceDependencies.pending && ServiceDependencies.pending.required === requiredPackages)
-                ServiceDependencies.pending = null;
-        }
-
-        SettingsRow
-        {
-            visible: packageList.error !== ""
-            label: Tr.tr("settings.dependencies.error")
-            description: packageList.error
-            Button { text: Tr.tr("common.refresh"); onClicked: ServiceDependencies.refresh(packageList.requiredPackages); enabled: !packageList.checking && ServiceDependencies.operation === "" }
-        }
-        Repeater
-        {
-            model: packageList.entries
-            SettingsRow
-            {
-                id: dependencyRow
-                required property var modelData
-                objectName: "packageRow-" + modelData.tool
-                label: modelData.packages.length ? modelData.packages.join(", ") : modelData.tool
-                description: packageList.requiredPackages ? "" : ServiceDependencies.description(modelData)
-                valueText: dependencyRow.modelData.installed ? Tr.tr("common.installed") : Tr.tr("common.notInstalled")
-                Button
-                {
-                    objectName: "packageAction-" + dependencyRow.modelData.tool
-                    visible: !dependencyRow.modelData.installed || (!packageList.requiredPackages && dependencyRow.modelData.removable)
-                    text: ServiceDependencies.operation === dependencyRow.modelData.tool ? Tr.tr("common.working")
-                        : !dependencyRow.modelData.supported ? Tr.tr("settings.dependencies.manual")
-                        : dependencyRow.modelData.installed ? Tr.tr("common.remove") : Tr.tr("common.install")
-                    danger: dependencyRow.modelData.installed
-                    enabled: dependencyRow.modelData.supported && !packageList.checking && ServiceDependencies.operation === "" && ServiceDependencies.pending === null
-                    onClicked: ServiceDependencies.request(dependencyRow.modelData.tool, dependencyRow.modelData.installed)
-                }
-            }
-        }
-    }
-
-    SettingsDisclosure
+    SettingsRowGroup
     {
         id: currentChangelog
         objectName: "currentChangelog"
         title: Tr.tr("settings.updates.changelog")
         summary: ServiceUpdate.version
-        icon: Icon.update
-        onExpandedChanged: if (expanded) ServiceUpdate.loadCurrentRelease()
+        Component.onCompleted: ServiceUpdate.loadCurrentRelease()
 
         SettingsRow
         {
             objectName: "currentChangelogStatus"
-            visible: currentChangelog.expanded && !ServiceUpdate.currentNotes
+            visible: !ServiceUpdate.currentNotes
             label: ServiceUpdate.currentNotesLoading ? Tr.tr("common.loading")
                 : ServiceUpdate.currentNotesMissing ? Tr.tr("settings.updates.unpublished")
                 : ServiceUpdate.currentNotesError ? Tr.tr("common.error") : Tr.tr("settings.updates.noReleaseNotes")
@@ -503,7 +315,7 @@ SettingsPage
         Loader
         {
             width: parent.width
-            active: currentChangelog.expanded && ServiceUpdate.currentNotes !== null
+            active: ServiceUpdate.currentNotes !== null
             sourceComponent: SettingsReleaseCard
             {
                 width: parent ? parent.width : 400

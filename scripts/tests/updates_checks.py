@@ -95,7 +95,7 @@ ShellRoot {
         Item {
             anchors.fill: parent
             readonly property alias popupLayer: popupLayer
-            Loader { id: pageLoader; anchors.fill: parent; sourceComponent: PageUpdates {} }
+            Loader { id: pageLoader; anchors.fill: parent; sourceComponent: PageHub {} }
             Button { id: background; x: 2; y: 2; text: "Background"; onClicked: tests.backgroundClicks++; }
             Item { id: popupLayer; anchors.fill: parent; z: 1000 }
         }
@@ -108,10 +108,11 @@ ShellRoot {
             try {
                 const page = pageLoader.item;
                 const imports = page ? tests.find(page, "resourceImports") : null;
+                const downloads = page ? tests.find(page, "resourceDownloads") : null;
                 const dialog = page ? tests.find(page, "resourceConfirmation") : null;
                 if (tests.phase === 0) {
                     if (!Config.initialized || !page || !page.active) return;
-                    imports.expanded = true; tests.phase++;
+                    imports.expanded = true; downloads.expanded = true; tests.phase++;
                 } else if (tests.phase === 1) {
                     if (ServiceResources.busy || ServiceResources.entries.length !== 4) return;
                     if (!tests.availabilityChecked) {
@@ -124,7 +125,7 @@ ShellRoot {
                     tests.check(ids.map(id=>tests.find(page, "importRow-"+id).label).join(",") === "Login screen,Compositor,Configs,Wallpapers", "Import labels are incorrect");
                     for (const id of ids) {
                         const row=tests.find(page,"importRow-"+id), clear=tests.find(row,"clearResource-"+id), button=tests.find(row,"importResource-"+id);
-                        tests.check(button.text==="Import" && clear.visible===(id === "greeter"),"Import row has the wrong actions");
+                        tests.check(button.text===(id==="wallpapers"?"Download":"Import") && clear.visible===(id === "greeter"),"Import row has the wrong actions");
                         if(clear.visible)tests.check(clear.x<button.x && clear.enabled,"Clear does not appear before Import");
                     }
                     tests.find(imports, "importResource-compositor").clicked(); tests.phase++;
@@ -168,7 +169,7 @@ ShellRoot {
                     events.keyClick(Qt.Key_Escape); tests.phase++;
                 } else if (tests.phase === 9) {
                     if (ServiceDependencies.pending !== null) return;
-                    tests.find(imports, "importResource-wallpapers").clicked(); tests.phase++;
+                    tests.find(downloads, "importResource-wallpapers").clicked(); tests.phase++;
                 } else if (tests.phase === 10) {
                     if (!dialog.opened) return;
                     tests.click(tests.find(dialog.contentItem, "acceptConfirmation"));
@@ -203,7 +204,7 @@ ShellRoot {
                     Qt.quit();
                 } else if (tests.phase === 16) {
                     for (const id of ["greeter", "compositor", "dots", "wallpapers"]) {
-                        tests.check(!tests.find(imports,"importResource-"+id).enabled,"Unavailable resource is enabled: "+id);
+                        tests.check(!tests.find(page,"importResource-"+id).enabled,"Unavailable resource is enabled: "+id);
                         ServiceResources.request(id);
                         tests.check(ServiceResources.pending === null,"Unavailable resource accepted Import: "+id);
                     }
@@ -273,7 +274,7 @@ ShellRoot {
     FileView { id: control; path:Quickshell.env("TEST_SCREENSHOT_BASE")+"/package-status.json"; blockLoading:true; blockWrites:true }
     Window {
         id: window; width:900; height:700; visible:true
-        PageUpdates { id: page; anchors.fill:parent }
+        PageHub { id: page; anchors.fill:parent }
         TestCase {
             id: events; when:false; optional:true
             function check(ok,message) { if(!ok) throw new Error(message); }

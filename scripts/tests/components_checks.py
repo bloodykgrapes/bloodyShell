@@ -89,25 +89,28 @@ ShellRoot {
             function picker() { const layer=findChild(overlay,"stackedOverlayPage"); return layer && layer.item ? findChild(layer.item,"wallpapersContent") : null; }
             function exercise() {
                 until(()=>Config.initialized,"Settings did not load");
-                const entry=Registry.settings.findIndex(page=>page.id==="components");
-                check(entry>=0,"Components page is missing");
-                OverlayState.settingsPage=entry; OverlayState.show("settings");
-                until(()=>overlay.testPage.item && findChild(overlay.testPage.item,"loginWallpaperPreview") && ServiceGreeter.installed && !ServiceGreeter.wallpaperBusy,"Components did not load login settings");
-                const original=overlay.testPage.item;
-                const screenshots=findChild(original,"screenshotOptions"), login=findChild(original,"loginOptions");
-                const keyboard=findChild(original,"virtualKeyboardOptions");
+                OverlayState.show("settings");
+                function selectPage(id, control) {
+                    const index=Registry.settings.findIndex(page=>page.id===id);
+                    check(index>=0,"Missing settings page "+id);
+                    OverlayState.settingsPage=index;
+                    until(()=>overlay.testPage.item && findChild(overlay.testPage.item,control),"Page did not load: "+id);
+                    return findChild(overlay.testPage.item,control);
+                }
+                const keyboard=selectPage("devices", "virtualKeyboardOptions");
                 const mode=findChild(keyboard,"virtualKeyboardMode");
                 check(keyboard && mode && mode.options.length===2,"Virtual keyboard does not have a segmented mode row");
                 keyboard.expanded=true;
                 mode.selected(false);
                 check(!Config.virtualKeyboardEnabled,"Disabled mode did not save");
-                const visualizer=findChild(original,"visualizerOptions");
+                const visualizer=selectPage("desktop", "visualizerOptions");
                 check(visualizer && visualizer.title===Tr.tr("settings.components.visualizer"),"Visualizer foldout is missing");
                 visualizer.expanded=true;
-                findChild(original,"equalizerStyle-"+Enums.EqualizerWaves).clicked();
-                findChild(original,"visualizerOpacity").moved(0.4);
+                findChild(visualizer,"equalizerStyle-"+Enums.EqualizerWaves).clicked();
+                findChild(visualizer,"visualizerOpacity").moved(0.4);
                 check(Config.equalizerStyle===Enums.EqualizerWaves && Config.desktopEqualizerOpacity===0.4,"Visualizer controls did not save");
-                const boot=findChild(original,"plymouthSection");
+                const boot=selectPage("login", "plymouthSection");
+                until(()=>ServiceGreeter.installed && !ServiceGreeter.wallpaperBusy,"Login settings did not load");
                 boot.expanded=true;
                 until(()=>!ServicePlymouth.busy && findChild(boot,"plymouthTheme-aurora"),"Plymouth theme cards did not load");
                 const currentTheme=findChild(boot,"plymouthTheme-current"), aurora=findChild(boot,"plymouthTheme-aurora");
@@ -122,7 +125,7 @@ ShellRoot {
                 let viewport=aurora.parent;
                 while(viewport && typeof viewport.revealItem!=="function") viewport=viewport.parent;
                 check(viewport!==null,"Plymouth cards are outside the settings viewport");
-                window.height=680; wait(30);
+                window.height=540; wait(30);
                 check(applyBoot.mapToItem(viewport,0,0).y+applyBoot.height>viewport.height,"Apply fixture is already in view");
                 aurora.clicked();
                 check(aurora.selected && !currentTheme.selected && ServicePlymouth.state.current==="current" && applyBoot.visible && applyBoot.enabled,"Theme card did not show its Apply button");
@@ -150,8 +153,9 @@ ShellRoot {
                 check(!currentTheme.selected && !currentMark.visible && !aurora.selected && !auroraMark.visible,"Picker marked a fallback theme as current");
                 window.height=768;
                 boot.expanded=false;
-                screenshots.expanded=true; login.expanded=true; wait(20);
-                const path=findChild(original,"screenshotsPath"), action=findChild(original,"screenshotsAction"), instant=findChild(original,"screenshotsInstantly");
+                const screenshots=selectPage("capture","screenshotOptions");
+                screenshots.expanded=true; wait(20);
+                const path=findChild(screenshots,"screenshotsPath"), action=findChild(screenshots,"screenshotsAction"), instant=findChild(screenshots,"screenshotsInstantly");
                 check(Config.screenshotsAction==="copy" && !Config.screenshotsInstantly,"Screenshot defaults are incorrect");
                 check(path.text===Config.screenshotsDefault() && path.text.endsWith("/Screenshots"),"Screenshot field does not contain its default directory");
                 path.text=""; path.editingFinished();
@@ -160,7 +164,10 @@ ShellRoot {
                 check(Config.screenshotsPath==="~/Pictures/My captures" && Config.screenshotsAction==="save" && Config.screenshotsInstantly,"Screenshot settings did not apply");
                 Config.set("screenshotsAction","invalid"); Config.set("screenshotsPath","relative/path");
                 check(Config.screenshotsAction==="save" && Config.screenshotsPath==="~/Pictures/My captures","Invalid screenshot defaults were accepted");
-                const preview=findChild(original,"loginWallpaperPreview"), desktop=Config.wallpaperCurrent;
+                const login=selectPage("login","loginOptions");
+                login.expanded=true; wait(30);
+                const original=overlay.testPage.item;
+                const preview=findChild(login,"loginWallpaperPreview"), desktop=Config.wallpaperCurrent;
                 preview.clicked();
                 until(()=>picker() && !picker().loading && picker().images.length===2,"Login picker did not exclude videos");
                 check(picker().loginWallpaper && OverlayState.wallpaperTarget==="login","Picker is not targeting the login screen");
@@ -177,7 +184,7 @@ ShellRoot {
                 deny.setText("no"); deny.waitForJob(); ServiceGreeter.writable=true; picker().apply(0);
                 until(()=>OverlayState.current==="settings" && OverlayState.stacked==="","Login wallpaper retry failed");
                 check(Config.wallpaperCurrent===selected && ServiceGreeter.selection.endsWith("a.png"),"Retry changed the desktop wallpaper");
-                check(overlay.testPage.item===original && screenshots.expanded && login.expanded,"Components state was lost");
+                check(overlay.testPage.item===original && login.expanded,"Components state was lost");
                 console.log("COMPONENTS_PASSED Plymouth preview, authorization and apply, screenshot defaults, and shared login wallpaper"); Qt.quit();
             }
         }

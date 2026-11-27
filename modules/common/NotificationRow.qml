@@ -25,6 +25,7 @@ Common.InteractiveControl
     readonly property bool critical: n ? n.urgency === NotificationUrgency.Critical : false
     readonly property bool highlighted: enabled && (hovered || visualFocus)
     property bool leaving: false
+    property var pendingDismissal: null
 
     width: parent ? parent.width : 300
     implicitHeight: Math.max(grouped ? 48 : 56, content.implicitHeight + (grouped ? 20 : 24))
@@ -34,8 +35,9 @@ Common.InteractiveControl
     function activate()
     {
         if (!n || leaving) return;
-        ServiceNotifications.activate(n);
+        const notification = n;
         activated();
+        ServiceNotifications.activate(notification);
     }
     Keys.onSpacePressed: event => { if (!event.isAutoRepeat) activate(); event.accepted = true }
     Keys.onReturnPressed: event => { if (!event.isAutoRepeat) activate(); event.accepted = true }
@@ -48,12 +50,13 @@ Common.InteractiveControl
 
     property real collapse: 1
     height: implicitHeight * collapse
-    clip: collapse < 1
+    clip: collapse < 1 || area.drag.active || leaving
 
     function dismiss(direction)
     {
-        if (leaving) return;
+        if (!n || leaving) return;
         entrance.stop();
+        pendingDismissal = n;
         leaving = true;
         throwAway.to = (direction < 0 ? -1 : 1) * notificationRow.width;
         throwAway.restart();
@@ -77,8 +80,16 @@ Common.InteractiveControl
             duration: throwAway.animated ? 220 : 0
             easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easingEmphasized
         }
-        ScriptAction { script: if (notificationRow.n) ServiceNotifications.dismiss(notificationRow.n) }
+        ScriptAction { script: notificationRow.finishDismissal() }
     }
+
+    function finishDismissal()
+    {
+        const notification = pendingDismissal;
+        pendingDismissal = null;
+        if (notification) Qt.callLater(() => ServiceNotifications.dismiss(notification));
+    }
+    Component.onDestruction: finishDismissal()
 
     property real rise: 0
     Component.onCompleted: if (entering && Config.animationsEnabled) entrance.start()
@@ -141,7 +152,7 @@ Common.InteractiveControl
             anchors.fill: parent
             radius: Theme.controlRadius
             color: notificationRow.critical ? Qt.tint(Theme.controlColorBackground, Qt.rgba(Theme.colorCritical.r, Theme.colorCritical.g, Theme.colorCritical.b, 0.08))
-                : notificationRow.grouped ? "transparent" : Theme.controlColorBackground
+                : Theme.controlColorBackground
             opacity: card.fade
             Tint on color {}
             Glide on radius { duration: Theme.animationDurationControl }
@@ -155,16 +166,6 @@ Common.InteractiveControl
                 Smooth on opacity {}
                 Tint on color {}
             }
-        }
-
-        Rectangle
-        {
-            visible: notificationRow.grouped
-            x: 12
-            width: Math.max(0, parent.width - 24)
-            height: 1
-            color: Theme.controlColorBorder
-            opacity: card.fade
         }
 
         Rectangle

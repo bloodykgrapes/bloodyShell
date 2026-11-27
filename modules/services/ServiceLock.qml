@@ -123,6 +123,11 @@ Singleton
                 unlockLater.restart();
             }
         }
+        function onLockBeforeSleepChanged()
+        {
+            if (!Config.lockBeforeSleep) serviceLock.releaseSleepDelay();
+            else if (!serviceLock.preparingForSleep) serviceLock.armSleepDelay();
+        }
     }
 
     WlSessionLock
@@ -148,21 +153,22 @@ Singleton
         checking = false;
         pending = "";
         pam.abort();
-        lock();
+        if (sleeping && Config.lockBeforeSleep) lock();
         if (sleeping) releaseSleepDelay();
         else armSleepDelay();
     }
 
     function armSleepDelay()
     {
-        if (!sleepMonitorReady || preparingForSleep || sleepDelay.running) return;
+        if (!Config.lockBeforeSleep || !sleepMonitorReady || preparingForSleep || sleepDelay.running) return;
         sleepDelay.stdinEnabled = true;
         sleepDelay.running = true;
     }
 
     function releaseSleepDelay()
     {
-        if (preparingForSleep && secure) sleepDelay.stdinEnabled = false;
+        if ((preparingForSleep && (secure || !Config.lockBeforeSleep)) || !Config.lockBeforeSleep)
+            sleepDelay.stdinEnabled = false;
     }
 
     function sleepEvent(line)

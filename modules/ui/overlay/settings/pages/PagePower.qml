@@ -16,6 +16,18 @@ SettingsPage
 
     Component.onCompleted: ServicePower.refreshDetails()
 
+    readonly property var idleOptions:
+    [
+        { label: Tr.tr("common.never"), value: 0 },
+        { label: Tr.tr("settings.power.minute").arg(1), value: 60 },
+        { label: Tr.tr("settings.power.minutes").arg(2), value: 120 },
+        { label: Tr.tr("settings.power.minutes").arg(5), value: 300 },
+        { label: Tr.tr("settings.power.minutes").arg(10), value: 600 },
+        { label: Tr.tr("settings.power.minutes").arg(15), value: 900 },
+        { label: Tr.tr("settings.power.minutes").arg(30), value: 1800 },
+        { label: Tr.tr("settings.power.hour").arg(1), value: 3600 }
+    ]
+
     SettingsRowGroup
     {
         title: Tr.tr("settings.power.powerMode")
@@ -51,44 +63,13 @@ SettingsPage
 
         SettingsRow
         {
-            label: Tr.tr("settings.power.lockAfter")
-            description: Tr.tr("settings.power.lockHint")
-
-            SettingsDropdown
-            {
-                preferredWidth: 220
-                options: [
-                    { label: Tr.tr("settings.power.minute").arg(1), value: 60 },
-                    { label: Tr.tr("settings.power.minutes").arg(2), value: 120 },
-                    { label: Tr.tr("settings.power.minutes").arg(5), value: 300 },
-                    { label: Tr.tr("settings.power.minutes").arg(10), value: 600 },
-                    { label: Tr.tr("settings.power.minutes").arg(15), value: 900 },
-                    { label: Tr.tr("settings.power.minutes").arg(30), value: 1800 },
-                    { label: Tr.tr("common.never"), value: 0 }
-                ]
-                current: Config.idleLock
-                onSelected: value => Config.set("idleLock", value)
-            }
-        }
-        SettingsRow
-        {
             label: Tr.tr("settings.power.displayOffAfter")
             description: Tr.tr("settings.power.displayWakeHint")
 
             SettingsDropdown
             {
                 preferredWidth: 220
-                options: [
-                    { label: Tr.tr("settings.power.minute").arg(1), value: 60 },
-                    { label: Tr.tr("settings.power.minutes").arg(2), value: 120 },
-                    { label: Tr.tr("settings.power.minutes").arg(3), value: 180 },
-                    { label: Tr.tr("settings.power.minutes").arg(5), value: 300 },
-                    { label: Tr.tr("settings.power.minutes").arg(10), value: 600 },
-                    { label: Tr.tr("settings.power.minutes").arg(15), value: 900 },
-                    { label: Tr.tr("settings.power.minutes").arg(30), value: 1800 },
-                    { label: Tr.tr("settings.power.hour").arg(1), value: 3600 },
-                    { label: Tr.tr("common.never"), value: 0 }
-                ]
+                options: pagePower.idleOptions
                 current: Config.idleDisplay
                 onSelected: value => Config.set("idleDisplay", value)
             }
@@ -103,17 +84,34 @@ SettingsPage
             SettingsDropdown
             {
                 preferredWidth: 220
-                options: [
-                    { label: Tr.tr("settings.power.minutes").arg(5), value: 300 },
-                    { label: Tr.tr("settings.power.minutes").arg(10), value: 600 },
-                    { label: Tr.tr("settings.power.minutes").arg(15), value: 900 },
-                    { label: Tr.tr("settings.power.minutes").arg(30), value: 1800 },
-                    { label: Tr.tr("settings.power.minutes").arg(45), value: 2700 },
-                    { label: Tr.tr("settings.power.hour").arg(1), value: 3600 },
-                    { label: Tr.tr("common.never"), value: 0 }
-                ]
+                options: pagePower.idleOptions
                 current: Config.idleSuspend
                 onSelected: value => Config.set("idleSuspend", value)
+            }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.power.lockAfter")
+            description: Tr.tr("settings.power.lockHint")
+
+            SettingsDropdown
+            {
+                preferredWidth: 220
+                options: pagePower.idleOptions
+                current: Config.idleLock
+                onSelected: value => Config.set("idleLock", value)
+            }
+        }
+        SettingsRow
+        {
+            label: Tr.tr("settings.power.lockBeforeSleep")
+            description: Tr.tr("settings.power.lockBeforeSleepHint")
+
+            Toggle
+            {
+                objectName: "lockBeforeSleep"
+                checked: Config.lockBeforeSleep
+                onToggled: value => Config.set("lockBeforeSleep", value)
             }
         }
     }

@@ -3,114 +3,71 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 
-import "../../animations"
-import "../../common"
 import "../../core"
 import "../../services"
-import "components"
 
 Item
 {
     id: bar
 
     required property var screen
+    required property bool fullscreen
+    required property bool revealed
+    required property real reveal
+    required property point offset
+    required property bool hasIsland
     readonly property bool keyboardWanted: menuHere && MenuState.menuKeyboard
     readonly property alias inputRegion: barInput
-    readonly property real centerLimit: content.centerLimit
-    readonly property alias stageItem: stage
-    readonly property alias sidebarArea: sidebarArea
+    readonly property alias island: content.island
+    readonly property bool hoveringWidgets: content.hoveringWidgets
     readonly property bool isHorizontal: Config.barSide === Enums.EdgeTop || Config.barSide === Enums.EdgeBottom
     readonly property real thickness: Theme.barThickness
-    readonly property bool inFrame: Config.barType === Enums.InFrame || filled
-    readonly property bool islands: Config.barType === Enums.Islands
-    readonly property bool filled: Config.barType === Enums.Filled
-    readonly property real surfaceGap: islands ? 6 : 0
-    readonly property real reserve: Theme.frameThickness + surfaceGap + thickness
-    readonly property real frameThickness: Theme.frameThickness
-    signal regionsChanged()
+    readonly property real depth: Theme.frameThickness + (Config.barAttach ? 0 : Theme.panelGap)
+    readonly property real reserve: depth + thickness
+    readonly property rect startBody: bodyRect(true)
+    readonly property rect endBody: bodyRect(false)
+    readonly property rect centerBody: island && stage.visible ? translated(island.bodyRect) : Qt.rect(0, 0, 0, 0)
+    readonly property rect centerPanel: island && stage.visible ? translated(island.panelRect) : Qt.rect(0, 0, 0, 0)
 
-    function bodyRect(index)
+    function translated(rect) { return Qt.rect(rect.x + offset.x, rect.y + offset.y, rect.width, rect.height); }
+    function bodyRect(atStart)
     {
-        if (filled)
-        {
-            if (index !== 0 || !stage.visible) return Qt.rect(0, 0, 0, 0);
-            const r = Theme.barRadius;
-            switch (Config.barSide)
-            {
-                case Enums.EdgeTop: return translated(Qt.rect(-r, -r, width + r * 2, reserve + r));
-                case Enums.EdgeBottom: return translated(Qt.rect(-r, height - reserve, width + r * 2, reserve + r));
-                case Enums.EdgeLeft: return translated(Qt.rect(-r, -r, reserve + r, height + r * 2));
-                default: return translated(Qt.rect(width - reserve, -r, reserve + r, height + r * 2));
-            }
-        }
-        let rect = content.bodies[index];
-        if (inFrame && rect.width > 0 && rect.height > 0)
-        {
-            if (isHorizontal && index === 0) rect = Qt.rect(0, rect.y, rect.x + rect.width, rect.height);
-            else if (isHorizontal && index === 2) rect = Qt.rect(rect.x, rect.y, width - rect.x, rect.height);
-            else if (!isHorizontal && index === 0) rect = Qt.rect(rect.x, 0, rect.width, rect.y + rect.height);
-            else if (!isHorizontal && index === 2) rect = Qt.rect(rect.x, rect.y, rect.width, height - rect.y);
-        }
-        return translated(rect);
+        if (!stage.visible) return Qt.rect(0, 0, 0, 0);
+        if (Config.barType !== Enums.BarFull) return translated(atStart ? content.startBody : content.endBody);
+        if (!atStart) return Qt.rect(0, 0, 0, 0);
+        const inset = Config.barAttach ? 0 : depth;
+        if (isHorizontal) return translated(Qt.rect(inset, Config.barSide === Enums.EdgeTop ? depth : height - reserve,
+            Math.max(0, width - 2 * inset), thickness));
+        return translated(Qt.rect(Config.barSide === Enums.EdgeLeft ? depth : width - reserve, inset,
+            thickness, Math.max(0, height - 2 * inset)));
     }
-    function translated(rect) { return Qt.rect(rect.x + stage.x, rect.y + stage.y, rect.width, rect.height) }
-    function overBand(point)
-    {
-        return point.x >= sidebarArea.x && point.x < sidebarArea.x + sidebarArea.width
-            && point.y >= sidebarArea.y && point.y < sidebarArea.y + sidebarArea.height;
-    }
-    function sidebarAt(point) { return (isHorizontal ? point.x < width / 2 : point.y < height / 2) ? "left" : "right" }
-
     readonly property bool menuHere: MenuState.menuActive && owns(MenuState.menuOwner)
-    readonly property bool fullscreen: screen !== null && ServiceCompositor.fullscreenOnOutput(screen.name)
-    readonly property bool autoHide: Config.barHideAuto || fullscreen
-
-    readonly property bool hoveringBand: hover.hovered && overBand(hover.point.position)
-    readonly property bool hoveringContent: hover.hovered && (overBand(hover.point.position) || overContent(hover.point.position))
-    readonly property bool revealWanted: !fullscreen && (!autoHide || hoveringContent || triggerHover.hovered || menuHere || (screen && SidebarState.onOutput(screen.name))
-                                         || (Config.barHideSmart && screen !== null && ServiceCompositor.workspaceEmptyOnOutput(screen.name)))
+    readonly property bool menuPanelVisible: menuHere && (MenuState.menuOwner?.panel?.visible ?? false)
     enabled: !fullscreen
-    onFullscreenChanged: if (fullscreen) Qt.callLater(() => { if (bar.fullscreen && bar.menuHere) MenuState.close(); })
-    property alias revealed: visibility.revealed
-    property real reveal: revealed ? 1 : 0
-    Glide on reveal {}
+    property real wheelRest: 0
 
-    PanelReveal
+    function wheelSteps(delta)
     {
-        id: visibility
-        wanted: bar.revealWanted
-        delay: Theme.barHideDelay
+        wheelRest += delta;
+        const steps = wheelRest > 0 ? Math.floor(wheelRest / 120) : Math.ceil(wheelRest / 120);
+        wheelRest -= steps * 120;
+        return steps;
     }
-
-    readonly property real slide: (1 - reveal) * (reserve + 4)
-
     function owns(item)
     {
         for (let p = item; p; p = p.parent) if (p === stage) return true;
         return false;
     }
 
-    function overContent(point)
-    {
-        for (const item of [content.panel0, content.panel2])
-        {
-            if (!item.enabled || !item.visible) continue;
-            const local = stage.mapToItem(item, point.x, point.y);
-            if (local.x >= 0 && local.y >= 0 && local.x < item.width && local.y < item.height) return true;
-        }
-        return false;
-    }
-
     Region
     {
         id: barInput
-        Region { item: content.panel0.enabled && content.panel0.visible ? content.panel0 : null }
-        Region { item: content.panel2.enabled && content.panel2.visible ? content.panel2 : null }
-        Region { item: sidebarArea }
-        Region { item: trigger }
+        Region { item: content.startWidgets.width > 0 && content.startWidgets.height > 0 ? content.startWidgets : null }
+        Region { item: content.endWidgets.width > 0 && content.endWidgets.height > 0 ? content.endWidgets : null }
+        Region { item: content.startPanel.enabled && content.startPanel.visible ? content.startPanel : null }
+        Region { item: content.endPanel.enabled && content.endPanel.visible ? content.endPanel : null }
+        Region { regions: bar.island ? [bar.island.inputRegion] : [] }
     }
-
-    function regionsMoved() { regionsChanged() }
 
     Item
     {
@@ -118,70 +75,32 @@ Item
 
         width: bar.width
         height: bar.height
-        x: Math.round(Config.barSide === Enums.EdgeLeft ? -bar.slide : Config.barSide === Enums.EdgeRight ? bar.slide : 0)
-        y: Math.round(Config.barSide === Enums.EdgeTop ? -bar.slide : Config.barSide === Enums.EdgeBottom ? bar.slide : 0)
+        x: bar.offset.x
+        y: bar.offset.y
 
         readonly property bool fading: bar.reveal > 0 && bar.reveal < 1
         opacity: Math.min(1, bar.reveal * 1.6)
         visible: bar.reveal > 0
         layer.enabled: fading
 
-        onXChanged: bar.regionsMoved()
-        onYChanged: bar.regionsMoved()
-        onVisibleChanged: bar.regionsMoved()
-
         focus: true
         Keys.onEscapePressed: MenuState.close()
-        HoverHandler { id: hover }
-
-        MouseArea
+        WheelHandler
         {
-            id: sidebarArea
-            objectName: "barSidebarArea"
-            x: Config.barSide === Enums.EdgeRight ? bar.width - width : 0
-            y: Config.barSide === Enums.EdgeBottom ? bar.height - height : 0
-            width: bar.isHorizontal ? bar.width : bar.reserve
-            height: bar.isHorizontal ? bar.reserve : bar.height
-            cursorShape: Qt.PointingHandCursor
-            onClicked: mouse =>
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+            onWheel: event =>
             {
-                if (bar.screen) SidebarState.toggle(bar.sidebarAt(mapToItem(stage, mouse.x, mouse.y)), bar.screen.name);
+                if (Config.barScrollAction === 0) return;
+                const delta = event.angleDelta.y !== 0 ? event.angleDelta.y : -event.angleDelta.x;
+                const steps = bar.wheelSteps(delta);
+                if (steps !== 0)
+                {
+                    if (Config.barScrollAction === 1) ServiceAudio.changeVolume(steps * 0.02);
+                    else ServiceDisplay.setBrightness(ServiceDisplay.brightness + steps * 0.02);
+                }
+                event.accepted = true;
             }
         }
-
         BarContent { id: content; anchors.fill: parent; host: bar }
-        BarCorner
-        {
-            id: leftCorner
-            side: "left"
-            screen: bar.screen
-            hinted: bar.hoveringBand && bar.sidebarAt(hover.point.position) === side
-            x: Config.barSide === Enums.EdgeRight ? bar.width - width - Theme.frameThickness : Theme.frameThickness
-            y: Config.barSide === Enums.EdgeBottom ? bar.height - height - Theme.frameThickness : Theme.frameThickness
-        }
-        BarCorner
-        {
-            id: rightCorner
-            side: "right"
-            screen: bar.screen
-            hinted: bar.hoveringBand && bar.sidebarAt(hover.point.position) === side
-            x: Config.barSide === Enums.EdgeLeft ? Theme.frameThickness : bar.width - width - Theme.frameThickness
-            y: Config.barSide === Enums.EdgeTop ? Theme.frameThickness : bar.height - height - Theme.frameThickness
-        }
-
-    }
-
-    Item
-    {
-        id: trigger
-
-        readonly property real size: bar.autoHide && !bar.fullscreen ? Theme.barReveal : 0
-
-        x: Config.barSide === Enums.EdgeRight ? bar.width - width : 0
-        y: Config.barSide === Enums.EdgeBottom ? bar.height - height : 0
-        width:  bar.isHorizontal ? bar.width : size
-        height: bar.isHorizontal ? size : bar.height
-
-        HoverHandler { id: triggerHover }
     }
 }

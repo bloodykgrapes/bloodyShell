@@ -48,6 +48,7 @@ with tempfile.TemporaryDirectory(prefix="bloodyshell-menu-geometry-") as tempora
     property int menuPadding: 10
     property int animationDurationMorph: 120
     property int animationDurationBar: 120
+    function animationDuration(ms) { return ms }
     property var easingEmphasized: [0.16, 0.85, 0.2, 1.0, 1.0, 1.0]
 ''')
     stub(base, "core", "Registry", 'property var widgets: ({fixture:{url:Qt.resolvedUrl("../TestWidget.qml")}})')

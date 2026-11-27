@@ -10,8 +10,8 @@ Item
     id: wallpaper
 
     required property string outputName
-    readonly property bool blurRequested: Config.desktopBlur === Enums.BlurAlways
-        || (Config.desktopBlur === Enums.BlurWindowPresented && ServiceCompositor.workspaceHasWindowsOnOutput(outputName))
+    readonly property bool blurRequested: Config.wallpaperBlur && Config.wallpaperBlurStrength > 0
+        && ServiceCompositor.workspaceHasWindowsOnOutput(outputName)
     readonly property bool videoActive: ServiceAppearance.videoPath !== "" && ServiceAppearance.videoComponent !== null
         && ServiceAppearance.videoComponent.status === Component.Ready
     readonly property size blurTextureSize: Qt.size(Math.ceil((width + 64) / 2), Math.ceil((height + 64) / 2))
@@ -58,7 +58,7 @@ Item
         layer.effect: MultiEffect
         {
             blurEnabled: true
-            blurMax: 16
+            blurMax: Math.max(1, Math.round(2 + Config.wallpaperBlurStrength * 0.62))
             blur: wallpaper.blurProgress
             autoPaddingEnabled: false
         }
@@ -83,6 +83,7 @@ Item
             anchors.fill: parent
             active: wallpaper.videoActive
             sourceComponent: ServiceAppearance.videoComponent
+            onLoaded: if (item) item.outputName = wallpaper.outputName
         }
     }
 }

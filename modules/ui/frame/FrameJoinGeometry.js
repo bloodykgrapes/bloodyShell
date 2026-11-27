@@ -16,13 +16,18 @@ function smooth(value)
     return t * t * (3 - 2 * t);
 }
 
-function bodyShape(area, width, height, inset, radius, smoothing, pixelAligned)
+function curveScale(setting)
+{
+    return 0.65 + (Math.max(40, Math.min(80, setting)) - 40) * 0.0175;
+}
+
+function bodyShape(area, width, height, inset, radius, pixelAligned, attached, joinLimit = radius)
 {
     const bounds = pixelAligned ? pixelBounds(area) : area;
-    const joins = Math.min(smoothing, bounds.width, bounds.height);
+    const maxJoin = Math.min(joinLimit, bounds.width, bounds.height);
     let cap = Math.max(0, Math.min(radius, bounds.width / 2, bounds.height / 2));
     const noJoins = Qt.vector4d(0, 0, 0, 0);
-    if (inset <= 0 || joins <= 0)
+    if (!attached || maxJoin <= 0)
     {
         const corner = pixelAligned ? Math.ceil(cap) : cap;
         return { bounds, corners: Qt.vector4d(corner, corner, corner, corner), fillets: noJoins };
@@ -37,14 +42,19 @@ function bodyShape(area, width, height, inset, radius, smoothing, pixelAligned)
     const contacts = [top, bottom, left, right].map((gap, index) => gap <= 0 && depths[index] > 0);
     for (let edge = 0; edge < contacts.length; edge++)
         if (contacts[edge]) cap = Math.min(cap, Math.max(0, (depths[edge] - tangent) / 2));
+    if (pixelAligned) cap = Math.floor(cap);
 
-    const edgeBlend = pixelAligned ? 1 : smooth(inset);
     function corner(horizontal, vertical)
     {
-        const rounded = smooth(Math.min(horizontal, vertical) / Math.max(1, joins / 2));
-        return pixelAligned ? Math.ceil(cap * rounded) : cap * (1 - edgeBlend + rounded * edgeBlend);
+        const rounded = smooth(Math.min(horizontal, vertical) / Math.max(1, maxJoin / 2));
+        return pixelAligned ? Math.ceil(cap * rounded) : cap * rounded;
     }
-    const fillets = depths.map((depth, edge) => contacts[edge] ? Math.max(0, Math.floor(Math.min(joins, depth - cap - tangent))) : 0);
+    const fillets = depths.map((depth, edge) =>
+    {
+        if (!contacts[edge]) return 0;
+        const join = Math.max(0, Math.min(maxJoin, (depth - tangent) / 2));
+        return pixelAligned ? Math.floor(join) : join;
+    });
     return {
         bounds,
         // The mask and shader use the same order for corners and edges.

@@ -11,12 +11,21 @@ Singleton
 {
     id: serviceColors
 
-    readonly property string wallpaper: Config.themeAccent || Config.kittyColorsEnabled
+    readonly property string wallpaper: Config.themeStyle === Enums.ThemeWallpaper
+        || Config.themeAccentMode !== Enums.AccentCustom || Config.kittyColorsEnabled
         ? ServiceAppearance.wallpaperImage || "" : ""
     readonly property string paletteRequest: Config.initialized && wallpaper
         ? JSON.stringify([wallpaper, ServiceAppearance.wallpaperRevision ?? 0]) : ""
     property var paletteResult: ({key: "", palettes: {}, error: ""})
-    readonly property string sourceColor: paletteResult.palettes.dark?.source_color ?? ""
+    function paletteFor(lightMode)
+    {
+        if (paletteResult.key !== paletteRequest) return null;
+        return paletteResult.palettes[lightMode ? "light" : "dark"] || null;
+    }
+    readonly property var activePalette: paletteFor(ServiceAppearance.effectiveThemeStyle === Enums.ThemeLight)
+    readonly property string sourceColor: activePalette?.source_color || paletteResult.palettes.dark?.source_color || ""
+    readonly property bool wallpaperThemeReady: Config.themeStyle === Enums.ThemeWallpaper && activePalette !== null
+    function role(role, fallback) { return activePalette?.[role] || fallback; }
     readonly property string paletteError: paletteResult.key === paletteRequest ? paletteResult.error : ""
     readonly property bool needsPalette: paletteRequest !== "" && (paletteResult.key !== paletteRequest || paletteError !== "")
 
@@ -32,8 +41,6 @@ Singleton
     property string kittyWriteError: ""
     readonly property string kittyError: kittyWriteError || (Config.kittyColorsEnabled
         ? paletteError || (wallpaper ? "" : "wallpaperMissing") : "")
-    readonly property string automaticColorHint: Tr.tr(Config.themeAccent && paletteError
-        ? "service.colors." + paletteError : "settings.appearance.automaticColorHint")
 
     function refresh()
     {

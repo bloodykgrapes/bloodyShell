@@ -15,11 +15,15 @@ Common.InteractiveControl
     property real to: 1
     property real step: (to - from) / 20
     property string valueText: Math.round(ratio(shown) * 100) + "%"
+    property bool hue: false
+    property real hueFrom: 0
+    property real hueTo: 360
 
     signal moved(real value)
 
     readonly property real shown: area.pressed ? area.dragValue : value
     property real fraction: ratio(shown)
+    readonly property color hueColor: Qt.hsla((((shown % 360) + 360) % 360) / 360, 0.72, 0.55, 1)
     property bool settled: false
 
     Component.onCompleted: Qt.callLater(() => settled = true)
@@ -73,6 +77,7 @@ Common.InteractiveControl
 
         Rectangle
         {
+            visible: !settingsSlider.hue
             anchors.fill: parent
             radius: height / 2
             color: Theme.colorField
@@ -80,10 +85,29 @@ Common.InteractiveControl
 
         Rectangle
         {
+            visible: !settingsSlider.hue
             width: track.position
             height: parent.height
             radius: height / 2
             color: Theme.colorAccent
+        }
+
+        Rectangle
+        {
+            visible: settingsSlider.hue
+            anchors.fill: parent
+            radius: height / 2
+            gradient: Gradient
+            {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0.0; color: "#ff3b30" }
+                GradientStop { position: 0.17; color: "#ffcc00" }
+                GradientStop { position: 0.34; color: "#34c759" }
+                GradientStop { position: 0.5; color: "#32ade6" }
+                GradientStop { position: 0.67; color: "#007aff" }
+                GradientStop { position: 0.84; color: "#af52de" }
+                GradientStop { position: 1.0; color: "#ff3b30" }
+            }
         }
 
         Rectangle
@@ -138,14 +162,16 @@ Common.InteractiveControl
         width: 48
         height: 30
         radius: Theme.radiusMedium
-        color: Theme.colorField
+        color: settingsSlider.hue ? settingsSlider.hueColor : Theme.colorField
 
         ShellText
         {
             anchors.centerIn: parent
             label: settingsSlider.valueText
             size: Theme.controlTextSize
-            color: area.pressed || settingsSlider.visualFocus ? Theme.text1 : Theme.text2
+            color: settingsSlider.hue
+                ? (Theme.lightForeground(settingsSlider.hueColor) ? "#ffffff" : "#000000")
+                : area.pressed || settingsSlider.visualFocus ? Theme.text1 : Theme.text2
             font.family: Theme.fontMono
 
             Tint on color {}

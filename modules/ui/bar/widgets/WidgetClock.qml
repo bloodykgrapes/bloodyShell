@@ -13,6 +13,8 @@ Widget
     {
         readonly property string sep: widgetClock.vertical ? "\n" : ":"
 
+        bubble: Registry.usesStatusBubbles(Config.barType)
+        circular: false
         text: Qt.formatDateTime(clock.date,
             (Config.barWidgetClock24 ? "HH" : "hh") + sep + "mm" +
             (Config.barWidgetClockSeconds ? sep + "ss" : "") +

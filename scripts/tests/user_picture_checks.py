@@ -91,6 +91,7 @@ ShellRoot {
                 until(()=>confirmation.opened,"Apply did not open confirmation");
                 check(ServiceUser.confirmationChanges.length===1,"Picture-only change included account edits");
                 const accept=findChild(confirmation.contentItem,"acceptConfirmation");
+                wait(150);
                 mouseClick(accept,accept.width/2,accept.height/2);
                 until(()=>!ServiceUser.busy && !ServiceUser.hasChanges && ServiceUser.draft.avatarAction==="keep","Selected picture did not save and refresh: "+ServiceUser.error);
                 until(()=>face.status===Image.Ready,"Saved profile picture did not render");

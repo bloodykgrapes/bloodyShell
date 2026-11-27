@@ -8,10 +8,12 @@ import "../../../services"
 Column
 {
     objectName: "lockProfile"
+    visible: Config.lockAvatar || Config.lockName
     spacing: 14
 
     Item
     {
+        visible: Config.lockAvatar
         width: parent.width
         height: avatar.height
         LockShadow { target: avatar }
@@ -49,6 +51,7 @@ Column
     }
     ShellText
     {
+        visible: Config.lockName
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
         label: ServiceUser.fullName || ServiceUser.user

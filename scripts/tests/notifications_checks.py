@@ -6,11 +6,24 @@ from pathlib import Path
 import re
 import runpy
 import shutil
+import socket
 import subprocess
 import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def unix_sockets_available():
+    probe = Path(tempfile.gettempdir()) / ("bloodyShell-notification-socket-probe-" + str(os.getpid()))
+    try:
+        server = socket.socket(socket.AF_UNIX)
+        server.bind(str(probe))
+        server.close()
+        probe.unlink()
+        return True
+    except OSError:
+        return False
 
 
 def checks():
@@ -123,11 +136,15 @@ ShellRoot
 
 def ui_checks():
     prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
-    with tempfile.TemporaryDirectory(prefix="bloodyshell-sidebar-notifications-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="bloodyshell-island-notifications-") as temporary:
         base = Path(temporary)
         env = prepare(base)
         env.update(HOME=str(base / "home"), XDG_STATE_HOME=str(base / "state"))
         (base / "home").mkdir()
+        brightness = base / "fixture-brightness"
+        brightness.mkdir()
+        (brightness / "max_brightness").write_text("100\n")
+        (brightness / "brightness").write_text("55\n")
         env.pop("WAYLAND_DISPLAY", None)
         source = base / "modules/services/ServiceNotifications.qml"
         text = source.read_text()
@@ -138,137 +155,201 @@ def ui_checks():
 
 ''' + text[end:]
         source.write_text(text)
+        (base / "modules/services/ServiceMedia.qml").write_text('''pragma Singleton
+import QtQuick
+import Quickshell
+Singleton {
+    property bool playing: false
+    property string art: ""
+    property string title: "A song"
+    property string artist: "An artist"
+    readonly property var player: ({canTogglePlaying: true})
+    function toggle() { playing = !playing }
+}
+''')
         (base / "shell.qml").write_text('''import QtQuick
 import QtQuick.Window
 import QtTest
 import Quickshell
 import "modules/core"
 import "modules/services"
-import "modules/ui/sidebars/right"
+import "modules/ui/bar/menus"
 
 ShellRoot {
     id: tests
+
     property int activations: 0
-    function check(ok,message) { if(!ok)throw new Error(message); }
-    function find(item,name) { if(item.objectName===name)return item;for(const child of item.children||[]) {const found=find(child,name);if(found)return found;}return null; }
-    function group(item) { if(typeof item.requestToggle==="function")return item;for(const child of item.children||[]){const found=group(child);if(found)return found;}return null; }
-    function notificationRow(item) { if(item.n && typeof item.activate==="function")return item;for(const child of item.children||[]){const found=notificationRow(child);if(found)return found;}return null; }
-    function click(item) { events.mouseClick(item,item.width/2,item.height/2,Qt.LeftButton,Qt.NoModifier,0); }
-    function swipe(item, y, direction) {
-        const start=item.mapToItem(window.contentItem,direction<0 ? item.width*0.8 : item.width*0.2,y);
-        events.mousePress(window.contentItem,start.x,start.y,Qt.LeftButton);
-        for(let step=1;step<=6;step++) events.mouseMove(window.contentItem,start.x+direction*item.width*step/12,start.y,20);
-        events.mouseRelease(window.contentItem,start.x+direction*item.width/2,start.y,Qt.LeftButton);
-    }
-    function fill(count) {
-        const list=[];
-        for(let i=0;i<count;i++) {
-            const note={id:i,desktopEntry:"fixture.app"+(i%5),appName:"Application "+(i%5+1),summary:"Notification "+(i+1),body:"A notification with enough detail to check wrapping and scrolling.",appIcon:"",image:"",urgency:1,tracked:true};
-            note.actions=[{identifier:"default",text:"Open",invoke:()=>tests.activations++}];
-            note.dismiss=()=>{note.tracked=false;ServiceNotifications.fixtureNotifications=ServiceNotifications.fixtureNotifications.filter(item=>item!==note);};
-            list.push(note);
+    function check(ok, message) { if (!ok) throw new Error(message); }
+
+    function find(item, name) {
+        if (item.objectName === name) return item;
+        for (const child of item.children || []) {
+            const result = find(child, name);
+            if (result) return result;
         }
-        ServiceNotifications.fixtureNotifications=list;
+        return null;
     }
-    function capture(path) {
-        let saved=false;
-        window.contentItem.grabToImage(result=>{result.saveToFile(path);saved=true;});
-        for(let i=0;!saved&&i<20;i++)events.wait(25);
-        check(saved,"Screenshot did not complete");
+    function card(item) {
+        if (item.n && typeof item.activate === "function") return item;
+        for (const child of item.children || []) {
+            const result = card(child);
+            if (result) return result;
+        }
+        return null;
     }
+
+    function notification(id, app) {
+        const note = {id, desktopEntry:"fixture.app" + app, appName:"Application " + app,
+            summary:"Notification " + id, body:"Message body", appIcon:"", image:"", urgency:1, tracked:true};
+        note.actions = [{identifier:"default", text:"Open", invoke:() => { tests.activations++; }}];
+        note.dismiss = () => {
+            note.tracked = false;
+            ServiceNotifications.fixtureNotifications = ServiceNotifications.fixtureNotifications.filter(item => item !== note);
+        };
+        return note;
+    }
+    function fill() {
+        ServiceNotifications.fixtureNotifications = [notification(1, 1), notification(2, 1), notification(3, 1), notification(4, 2)];
+    }
+    function click(item) {
+        events.mouseClick(item, item.width / 2, item.height / 2, Qt.LeftButton, Qt.NoModifier, 0);
+    }
+    function reveal(item) {
+        const scroll = find(menu, "islandPageScroll");
+        const middle = item.mapToItem(scroll.contentItem, 0, item.height / 2).y;
+        if (middle < scroll.contentY || middle > scroll.contentY + scroll.height)
+            scroll.contentY = Math.max(0, Math.min(scroll.contentHeight - scroll.height, middle - scroll.height / 2));
+        events.wait(32);
+    }
+    function swipe(item, direction) {
+        const start = item.mapToItem(window.contentItem, direction < 0 ? item.width * 0.8 : item.width * 0.2, item.height / 2);
+        events.mousePress(window.contentItem, start.x, start.y, Qt.LeftButton);
+        for (let step = 1; step <= 6; step++)
+            events.mouseMove(window.contentItem, start.x + direction * item.width * step / 12, start.y, 20);
+        events.mouseRelease(window.contentItem, start.x + direction * item.width / 2, start.y, Qt.LeftButton);
+    }
+    function until(test, message) {
+        for (let i = 0; i < 85 && !test(); i++) events.wait(20);
+        check(test(), message);
+    }
+
+    function exercise() {
+        const element = name => tests.find(menu, name);
+        const y = item => item.mapToItem(menu, 0, 0).y;
+        Config.set("motionStyle", Enums.MotionDirect);
+        check(menu.tabs.map(tab => tab.value).join(",") === "controls,calendar,weather,system,shelf", "Island tabs are out of order");
+        menu.selectTab("weather");
+        until(() => element("islandEmptyPage")?.pageTitle === Tr.tr("settings.island.weather"), "Weather tab did not load");
+        menu.selectTab("shelf");
+        until(() => element("islandEmptyPage")?.pageTitle === Tr.tr("settings.island.shelf"), "Shelf did not replace the previous tab");
+        check(element("islandEmptyPage").pageText === Tr.tr("settings.island.shelfEmpty"), "Shelf shows another tab's content");
+        menu.selectTab("controls");
+        until(() => element("islandBrightness"), "Control Center did not load");
+        check(!element("islandMediaCard") && !element("islandNotifications") && !element("islandBrightness").visible,
+            "Empty Control Center shows inactive sections");
+        const wallpaper = element("islandWallpaper"), user = element("islandUser");
+        const launcher = element("islandLauncher"), settings = element("islandAction-settings");
+        const lock = element("islandAction-lock"), power = element("islandAction-power");
+        check(y(wallpaper) === y(user) && y(launcher) === y(settings) && y(settings) === y(lock) && y(lock) === y(power),
+            "Profile and quick actions do not share their respective rows");
+        check(!launcher.iconOnly && settings.iconOnly && lock.iconOnly && power.iconOnly, "Quick action labels do not match the layout");
+        click(lock);
+        check(ServiceLock.locked, "The Lock action did not lock the session");
+        ServiceLock.locked = false;
+
+        ServiceDisplay.brightnessDevice = Quickshell.env("TEST_SCREENSHOT_BASE") + "/fixture-brightness";
+        ServiceDisplay.brightnessMax = 100;
+        ServiceMedia.playing = true;
+        fill();
+        until(() => element("islandMediaCard") && element("islandNotifications"), "Media or notifications did not load");
+        const ordered = ["islandWallpaper", "islandLauncher", "islandWifi", "islandVolume", "islandBrightness", "islandMediaCard", "islandNotifications"];
+        until(() => ordered.slice(1).every((name, index) => y(element(name)) > y(element(ordered[index]))),
+            "Control Center rows are out of order");
+        click(element("islandMediaPause"));
+        until(() => !element("islandMediaCard"), "Pausing did not hide the media card");
+
+        for (const mode of [Enums.MotionDirect, Enums.MotionFluid, Enums.MotionGlide]) {
+            Config.set("motionStyle", mode);
+            Config.set("shellLanguage", mode === Enums.MotionFluid ? "ru" : "en");
+            menu.selectTab("calendar");
+            until(() => !element("islandNotifications"), "Switching tabs retained the inactive stack");
+            menu.selectTab("controls");
+            until(() => element("notificationStack"), "Notification stack did not return");
+            fill();
+            const view = element("islandNotifications");
+            const stack = () => descendants(view).find(item => item.objectName === "notificationStack" && item.model?.key === "fixture.app1");
+            until(() => stack()?.total === 3, "App grouping did not keep all three notifications");
+            const group = stack();
+            events.wait(Theme.animationDurationControl + 32);
+            const first = card(group);
+            check(find(group, "notificationStackLayer") && first.n.id === 3, "The stack did not show its next cards behind the newest one");
+            const toggle = find(group, "notificationGroupToggle");
+            check(toggle.text === Tr.tr("notifications.showMore"), "Collapsed stack lost Show more");
+            reveal(toggle);
+            click(toggle);
+            check(group.expanded && toggle.text === Tr.tr("notifications.showLess"), "Show more did not expand the app stack in mode " + mode);
+            until(() => descendants(group).filter(item => item.n && typeof item.activate === "function").length === 3,
+                "Expanded stack did not render each notification");
+            events.wait(Theme.animationDurationControl + 32);
+            reveal(first);
+            swipe(first, -1);
+            until(() => ServiceNotifications.count === 3 && stack()?.total === 2, "Single swipe dismissed the wrong number of notifications");
+            check(stack() === group && group.expanded && !ServiceNotifications.history.some(note => note.id === 3),
+                "Single swipe did not preserve the stack: " + JSON.stringify({
+                    reused: stack() === group, expanded: stack().expanded, remaining: ServiceNotifications.history.map(note => note.id)
+                }));
+            reveal(toggle);
+            click(toggle);
+            check(!group.expanded, "Show less did not collapse the app stack");
+            const header = find(group, "notificationGroupSwipeArea");
+            reveal(header);
+            swipe(header, 1);
+            until(() => ServiceNotifications.count === 1 && ServiceNotifications.history[0].id === 4, "Header swipe did not clear only that app");
+        }
+
+        fill();
+        until(() => element("notificationsClearAll"), "Clear all control did not load");
+        const top = card(element("islandNotifications"));
+        top.activate();
+        check(activations === 1, "Notification activation did not invoke its default action");
+        const clear = element("notificationsClearAll");
+        reveal(clear);
+        click(clear);
+        until(() => !element("islandNotifications"), "Empty notification history kept its section visible");
+    }
+
+    function descendants(item) {
+        let result = [item];
+        for (const child of item.children || []) result = result.concat(descendants(child));
+        return result;
+    }
+
     Window {
-        id:window;visible:true;width:460;height:720
-        Rectangle { anchors.fill:parent;color:Theme.colorSolid }
-        RightSidebar {id:sidebar;anchors.fill:parent;screen:Quickshell.screens[0];barSide:Enums.EdgeTop;barThickness:44}
-        TestCase {id:events;name:"SidebarTabs";when:false;optional:true}
+        id: window; width: 460; height: 880; visible: true; color: Theme.frameColor
+        MenuIsland { id: menu; width: 430; height: implicitHeight; maximumHeight: window.height }
+        TestCase { id: events; when: false; optional: true }
     }
-    Timer {interval:200;running:true;onTriggered:{try {
-        for(const mode of [0,1,2]) {
-            Config.set("themeAnimations",mode);Config.set("shellLanguage",mode===1?"ru":"en");Config.set("themeStyle",mode===1?0:1);
-            sidebar.currentTab="controls";tests.fill(20);ServiceNotifications.unreadCounter=3;
-            SidebarState.toggle("right",Quickshell.screens[0].name);events.wait(550);
-            const tabs=tests.find(sidebar,"rightSidebarTabs");
-            check(tabs && tabs.selectedIndex===0 && ServiceNotifications.unreadCounter===3,"Opening Control Center marked notifications read");
-            check(tests.find(tabs,"tab-notifications").count===3,"Unread badge is missing");
-            if(mode===0)tests.capture("/tmp/bloodyShell-control-center-tabs.png");
-            tests.click(tests.find(tabs,"tab-notifications"));events.wait(550);
-            let view=tests.find(sidebar,"sidebarNotifications");
-            check(view && tabs.selectedIndex===1 && ServiceNotifications.unreadCounter===0,"Notification tab did not load or mark history read");
-            ServiceNotifications.unreadCounter=2;
-            check(ServiceNotifications.unreadCounter===0,"Visible notification history leaves new arrivals unread");
-            const headerY=tabs.mapToItem(window.contentItem,0,0).y;
-            check(sidebar.scrollView.contentHeight>sidebar.scrollView.height,"Long history does not scroll");
-            sidebar.scrollView.contentY=100;events.wait(30);
-            check(tabs.mapToItem(window.contentItem,0,0).y===headerY,"Tabs scroll away with history");
-            sidebar.scrollView.contentY=0;
-            const duration=tests.find(view,"notificationsDndDuration"),dnd=tests.find(view,"notificationsDnd");
-            check(!duration.visible,"DND duration is visible while disabled");
-            dnd.toggled(true);events.wait(30);
-            check(duration.visible,"Enabling DND did not reveal duration");
-            duration.toggle();events.wait(50);
-            const durationPanel=tests.find(duration,"inlineMenuDropdownPanel");
-            check(durationPanel&&durationPanel.height>0&&durationPanel.width===duration.width&&duration.alternatives.length===3,
-                "DND durations did not expand within the sidebar");
-            duration.choose(0);
-            check(!duration.open&&!OverlayState.settingsPopup&&ServiceNotifications.dndMinutes===30,"DND selection did not close or apply");
-            for(const minutes of [30,60,120,0]) {
-                tests.find(view,"notificationsDndDuration").selected(minutes);
-                check(ServiceNotifications.dnd && ServiceNotifications.dndMinutes===minutes,"DND duration did not apply");
-            }
-            ServiceNotifications.setDnd(false);
-            const stack=tests.group(view);check(stack && stack.total===4,"History lost notification grouping");
-            const groupToggle=tests.find(stack,"notificationGroupToggle");
-            check(groupToggle.text===Tr.tr("notifications.showMore"),"Collapsed group is missing Show more");
-            tests.click(groupToggle);check(stack.expanded && groupToggle.text===Tr.tr("notifications.showLess"),"Show more did not expand the group");
-            if(mode===0)tests.capture("/tmp/bloodyShell-notification-tabs.png");
-            events.wait(Theme.animationDurationControl+40);
-            tests.click(groupToggle);check(!stack.expanded,"Show less did not collapse the group");
-            events.wait(Theme.animationDurationControl+40);
-            if(mode!==1) {
-                const key=stack.model.key;
-                const count=ServiceNotifications.count-stack.total;
-                if(mode===2) {
-                    tests.click(groupToggle);
-                    events.wait(Theme.animationDurationControl+40);
-                    tests.swipe(stack,22,1);
-                } else tests.swipe(tests.notificationRow(stack),20,-1);
-                events.wait(Theme.animationDurationClose+280);
-                check(ServiceNotifications.count===count && ServiceNotifications.groups.every(group=>group.key!==key),
-                    "Sideways swipe did not dismiss exactly one application's notifications");
-            }
-            tests.click(tests.find(tabs,"tab-controls"));events.wait(50);
-            check(!tests.find(sidebar,"sidebarNotifications") && sidebar.scrollView.contentY===0,"Switching tabs kept inactive history or old scroll offset");
-            check(!tabs.visualFocus,"Pointer tab selection kept keyboard hover styling");
-            events.keyClick(Qt.Key_Right);events.wait(30);
-            check(sidebar.currentTab==="notifications" && tabs.visualFocus,"Arrow navigation or keyboard focus failed");
-            events.keyClick(Qt.Key_Home);events.wait(30);check(sidebar.currentTab==="controls","Home key did not select the first tab");
-            events.keyClick(Qt.Key_End);events.wait(30);check(sidebar.currentTab==="notifications","End key did not select the last tab");
-            view=tests.find(sidebar,"sidebarNotifications");
-            tests.notificationRow(view).activate();events.wait(550);
-            check(tests.activations===mode+1 && !SidebarState.active,"Notification action failed");
-            check(!tests.find(sidebar,"sidebarNotifications"),"Closed sidebar retained notification views");
-            sidebar.currentTab="notifications";SidebarState.toggle("right",Quickshell.screens[0].name);events.wait(550);
-            view=tests.find(sidebar,"sidebarNotifications");tests.click(tests.find(view,"notificationsClearAll"));
-            sidebar.currentTab="controls";events.wait(30);
-            check(ServiceNotifications.count===0,"Switching tabs interrupted Clear All");
-            sidebar.currentTab="notifications";events.wait(550);
-            check(!tests.group(tests.find(sidebar,"sidebarNotifications")),"Empty notification history kept old groups");
-            if(mode===1)tests.capture("/tmp/bloodyShell-notification-tabs-light-ru.png");
-            SidebarState.close();events.wait(550);
+    Timer {
+        interval: 300; running: Config.initialized
+        onTriggered: {
+            try { tests.exercise(); console.log("ISLAND_NOTIFICATIONS_PASSED layout, optional sections, media, app grouping, individual swipe, app swipe, and actions"); }
+            catch (error) { console.error("ISLAND_NOTIFICATIONS_FAILED", error); }
+            Qt.quit();
         }
-        console.log("SIDEBAR_NOTIFICATIONS_PASSED pointer/keyboard tabs, unread badge/read lifecycle, fixed header, scrolling, groups, DND, activation, clear-on-tab-switch, cleanup, animation modes and localization");Qt.quit();
-    }catch(error){console.error("SIDEBAR_NOTIFICATIONS_FAILED",error);Qt.quit();}}}
-    Timer {interval:20000;running:true;onTriggered:{console.error("SIDEBAR_NOTIFICATIONS_FAILED timeout");Qt.quit();}}
+    }
 }
 ''')
         result = subprocess.run(["qs", "-p", str(base), "--no-color"], env=env, text=True, capture_output=True, timeout=25)
         output = result.stdout + result.stderr
         print(output)
-        assert result.returncode == 0 and "SIDEBAR_NOTIFICATIONS_PASSED" in output, output
-        assert not re.search(r"SIDEBAR_NOTIFICATIONS_FAILED|TypeError|ReferenceError|Binding loop|Cannot assign|Unable to assign|is not a type|Failed to load configuration", output), output
+        assert result.returncode == 0 and "ISLAND_NOTIFICATIONS_PASSED" in output, output
+        assert not re.search(r"ISLAND_NOTIFICATIONS_FAILED|TypeError|ReferenceError|Binding loop|Cannot assign|Unable to assign|is not a type|Failed to load configuration", output), output
 
 
 def activation_checks():
+    if not unix_sockets_available():
+        print("SKIP notification activation: UNIX domain sockets are unavailable in this environment")
+        return
     prepare = runpy.run_path(str(ROOT / "scripts/tests/screenshot_checks.py"))["prepare"]
     with tempfile.TemporaryDirectory(prefix="bloodyshell-notification-focus-") as temporary:
         base = Path(temporary)
@@ -279,7 +360,7 @@ def activation_checks():
         source = base / "modules/compositors/Niri.qml"
         text = source.read_text().replace("    id: niri", "    id: niri\n    property var testActions: []", 1)
         text = text.replace('Quickshell.execDetached(["niri", "msg", "action"].concat(args))',
-                            'testActions = testActions.concat([{args:args, sidebarActive:SidebarState.active}])')
+                            'testActions = testActions.concat([{args:args, menuActive:MenuState.menuActive}])')
         source.write_text(text)
         source = base / "modules/services/ServiceApplications.qml"
         text = source.read_text().replace("readonly property var applications: DesktopEntries.applications.values || []", "property var applications: []")
@@ -301,24 +382,24 @@ ShellRoot {
     function check(ok,message) { if(!ok)throw new Error(message); }
     function note(desktop, appName, action) {
         return {id:1, desktopEntry:desktop, appName:appName, summary:"New message", body:"Open the application", appIcon:"", image:"", urgency:1, tracked:true,
-            actions:action?[{identifier:"default",text:"Open",invoke:()=>{check(!SidebarState.active,"Default action ran before sidebar closed");invocations++;}}]:[],
+            actions:action?[{identifier:"default",text:"Open",invoke:()=>{check(!MenuState.menuActive,"Default action ran before menu closed");invocations++;}}]:[],
             dismiss:()=>{dismissals++;}};
     }
     function activate(notification, keyboard) {
         row.n=notification;
-        SidebarState.current="right";
+        MenuState.menuActive=true;
         if(keyboard) {row.forceActiveFocus();events.keyClick(Qt.Key_Return);}
         else events.mouseClick(row,row.width/2,row.height/2,Qt.LeftButton,Qt.NoModifier,0);
-        check(!SidebarState.active,"Activation kept the sidebar open");
+        check(!MenuState.menuActive,"Activation kept the menu open");
     }
     function expectWindow(id, message) {
         const actions=ServiceCompositor.backend.testActions;
-        check(actions.length===1 && JSON.stringify(actions[0].args)===JSON.stringify(["focus-window","--id",String(id)]) && !actions[0].sidebarActive,message);
+        check(actions.length===1 && JSON.stringify(actions[0].args)===JSON.stringify(["focus-window","--id",String(id)]) && !actions[0].menuActive,message);
         ServiceCompositor.backend.testActions=[];
     }
     Window {
         id: window; visible:true; width:420; height:180
-        NotificationRow {id:row;anchors.centerIn:parent;width:380}
+        NotificationRow {id:row;anchors.centerIn:parent;width:380;onActivated:MenuState.close()}
         TestCase {id:events;name:"NotificationActivation";when:false;optional:true}
     }
     Timer {interval:250;running:true;onTriggered:{try {

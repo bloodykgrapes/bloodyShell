@@ -19,6 +19,7 @@ with tempfile.TemporaryDirectory(prefix="bloodyshell-alt-tab-") as temporary:
         (base / folder).mkdir(parents=True, mode=0o700)
     shutil.copytree(ROOT / "modules/common", base / "common", dirs_exist_ok=True)
     shutil.copytree(ROOT / "modules/animations", base / "animations")
+    shutil.copytree(ROOT / "modules/src", base / "src")
     for name in ("AltTabContent", "AltTabCard", "AltTabKeyboard"):
         shutil.copyfile(ROOT / f"modules/ui/overlay/altTab/{name}.qml", base / f"ui/overlay/altTab/{name}.qml")
     shutil.copytree(ROOT / "scripts/lib", base / "scripts/lib")
@@ -33,7 +34,7 @@ Item {
 }
 ''')
     shutil.copyfile(ROOT / "modules/services/ServiceAltTab.qml", base / "services/ServiceAltTab.qml")
-    for name in ("Theme", "Enums"):
+    for name in ("Theme", "Enums", "ShellMaterial"):
         shutil.copyfile(ROOT / f"modules/core/{name}.qml", base / f"core/{name}.qml")
     stub(base, "core", "Config", '''
     property real scrollSpeed: 1
@@ -57,6 +58,7 @@ Item {
     function close() { current = "" }
 ''')
     stub(base, "services", "ServiceAppearance", 'property color accent: "#8bbfff"')
+    stub(base, "services", "ServiceColors", 'property string sourceColor: ""')
     stub(base, "services", "ServiceApplications", 'function iconFor(id) { return "" }\nfunction appName(id, fallback) { return id }')
     stub(base, "services", "ServiceLock", 'property bool locked: false')
     stub(base, "services", "ServiceCompositor", '''

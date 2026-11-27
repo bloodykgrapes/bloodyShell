@@ -9,6 +9,7 @@ Item
     default property alias content: box.data
 
     readonly property bool menuOpen: MenuState.menuWidget === widget
+    property string variant: ""
     property int side: Config.barSide
     readonly property bool vertical: side === Enums.EdgeLeft || side === Enums.EdgeRight
 

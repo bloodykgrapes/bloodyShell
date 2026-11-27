@@ -25,6 +25,14 @@ Item
     default property alias content: bodyColumn.data
     readonly property real bodyHeight: Math.max(0, viewport.height - bodyInset * 2 - (errorText !== "" ? failure.implicitHeight + spacing : 0))
     readonly property bool hasContent: fillContent || bodyColumn.implicitHeight > 0 || errorText !== ""
+    readonly property real maximumBodyHeight: Math.max(0,
+        (layout.Window.window ? layout.Window.window.height : 480) - 72 - chromeHeight)
+    readonly property real bodyContentHeight: layout.hasContent ? contentColumn.implicitHeight + layout.bodyInset * 2 : 0
+    readonly property real bodyViewportHeight: layout.fillContent ? maximumBodyHeight
+        : Math.min(bodyContentHeight, maximumBodyHeight)
+    readonly property real contentHeight: layout.fillContent
+        ? bodyViewportHeight + (layout.errorText !== "" ? failure.implicitHeight + layout.spacing : 0)
+        : bodyContentHeight
     readonly property real chromeHeight:
     {
         const heights = [title !== "" ? toolbar.implicitHeight : 0, headerColumn.implicitHeight,
@@ -33,7 +41,7 @@ Item
             + Math.max(0, heights.length + (hasContent ? 1 : 0) - 1) * spacing;
     }
 
-    implicitHeight: chromeHeight + viewport.contentHeight
+    implicitHeight: chromeHeight + bodyViewportHeight
     Accessible.role: Accessible.Dialog
     Accessible.name: title
 
@@ -108,17 +116,15 @@ Item
             id: headerColumn
             width: parent.width
             spacing: layout.spacing
-            visible: implicitHeight > 0
         }
         Flickable
         {
             id: viewport
             objectName: "settingsPopupBody"
             width: parent.width
-            height: Math.max(0, layout.height - layout.chromeHeight)
-            visible: layout.hasContent
+            height: layout.bodyViewportHeight
             contentWidth: width
-            contentHeight: layout.hasContent ? contentColumn.implicitHeight + layout.bodyInset * 2 : 0
+            contentHeight: layout.contentHeight
             interactive: contentHeight > height + 0.5
             boundsBehavior: Flickable.StopAtBounds
             flickableDirection: Flickable.VerticalFlick
@@ -134,6 +140,7 @@ Item
             Column
             {
                 id: contentColumn
+                objectName: "settingsPopupContent"
                 x: layout.bodyInset
                 y: layout.bodyInset
                 width: Math.max(0, viewport.width - layout.bodyInset * 2 - (viewport.interactive ? 12 : 0))
@@ -141,9 +148,9 @@ Item
                 Column
                 {
                     id: bodyColumn
+                    objectName: "settingsPopupBodyColumn"
                     width: parent.width
                     spacing: 1
-                    visible: implicitHeight > 0
                 }
                 Rectangle
                 {

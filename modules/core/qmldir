@@ -8,6 +8,5 @@ singleton OverlayState               1.0 OverlayState.qml
 singleton Paths                      1.0 Paths.qml
 singleton Registry                   1.0 Registry.qml
 singleton ShellMaterial              1.0 ShellMaterial.qml
-singleton SidebarState               1.0 SidebarState.qml
 singleton Theme                      1.0 Theme.qml
 singleton Tr                         1.0 Translation.qml

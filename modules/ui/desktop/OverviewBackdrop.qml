@@ -3,6 +3,7 @@ import QtQuick.Effects
 import Quickshell
 import Quickshell.Wayland
 
+import "../../core"
 import "../../services"
 
 PanelWindow
@@ -26,7 +27,7 @@ PanelWindow
         Image
         {
             id: image
-            readonly property int blurRadius: 16
+            readonly property int blurRadius: Math.max(1, Math.round(2 + Config.overviewBlur * 0.62))
 
             // Render the blur at quarter resolution with room for the sampling edges.
             anchors.centerIn: parent
@@ -53,7 +54,7 @@ PanelWindow
         {
             anchors.fill: parent
             visible: image.status === Image.Ready
-            color: "#52000000"
+            color: Theme.light ? "#30000000" : "#62000000"
         }
     }
 }

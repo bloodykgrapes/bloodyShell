@@ -91,8 +91,8 @@ function keyboardSettings(text, defaults = "")
     const capsOption = options.find(o => o.startsWith("caps:") || o === "ctrl:nocaps" || o === "ctrl:swapcaps") || "";
     const otherOptions = options.filter(o => o !== switchOption && o !== capsOption);
 
-    const repeatDelay = number("repeat-delay", 600);
-    const repeatRate = number("repeat-rate", 25);
+    const repeatDelay = number("repeat-delay", 350);
+    const repeatRate = number("repeat-rate", 30);
     const trackLayout = value("track-layout") === "window" ? "window" : "global";
     const numlockFlag = match(/^[ \t]*numlock(?:[ \t]+(true|false))?[ \t]*$/m, "keyboard");
     const numlock = numlockFlag !== null && numlockFlag[1] !== "false";

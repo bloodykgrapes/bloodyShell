@@ -6,13 +6,10 @@ import Quickshell.Io
 import "../../../../common"
 import "../../../../core"
 
-SettingsDisclosure
+SettingsRowGroup
 {
     id: associations
     objectName: "fileAssociationsSection"
-    title: Tr.tr("settings.fileAssociations.title")
-    description: Tr.tr("settings.fileAssociations.description")
-    icon: Icon.fileAssociations
 
     property var entries: []
     property string error: ""
@@ -25,7 +22,7 @@ SettingsDisclosure
         error = "";
         command.run(helper.concat(["status"]));
     }
-    onExpandedChanged: if (expanded) refresh()
+    Component.onCompleted: refresh()
 
     function select(entry, appId)
     {
@@ -53,7 +50,7 @@ SettingsDisclosure
     Repeater
     {
         model: ["images", "documents", "audio", "video"]
-        SettingsDisclosure
+        SettingsRowGroup
         {
             id: category
             required property string modelData
